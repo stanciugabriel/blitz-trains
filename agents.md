@@ -22,3 +22,8 @@
 - Travel summary row in TripDetailView keeps duration/distance inline with an overnight badge plus moon icon, while the arrival time shows a small `+1` chip when crossing midnight.
 - Good to Know area now stacks weather with mocked departure/arrival ops cards (dot.radiowaves delay label + concentric green status circles and ops copy).
 - TripDetailView ends with a "My History on This Route" panel (route subtitle, rides/distance/time stats with SF symbols) framed by a thin bordered rectangle.
+- Dashboard map auto-fits either all saved trips or the currently selected trip, applies a northward offset so routes stay visible above the sheet, and exposes Apple's center-on-location control.
+- Home sheet trip rows show live countdowns (with arrival/departure states), chronological sorting, auto-pruning 20 minutes after arrival, and offer a Past Rides sheet via the profile icon.
+- TripDetailView sports a "Sync Status" button that runs an InfoFer session handshake, scrapes the live delay/platform text, updates the status/Platform labels inline, and logs the fetch result.
+- InfoFerScraper mirrors the site's form submission: it loads the shell page with stored cookies, mirrors every hidden input (including confirmation/reCAPTCHA fields), reposts to `/Trains/TrainsResult`, and parses the returned HTML.
+- Sync button supports a long-press “forget delay/platform” gesture, and cleared values are persisted/propagate back to the dashboard.

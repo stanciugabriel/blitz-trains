@@ -645,20 +645,39 @@ struct SheetContent: View {
 
 struct TripRowView: View {
     let trip: Trip
-
+    var showsCardBackground: Bool = false
 
     @State private var timing = TripRowTiming()
     @State private var derivedStops: StopPair?
     @State private var now = Date()
+    @State private var liveDelayInfo: DelayInfo?
     private let dataSource = GTFSDataSource.shared
     private let secondTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let minuteTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
+    init(trip: Trip, showsCardBackground: Bool = false) {
+        self.trip = trip
+        self.showsCardBackground = showsCardBackground
+        _liveDelayInfo = State(initialValue: LiveDelayStore.shared.info(for: trip.id))
+    }
+
     var body: some View {
         Group {
-            rowCore
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if showsCardBackground {
+                rowCore
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    )
+            } else {
+                rowCore
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .task(id: trip.id) {
             loadTiming()
@@ -670,6 +689,10 @@ struct TripRowView: View {
         .onReceive(minuteTimer) { value in
             guard shouldTickEveryMinute else { return }
             now = value
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .liveDelayInfoUpdated)) { notification in
+            guard let updatedID = notification.object as? String, updatedID == trip.id else { return }
+            liveDelayInfo = LiveDelayStore.shared.info(for: trip.id)
         }
     }
 
@@ -739,12 +762,13 @@ struct TripRowView: View {
     private func terminalTimeView(icon: String, text: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
+                .foregroundStyle(timeTint(for: text))
             Text(text)
                 .fontWeight(.semibold)
                 .monospacedDigit()
+                .foregroundStyle(timeTint(for: text))
         }
         .font(.system(size: 16, weight: .semibold, design: .rounded))
-        .foregroundStyle(timeTint(for: text))
     }
 
     private var countdownColumn: some View {
@@ -883,6 +907,10 @@ struct TripRowView: View {
         return "Departs On Time"
     }
 
+    private var hasDelay: Bool {
+        effectiveDelayMinutes > 0
+    }
+
     private var isFarOutTrip: Bool {
         guard let departure = adjustedDepartureDate else { return false }
         return departure.timeIntervalSince(now) > 24 * 60 * 60
@@ -917,7 +945,7 @@ struct TripRowView: View {
     }
 
     private var effectiveDelayMinutes: Int {
-        trip.delayMinutes ?? 0
+        liveDelayInfo?.delayMinutes ?? trip.delayMinutes ?? 0
     }
 
     private func formattedDelay(minutes: Int) -> String {
