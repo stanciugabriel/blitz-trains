@@ -1,0 +1,24 @@
+# Agent Notes
+
+## Project Vision
+- Build "Raily" – a glassmorphic, Flighty-style native iOS app tracking CFR Călători trains.
+- Fuse offline GTFS schedule data with live OCR (StationBoardScanner) for platform/delay truth.
+- Keep MapKit visible at all times, layering glass cards and sheets for content.
+
+## Key Components
+1. **Trip / TripStore**: merges offline GTFS data, live OCR platform/delay, seat + booking state, and coordinate polylines.
+2. **MainDashboardView**: map background with straight geodesic overlays, floating "My Trips" glass sheet, Flighty-style list, add-trip modal, and empty-state arrow.
+3. **TripDetailView**: detail screen with map showing every station pin + curved path, vertical timeline (TimelineRowView), metadata grid (platform hero, seat + booking editables), and "Where is my train?" progress banner.
+4. **Add Trip Modal**: Flighty-like picker w/ train-number search, Yesterday/Today/Tomorrow/Pick Date pills, and GTFS results list.
+
+## Visual + UX Requirements
+- Full-screen MapKit background.
+- Glass Flighty aesthetic: `.ultraThinMaterial` / `.systemMaterialDark`, SF Pro Rounded, white text plus safety orange / signal green accents.
+- Dashboard sheet anchored to lower 40% with "My Trips" header, + button, empty-state arrow, and operator/date/route layout.
+- Detail sheet: vertical timeline at top, metadata grid in middle, platform tile emphasized, "Where is my train?" progress + copy at bottom.
+
+## Recent Implementation Notes
+- Trip detail sheet now always shows a "Good to Know" arrival weather card fed by WeatherKit, falling back to status text when the API is unavailable and styled with a thin 20pt-corner border.
+- Travel summary row in TripDetailView keeps duration/distance inline with an overnight badge plus moon icon, while the arrival time shows a small `+1` chip when crossing midnight.
+- Good to Know area now stacks weather with mocked departure/arrival ops cards (dot.radiowaves delay label + concentric green status circles and ops copy).
+- TripDetailView ends with a "My History on This Route" panel (route subtitle, rides/distance/time stats with SF symbols) framed by a thin bordered rectangle.
