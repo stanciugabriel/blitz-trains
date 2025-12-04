@@ -85,9 +85,11 @@ struct SheetContent: View {
         }
         .onDisappear { searchTask?.cancel() }
         .sheet(isPresented: $isShowingPastSheet) {
-            PastTripsSheet(trips: sortedPastTrips) {
-                isShowingPastSheet = false
-            }
+            PastTripsSheet(
+                trips: sortedPastTrips,
+                onDismiss: { isShowingPastSheet = false },
+                onDeleteTrip: deletePastTrip
+            )
             .presentationDetents([.fraction(0.6), .large])
             .presentationDragIndicator(.visible)
         }
@@ -106,7 +108,12 @@ struct SheetContent: View {
     @ViewBuilder
     private var contentView: some View {
         if let trip = selectedTrip {
-            TripDetailSheet(trip: trip, onClose: exitDetailView)
+            TripDetailSheet(
+                trip: trip,
+                pastTrips: pastTrips,
+                onClose: exitDetailView,
+                onUpdateTrip: handleTripUpdate
+            )
         } else if isAddTripMode {
             addFlowContent
         } else {
@@ -201,7 +208,7 @@ struct SheetContent: View {
                     Button {
                         handleTrainSelection(trip)
                     } label: {
-                        TripRowView(trip: trip)
+                        TripRowView(trip: trip, displayMode: .scheduled)
                     }
                     .buttonStyle(.plain)
                 }
@@ -641,11 +648,30 @@ struct SheetContent: View {
 
         pastTrips = merged
     }
+
+    private func deletePastTrip(_ trip: Trip) {
+        pastTrips.removeAll { $0.id == trip.id }
+    }
+
+    private func handleTripUpdate(_ updatedTrip: Trip) {
+        if let index = trips.firstIndex(where: { $0.id == updatedTrip.id }) {
+            trips[index] = updatedTrip
+        }
+        if selectedTrip?.id == updatedTrip.id {
+            selectedTrip = updatedTrip
+        }
+    }
 }
 
 struct TripRowView: View {
+    enum DisplayMode {
+        case live
+        case scheduled
+    }
+
     let trip: Trip
     var showsCardBackground: Bool = false
+    var displayMode: DisplayMode = .live
 
     @State private var timing = TripRowTiming()
     @State private var derivedStops: StopPair?
@@ -655,9 +681,10 @@ struct TripRowView: View {
     private let secondTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let minuteTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
-    init(trip: Trip, showsCardBackground: Bool = false) {
+    init(trip: Trip, showsCardBackground: Bool = false, displayMode: DisplayMode = .live) {
         self.trip = trip
         self.showsCardBackground = showsCardBackground
+        self.displayMode = displayMode
         _liveDelayInfo = State(initialValue: LiveDelayStore.shared.info(for: trip.id))
     }
 
@@ -698,7 +725,7 @@ struct TripRowView: View {
 
     private var rowCore: some View {
         HStack(alignment: .center, spacing: 16) {
-            countdownColumn
+            leadingColumn
 
             VStack(alignment: .leading, spacing: 12) {
                 headerRow
@@ -771,6 +798,16 @@ struct TripRowView: View {
         .font(.system(size: 16, weight: .semibold, design: .rounded))
     }
 
+    @ViewBuilder
+    private var leadingColumn: some View {
+        switch displayMode {
+        case .live:
+            countdownColumn
+        case .scheduled:
+            scheduledColumn
+        }
+    }
+
     private var countdownColumn: some View {
         let countdown = countdownTexts
         let subtitle: String
@@ -815,6 +852,18 @@ struct TripRowView: View {
                 .frame(maxWidth: .infinity)
         }
         .padding(.vertical, 4)
+        .frame(width: 78)
+    }
+
+    private var scheduledColumn: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "calendar.badge.clock")
+                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
+            Text("SCHEDULED")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
+        }
         .frame(width: 78)
     }
 
@@ -886,6 +935,7 @@ struct TripRowView: View {
     }
 
     private var statusColor: Color {
+        if displayMode == .scheduled { return .primary }
         if isFarOutTrip { return .secondary }
         let delay = effectiveDelayMinutes
         if delay > 0 { return .red }
@@ -893,6 +943,9 @@ struct TripRowView: View {
     }
 
     private var statusText: String {
+        if displayMode == .scheduled {
+            return "SCHEDULED"
+        }
         if isFarOutTrip, let departure = adjustedDepartureDate {
             return Self.longDateFormatter.string(from: departure)
         }
@@ -979,6 +1032,7 @@ struct TripRowView: View {
     }
 
     private func timeTint(for text: String) -> Color {
+        if displayMode == .scheduled { return .primary }
         if text == "--:--" { return .secondary }
         if isFarOutTrip { return .secondary }
         return effectiveDelayMinutes > 0 ? .red : .green
@@ -1107,6 +1161,7 @@ private struct StopDescriptor {
 struct PastTripsSheet: View {
     let trips: [Trip]
     var onDismiss: () -> Void
+    var onDeleteTrip: (Trip) -> Void = { _ in }
 
     var body: some View {
         NavigationStack {
@@ -1122,6 +1177,15 @@ struct PastTripsSheet: View {
                                 .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0))
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        withAnimation {
+                                            onDeleteTrip(trip)
+                                        }
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
                         }
                     }
                     .listStyle(.plain)

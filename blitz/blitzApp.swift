@@ -52,7 +52,6 @@ struct ContentView: View {
             .presentationBackgroundInteraction(.enabled)
             .presentationDragIndicator(.hidden)
             .interactiveDismissDisabled(true)
-            .padding(.bottom, 10)
         }
         .onChange(of: isAddTripMode) { _, newValue in
             DispatchQueue.main.async {
@@ -268,6 +267,9 @@ struct Trip: Identifiable, Codable, Equatable {
     let stops: [StoredStop]?
     let originSequence: Int?
     let destinationSequence: Int?
+    let seatCar: String?
+    let seatNumbers: [String]?
+    let ticketQRCode: String?
 
     init(
         id: String = UUID().uuidString,
@@ -288,7 +290,59 @@ struct Trip: Identifiable, Codable, Equatable {
         detailDistance: String? = nil,
         stops: [StoredStop]? = nil,
         originSequence: Int? = nil,
-        destinationSequence: Int? = nil
+        destinationSequence: Int? = nil,
+        seatCar: String? = nil,
+        seatNumbers: [String]? = nil
+    ) {
+        self.init(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            agencyId: agencyId,
+            detailDate: detailDate,
+            detailRoute: detailRoute,
+            gtfsTripId: gtfsTripId,
+            travelDate: travelDate,
+            originStopId: originStopId,
+            originName: originName,
+            destinationStopId: destinationStopId,
+            destinationName: destinationName,
+            originPlatform: originPlatform,
+            destinationPlatform: destinationPlatform,
+            delayMinutes: delayMinutes,
+            detailDistance: detailDistance,
+            stops: stops,
+            originSequence: originSequence,
+            destinationSequence: destinationSequence,
+            seatCar: seatCar,
+            seatNumbers: seatNumbers,
+            ticketQRCode: nil
+        )
+    }
+
+    init(
+        id: String = UUID().uuidString,
+        title: String,
+        subtitle: String,
+        agencyId: String? = nil,
+        detailDate: String? = nil,
+        detailRoute: String? = nil,
+        gtfsTripId: String? = nil,
+        travelDate: Date? = nil,
+        originStopId: String? = nil,
+        originName: String? = nil,
+        destinationStopId: String? = nil,
+        destinationName: String? = nil,
+        originPlatform: String? = nil,
+        destinationPlatform: String? = nil,
+        delayMinutes: Int? = nil,
+        detailDistance: String? = nil,
+        stops: [StoredStop]? = nil,
+        originSequence: Int? = nil,
+        destinationSequence: Int? = nil,
+        seatCar: String? = nil,
+        seatNumbers: [String]? = nil,
+        ticketQRCode: String?
     ) {
         self.id = id
         self.title = title
@@ -309,6 +363,9 @@ struct Trip: Identifiable, Codable, Equatable {
         self.stops = stops
         self.originSequence = originSequence
         self.destinationSequence = destinationSequence
+        self.seatCar = seatCar
+        self.seatNumbers = seatNumbers
+        self.ticketQRCode = ticketQRCode
     }
 }
 
@@ -318,9 +375,151 @@ struct StoredStop: Identifiable, Codable, Equatable {
     let latitude: Double
     let longitude: Double
     let sequence: Int
+    var arrivalDelayMinutes: Int?
+    var departureDelayMinutes: Int?
+
+    init(
+        id: String,
+        name: String,
+        latitude: Double,
+        longitude: Double,
+        sequence: Int,
+        arrivalDelayMinutes: Int? = nil,
+        departureDelayMinutes: Int? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.latitude = latitude
+        self.longitude = longitude
+        self.sequence = sequence
+        self.arrivalDelayMinutes = arrivalDelayMinutes
+        self.departureDelayMinutes = departureDelayMinutes
+    }
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+extension Trip {
+    func updatingSeatInfo(car: String?, seats: [String]?) -> Trip {
+        Trip(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            agencyId: agencyId,
+            detailDate: detailDate,
+            detailRoute: detailRoute,
+            gtfsTripId: gtfsTripId,
+            travelDate: travelDate,
+            originStopId: originStopId,
+            originName: originName,
+            destinationStopId: destinationStopId,
+            destinationName: destinationName,
+            originPlatform: originPlatform,
+            destinationPlatform: destinationPlatform,
+            delayMinutes: delayMinutes,
+            detailDistance: detailDistance,
+            stops: stops,
+            originSequence: originSequence,
+            destinationSequence: destinationSequence,
+            seatCar: car,
+            seatNumbers: seats,
+            ticketQRCode: ticketQRCode
+        )
+    }
+
+    func updatingTicketQRCode(_ code: String?) -> Trip {
+        Trip(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            agencyId: agencyId,
+            detailDate: detailDate,
+            detailRoute: detailRoute,
+            gtfsTripId: gtfsTripId,
+            travelDate: travelDate,
+            originStopId: originStopId,
+            originName: originName,
+            destinationStopId: destinationStopId,
+            destinationName: destinationName,
+            originPlatform: originPlatform,
+            destinationPlatform: destinationPlatform,
+            delayMinutes: delayMinutes,
+            detailDistance: detailDistance,
+            stops: stops,
+            originSequence: originSequence,
+            destinationSequence: destinationSequence,
+            seatCar: seatCar,
+            seatNumbers: seatNumbers,
+            ticketQRCode: code
+        )
+    }
+
+    func updatingStops(_ updatedStops: [StoredStop]) -> Trip {
+        Trip(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            agencyId: agencyId,
+            detailDate: detailDate,
+            detailRoute: detailRoute,
+            gtfsTripId: gtfsTripId,
+            travelDate: travelDate,
+            originStopId: originStopId,
+            originName: originName,
+            destinationStopId: destinationStopId,
+            destinationName: destinationName,
+            originPlatform: originPlatform,
+            destinationPlatform: destinationPlatform,
+            delayMinutes: delayMinutes,
+            detailDistance: detailDistance,
+            stops: updatedStops,
+            originSequence: originSequence,
+            destinationSequence: destinationSequence,
+            seatCar: seatCar,
+            seatNumbers: seatNumbers,
+            ticketQRCode: ticketQRCode
+        )
+    }
+
+    func updatingStopDelay(
+        for stopId: String,
+        arrivalDelayMinutes: Int?,
+        departureDelayMinutes: Int?
+    ) -> Trip {
+        guard var stops else { return self }
+        guard let index = stops.firstIndex(where: { $0.id == stopId }) else { return self }
+
+        var updatedStop = stops[index]
+        updatedStop.arrivalDelayMinutes = arrivalDelayMinutes
+        updatedStop.departureDelayMinutes = departureDelayMinutes
+        stops[index] = updatedStop
+
+        return Trip(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            agencyId: agencyId,
+            detailDate: detailDate,
+            detailRoute: detailRoute,
+            gtfsTripId: gtfsTripId,
+            travelDate: travelDate,
+            originStopId: originStopId,
+            originName: originName,
+            destinationStopId: destinationStopId,
+            destinationName: destinationName,
+            originPlatform: originPlatform,
+            destinationPlatform: destinationPlatform,
+            delayMinutes: delayMinutes,
+            detailDistance: detailDistance,
+            stops: stops,
+            originSequence: originSequence,
+            destinationSequence: destinationSequence,
+            seatCar: seatCar,
+            seatNumbers: seatNumbers,
+            ticketQRCode: ticketQRCode
+        )
     }
 }
 

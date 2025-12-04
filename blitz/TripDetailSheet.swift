@@ -1,11 +1,19 @@
 import SwiftUI
+internal import UIKit
 import CoreLocation
 import WeatherKit
 import Combine
+import CoreImage.CIFilterBuiltins
+#if canImport(VisionKit)
+import VisionKit
+internal import Vision
+#endif
 
 struct TripDetailSheet: View {
     let trip: Trip
+    let pastTrips: [Trip]
     var onClose: (() -> Void)?
+    var onUpdateTrip: ((Trip) -> Void)?
 
     @State private var timing = TripTimingSnapshot()
     @State private var destinationWeather: DestinationWeather?
@@ -16,87 +24,140 @@ struct TripDetailSheet: View {
     @State private var liveDelayInfo: DelayInfo?
     @State private var syncStatusText: String?
     @State private var shouldSkipNextSync = false
+    @State private var isPresentingSeatEditor = false
+    @State private var seatEditorCar = ""
+    @State private var seatEditorSeats = ""
+    @State private var ticketCode: String?
+    @State private var isPresentingTicketSheet = false
 
     private let dataSource = GTFSDataSource.shared
     private let secondTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let minuteTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
-    init(trip: Trip, onClose: (() -> Void)? = nil) {
+    init(
+        trip: Trip,
+        pastTrips: [Trip] = [],
+        onClose: (() -> Void)? = nil,
+        onUpdateTrip: ((Trip) -> Void)? = nil
+    ) {
         self.trip = trip
+        self.pastTrips = pastTrips
         self.onClose = onClose
+        self.onUpdateTrip = onUpdateTrip
+        _ticketCode = State(initialValue: trip.ticketQRCode)
         _liveDelayInfo = State(initialValue: LiveDelayStore.shared.info(for: trip.id))
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                syncRow
-                if let status = syncStatusText {
-                    Text(status)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Divider()
-                if hasSegmentData {
-                    VStack(alignment: .leading, spacing: 24) {
-                        TerminalInfoView(
-                            icon: "arrow.up.right.circle.fill",
-                            title: trip.originName ?? "Origin",
-                            timeText: formattedTime(adjustedDepartureDate),
-                            originalTimeText: hasActiveDelay ? formattedTime(timing.departureDate) : nil,
-                            relativeText: departureRelativeText,
-                            statusText: statusLabel,
-                            statusColor: statusColor,
-                            platformText: platformText(trip.originPlatform),
-                            isDelayed: hasActiveDelay
-                        )
-
-                        if shouldShowTravelSummaryRow {
-                            HStack(spacing: 12) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "clock.arrow.circlepath")
-                                    travelSummaryContent
-                                        .fixedSize(horizontal: true, vertical: false)
-                                }
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-
-                                Rectangle()
-                                    .fill(Color(.systemGray4))
-                                    .frame(height: 1)
-                                    .frame(maxWidth: .infinity)
+        NavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        VStack(alignment: .leading, spacing: 20) {
+                            if let status = syncStatusText {
+                                Text(status)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 4)
-                        }
+                            Divider()
+                            if hasSegmentData {
+                                VStack(alignment: .leading, spacing: 24) {
+                                    TerminalInfoView(
+                                        icon: "arrow.up.right.circle.fill",
+                                        title: trip.originName ?? "Origin",
+                                        timeText: formattedTime(adjustedDepartureDate),
+                                        originalTimeText: hasActiveDelay ? formattedTime(timing.departureDate) : nil,
+                                        relativeText: departureRelativeText,
+                                        statusText: statusLabel,
+                                        statusColor: statusColor,
+                                        platformText: platformText(trip.originPlatform),
+                                        isDelayed: hasActiveDelay
+                                    )
 
-                        TerminalInfoView(
-                            icon: "arrow.down.right.circle.fill",
-                            title: trip.destinationName ?? "Destination",
-                            timeText: formattedTime(adjustedArrivalDate),
-                            originalTimeText: hasActiveDelay ? formattedTime(timing.arrivalDate) : nil,
-                            relativeText: arrivalRelativeText,
-                            statusText: statusLabel,
-                            statusColor: statusColor,
-                            platformText: platformText(trip.destinationPlatform),
-                            showsNextDayBadge: isOvernightTrip,
-                            isDelayed: hasActiveDelay
-                        )
-                        goodToKnowSection
-                        historySection
+                                    if shouldShowTravelSummaryRow {
+                                        HStack(spacing: 12) {
+                                            HStack(spacing: 8) {
+                                                Image(systemName: "clock.arrow.circlepath")
+                                                travelSummaryContent
+                                                    .fixedSize(horizontal: true, vertical: false)
+                                            }
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+
+                                            Rectangle()
+                                                .fill(Color(.systemGray4))
+                                                .frame(height: 1)
+                                                .frame(maxWidth: .infinity)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 4)
+                                    }
+
+                                    TerminalInfoView(
+                                        icon: "arrow.down.right.circle.fill",
+                                        title: trip.destinationName ?? "Destination",
+                                        timeText: formattedTime(adjustedArrivalDate),
+                                        originalTimeText: hasActiveDelay ? formattedTime(timing.arrivalDate) : nil,
+                                        relativeText: arrivalRelativeText,
+                                        statusText: statusLabel,
+                                        statusColor: statusColor,
+                                        platformText: platformText(trip.destinationPlatform),
+                                        showsNextDayBadge: isOvernightTrip,
+                                        isDelayed: hasActiveDelay
+                                    )
+                                    seatInfoGrid
+                                    goodToKnowSection
+                                    historySection
+                                }
+                            } else {
+                                Text("Schedule information unavailable for this trip.")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+                    } header: {
+                        header
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal)
+                            .padding(.vertical, 12)
+                            .background(Color.white)
                     }
-                } else {
-                    Text("Schedule information unavailable for this trip.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                }
+                .padding(.bottom, 40)
+            }
+            .scrollIndicators(.hidden)
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
+                Button(action: {
+                    if shouldSkipNextSync {
+                        shouldSkipNextSync = false
+                        return
+                    }
+                    syncDelay()
+                }) {
+                    Label("Sync", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
+                }
+                .simultaneousGesture(LongPressGesture().onEnded { _ in
+                    shouldSkipNextSync = true
+                    forgetDelay()
+                })
+                .disabled(isSyncingDelay)
+            }
+
+            ToolbarItem(placement: .bottomBar) {
+                Button(action: openTicketSheet) {
+                    Label("Ticket", systemImage: "qrcode")
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding()
-            .padding(.bottom, 40)
         }
-        .scrollIndicators(.hidden)
         .task(id: trip.id) {
             loadTiming()
             await loadDestinationWeather()
@@ -108,6 +169,27 @@ struct TripDetailSheet: View {
         .onReceive(minuteTimer) { value in
             guard shouldTickEveryMinute else { return }
             now = value
+        }
+        .sheet(isPresented: $isPresentingSeatEditor) {
+            SeatEditorSheet(
+                carText: $seatEditorCar,
+                seatsText: $seatEditorSeats,
+                onSave: saveSeatEditor,
+                onCancel: { isPresentingSeatEditor = false }
+            )
+        }
+        .sheet(isPresented: $isPresentingTicketSheet) {
+            TicketQRSheet(
+                code: $ticketCode,
+                onScan: handleTicketScan,
+                onDismiss: { isPresentingTicketSheet = false }
+            )
+        }
+        .onChange(of: trip.ticketQRCode ?? "") { _ in
+            ticketCode = trip.ticketQRCode
+        }
+        .onChange(of: trip.id) { _ in
+            ticketCode = trip.ticketQRCode
         }
     }
 
@@ -135,36 +217,6 @@ struct TripDetailSheet: View {
             }
             .buttonStyle(.plain)
         }
-    }
-
-    private var syncRow: some View {
-        HStack(spacing: 12) {
-            if isSyncingDelay {
-                ProgressView()
-                    .progressViewStyle(.circular)
-            } else {
-                Button("Sync Status") {
-                    if shouldSkipNextSync {
-                        shouldSkipNextSync = false
-                        return
-                    }
-                    syncDelay()
-                }
-                .simultaneousGesture(LongPressGesture().onEnded { _ in
-                    shouldSkipNextSync = true
-                    forgetDelay()
-                })
-                .buttonStyle(.borderedProminent)
-            }
-
-            if let summary = syncResultSummary {
-                Text(summary)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var hasSegmentData: Bool {
@@ -288,16 +340,8 @@ struct TripDetailSheet: View {
         if let stored = trip.detailDistance, !stored.isEmpty {
             return stored
         }
-        guard let ordered = trip.stops?.sorted(by: { $0.sequence < $1.sequence }), ordered.count > 1 else { return nil }
-        var totalMeters: CLLocationDistance = 0
-        for pair in zip(ordered, ordered.dropFirst()) {
-            let start = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
-            let end = CLLocation(latitude: pair.1.latitude, longitude: pair.1.longitude)
-            totalMeters += start.distance(from: end)
-        }
-        guard totalMeters > 1000 else { return nil }
-        let kilometers = totalMeters / 1000
-        return String(format: "%.0f km", kilometers)
+        guard let kilometers = distanceFromStops(for: trip) else { return nil }
+        return formattedDistanceText(for: kilometers)
     }
 
     private func platformText(_ value: String?) -> String {
@@ -351,13 +395,20 @@ struct TripDetailSheet: View {
     }
 
     private func loadTiming() {
+        guard let snapshot = timingSnapshot(for: trip) else {
+            timing = TripTimingSnapshot()
+            return
+        }
+        timing = snapshot
+    }
+
+    private func timingSnapshot(for trip: Trip) -> TripTimingSnapshot? {
         guard
             let travelDate = trip.travelDate,
             let originId = trip.originStopId,
             let destinationId = trip.destinationStopId
         else {
-            timing = TripTimingSnapshot()
-            return
+            return nil
         }
 
         let base = Calendar.current.startOfDay(for: travelDate)
@@ -368,7 +419,7 @@ struct TripDetailSheet: View {
         let departure = originSchedule?.departureDate(on: base) ?? originSchedule?.arrivalDate(on: base)
         let arrival = destinationSchedule?.arrivalDate(on: base) ?? destinationSchedule?.departureDate(on: base)
 
-        timing = TripTimingSnapshot(departureDate: departure, arrivalDate: arrival)
+        return TripTimingSnapshot(departureDate: departure, arrivalDate: arrival)
     }
 
     private func loadDestinationWeather() async {
@@ -450,6 +501,23 @@ struct TripDetailSheet: View {
         return formatter
     }()
 
+    private static let distanceFormatter: MeasurementFormatter = {
+        let formatter = MeasurementFormatter()
+        formatter.unitOptions = .providedUnit
+        formatter.unitStyle = .medium
+        formatter.numberFormatter.maximumFractionDigits = 0
+        formatter.numberFormatter.usesGroupingSeparator = true
+        return formatter
+    }()
+
+    private static let totalDurationFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.day, .hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        formatter.zeroFormattingBehavior = [.dropLeading, .dropTrailing]
+        return formatter
+    }()
+
     private enum TerminalEventType {
         case departure
         case arrival
@@ -469,7 +537,7 @@ struct TripDetailSheet: View {
         }
     }
 }
-
+    
 // MARK: - Sync Helpers
 
 extension TripDetailSheet {
@@ -503,6 +571,7 @@ extension TripDetailSheet {
             await MainActor.run {
                 liveDelayInfo = info
                 LiveDelayStore.shared.save(info: info, for: trip.id)
+                applyStationDelays(from: info)
                 isSyncingDelay = false
                 syncStatusText = "Synced at \(Self.timeFormatter.string(from: Date()))"
             }
@@ -530,25 +599,67 @@ extension TripDetailSheet {
 }
 
 private extension TripDetailSheet {
+    func applyStationDelays(from info: DelayInfo) {
+        guard !info.stationDelays.isEmpty else { return }
+        guard let storedStops = trip.stops, !storedStops.isEmpty else { return }
+
+        var lookup: [String: StationDelay] = [:]
+        for detail in info.stationDelays {
+            let key = normalizeStationName(detail.stationName)
+            lookup[key] = detail
+        }
+
+        var updatedStops = storedStops
+        var hasChanges = false
+
+        for index in updatedStops.indices {
+            let key = normalizeStationName(updatedStops[index].name)
+            guard let detail = lookup[key] else { continue }
+
+            if updatedStops[index].arrivalDelayMinutes != detail.arrivalDelayMinutes {
+                updatedStops[index].arrivalDelayMinutes = detail.arrivalDelayMinutes
+                hasChanges = true
+            }
+
+            if updatedStops[index].departureDelayMinutes != detail.departureDelayMinutes {
+                updatedStops[index].departureDelayMinutes = detail.departureDelayMinutes
+                hasChanges = true
+            }
+        }
+
+        guard hasChanges, let onUpdateTrip else { return }
+        let updatedTrip = trip.updatingStops(updatedStops)
+        onUpdateTrip(updatedTrip)
+    }
+
+    func normalizeStationName(_ value: String) -> String {
+        value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private extension TripDetailSheet {
     @ViewBuilder
     var goodToKnowSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Good to Know")
-                .font(.headline)
+                .font(.system(size: 20, weight: .semibold))
 
             weatherCard
-            stationStatusCard(
-                title: "\(originStationName) Departures",
-                delayText: departureDelayText,
-                operationsTitle: "Normal Operations",
-                operationsSubtitle: "No irregular traffic"
-            )
-            stationStatusCard(
-                title: "\(destinationStationName) Arrivals",
-                delayText: arrivalDelayText,
-                operationsTitle: "Smooth Arrivals",
-                operationsSubtitle: "No irregular traffic"
-            )
+//            stationStatusCard(
+//                title: "\(originStationName) Departures",
+//                delayText: departureDelayText,
+//                operationsTitle: "Normal Operations",
+//                operationsSubtitle: "No irregular traffic"
+//            )
+//            stationStatusCard(
+//                title: "\(destinationStationName) Arrivals",
+//                delayText: arrivalDelayText,
+//                operationsTitle: "Smooth Arrivals",
+//                operationsSubtitle: "No irregular traffic"
+//            )
         }
     }
 
@@ -578,26 +689,24 @@ private extension TripDetailSheet {
     private var weatherCard: some View {
         HStack(spacing: 16) {
             Image(systemName: weatherIconName)
-                .font(.system(size: 32))
+                .font(.system(size: 20))
                 .symbolRenderingMode(destinationWeather == nil ? .monochrome : .multicolor)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Arrival Weather")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Text(weatherDetailText)
-                    .font(.title3)
+                    .font(.subheadline)
                     .fontWeight(.semibold)
             }
 
             Spacer(minLength: 0)
         }
         .padding()
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
         )
     }
 
@@ -657,7 +766,7 @@ private extension TripDetailSheet {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .stroke(Color.white.opacity(0.3), lineWidth: 1)
         )
     }
@@ -666,37 +775,40 @@ private extension TripDetailSheet {
 private extension TripDetailSheet {
     @ViewBuilder
     var historySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let metrics = computeRouteHistoryMetrics()
+
+        VStack(alignment: .leading, spacing: 5) {
             Text("My History on This Route")
-                .font(.headline)
+                .font(.system(size: 20, weight: .semibold))
             Text(historyRouteSubtitle)
-                .font(.subheadline)
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 16) {
+            HStack(spacing: 60) {
                 historyStatCard(
                     title: "Rides",
                     icon: "train.side.front.car",
-                    value: "\(historyRideCount)"
+                    value: "\(metrics.rideCount)"
                 )
                 historyStatCard(
                     title: "Distance",
                     icon: "arrow.left.and.right.circle.fill",
-                    value: historyDistanceText,
+                    value: formattedHistoryDistance(from: metrics.totalDistance),
                     iconRotation: 45
                 )
                 historyStatCard(
                     title: "Ride Time",
                     icon: "clock.fill",
-                    value: historyDurationText
+                    value: formattedHistoryDuration(from: metrics.totalDuration)
                 )
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding()
-        .background(Color.clear)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
         )
     }
 
@@ -704,28 +816,210 @@ private extension TripDetailSheet {
         "\(originStationName) → \(destinationStationName)"
     }
 
-    private var historyRideCount: Int {
-        max(1, (trip.title.count % 5) + 3)
+    private var seatInfoGrid: some View {
+        HStack(spacing: 16) {
+            Button(action: openSeatEditor) {
+                SeatInfoCard(
+                    icon: "train.side.rear.car",
+                    title: "Coach",
+                    value: seatCarText
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button(action: openSeatEditor) {
+                SeatInfoCard(
+                    icon: "airplaneseat",
+                    title: "Seats",
+                    value: seatNumbersText
+                )
+            }
+            .buttonStyle(.plain)
+        }
     }
 
-    private var historyDistanceText: String {
-        effectiveDistanceText ?? "820 km"
+    private var seatCarText: String {
+        if let car = trip.seatCar, !car.trimmingCharacters(in: .whitespaces).isEmpty {
+            return car
+        }
+        return "Add coach"
     }
 
-    private var historyDurationText: String {
-        guard let duration = timing.duration, duration > 0 else { return "12h 30m" }
-        let hours = Int(duration) / 3600
-        let minutes = (Int(duration) % 3600) / 60
-        if hours >= 24 {
-            let days = hours / 24
-            let remainingHours = hours % 24
-            return "\(days)d \(remainingHours)h"
+    private var seatNumbersText: String {
+        if let seats = trip.seatNumbers, !seats.isEmpty {
+            return seats.joined(separator: ", ")
         }
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
+        return "Add seats"
+    }
+
+    private func openSeatEditor() {
+        seatEditorCar = trip.seatCar ?? ""
+        seatEditorSeats = trip.seatNumbers?.joined(separator: ", ") ?? ""
+        isPresentingSeatEditor = true
+    }
+
+    private func saveSeatEditor() {
+        let trimmedCar = seatEditorCar.trimmingCharacters(in: .whitespacesAndNewlines)
+        let carValue = trimmedCar.isEmpty ? nil : trimmedCar
+
+        let seatTokens = seatEditorSeats
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let seatsValue = seatTokens.isEmpty ? nil : seatTokens
+
+        guard let onUpdateTrip else {
+            isPresentingSeatEditor = false
+            return
         }
-        let seconds = Int(duration) % 60
-        return "\(minutes)m \(seconds)s"
+
+        let updatedTrip = trip.updatingSeatInfo(car: carValue, seats: seatsValue)
+        onUpdateTrip(updatedTrip)
+        isPresentingSeatEditor = false
+    }
+
+    private func openTicketSheet() {
+        ticketCode = trip.ticketQRCode
+        isPresentingTicketSheet = true
+    }
+
+    private func handleTicketScan(_ payload: String?) {
+        ticketCode = payload
+        guard let onUpdateTrip else { return }
+        let updatedTrip = trip.updatingTicketQRCode(payload)
+        onUpdateTrip(updatedTrip)
+    }
+
+    private func formattedHistoryDistance(from kilometers: Double?) -> String {
+        guard let kilometers else { return "0km" }
+        return formattedDistanceText(for: kilometers)
+    }
+
+    private func formattedHistoryDuration(from duration: TimeInterval?) -> String {
+        guard let duration, duration > 0 else { return "0m" }
+        return Self.totalDurationFormatter.string(from: duration) ?? "0m"
+    }
+
+    private func formattedDistanceText(for kilometers: Double) -> String {
+        let measurement = Measurement(value: kilometers, unit: UnitLength.kilometers)
+        return Self.distanceFormatter.string(from: measurement)
+    }
+
+    private func computeRouteHistoryMetrics() -> RouteHistoryMetrics {
+        var rideCount = 0
+        var totalDistance: Double = 0
+        var totalDuration: TimeInterval = 0
+        var hasDistance = false
+        var hasDuration = false
+
+        for historyTrip in pastTrips {
+            guard isSameRoute(trip, historyTrip) else { continue }
+            rideCount += 1
+
+            if let distance = distanceInKilometers(for: historyTrip) {
+                totalDistance += distance
+                hasDistance = true
+            }
+
+            if let duration = travelDuration(for: historyTrip) {
+                totalDuration += duration
+                hasDuration = true
+            }
+        }
+
+        return RouteHistoryMetrics(
+            rideCount: rideCount,
+            totalDistance: hasDistance ? totalDistance : nil,
+            totalDuration: hasDuration ? totalDuration : nil
+        )
+    }
+
+    private func distanceInKilometers(for trip: Trip) -> Double? {
+        if let stored = trip.detailDistance, let parsed = parsedDistanceKilometers(from: stored) {
+            return parsed
+        }
+
+        return distanceFromStops(for: trip)
+    }
+
+    private func distanceFromStops(for trip: Trip) -> Double? {
+        guard let orderedStops = trip.stops?.sorted(by: { $0.sequence < $1.sequence }), orderedStops.count > 1 else {
+            return nil
+        }
+
+        var totalMeters: CLLocationDistance = 0
+        for pair in zip(orderedStops, orderedStops.dropFirst()) {
+            let start = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
+            let end = CLLocation(latitude: pair.1.latitude, longitude: pair.1.longitude)
+            totalMeters += start.distance(from: end)
+        }
+
+        guard totalMeters > 1000 else { return nil }
+        let kilometers = totalMeters / 1000
+        return kilometers > 0 ? kilometers : nil
+    }
+
+    private func parsedDistanceKilometers(from value: String) -> Double? {
+        let sanitized = value.replacingOccurrences(of: ",", with: ".")
+        let scanner = Scanner(string: sanitized)
+        scanner.locale = Locale(identifier: "en_US_POSIX")
+        scanner.charactersToBeSkipped = .whitespaces
+        _ = scanner.scanUpToCharacters(from: CharacterSet(charactersIn: "0123456789.-"))
+        return scanner.scanDouble()
+    }
+
+    private func travelDuration(for trip: Trip) -> TimeInterval? {
+        guard let snapshot = timingSnapshot(for: trip),
+              let departure = snapshot.departureDate,
+              let arrival = snapshot.arrivalDate else { return nil }
+
+        let delaySeconds = TimeInterval((trip.delayMinutes ?? 0) * 60)
+        return arrival.addingTimeInterval(delaySeconds).timeIntervalSince(departure)
+    }
+
+    private func isSameRoute(_ lhs: Trip, _ rhs: Trip) -> Bool {
+        if let lhsOrigin = lhs.originStopId,
+           let rhsOrigin = rhs.originStopId,
+           let lhsDestination = lhs.destinationStopId,
+           let rhsDestination = rhs.destinationStopId,
+           lhsOrigin == rhsOrigin,
+           lhsDestination == rhsDestination {
+            return true
+        }
+
+        if let lhsOriginName = normalizedText(lhs.originName),
+           let rhsOriginName = normalizedText(rhs.originName),
+           let lhsDestinationName = normalizedText(lhs.destinationName),
+           let rhsDestinationName = normalizedText(rhs.destinationName),
+           lhsOriginName == rhsOriginName,
+           lhsDestinationName == rhsDestinationName {
+            return true
+        }
+
+        if let lhsRoute = normalizedRouteDescriptor(for: lhs),
+           let rhsRoute = normalizedRouteDescriptor(for: rhs),
+           lhsRoute == rhsRoute {
+            return true
+        }
+
+        return false
+    }
+
+    private func normalizedRouteDescriptor(for trip: Trip) -> String? {
+        if let route = normalizedText(trip.detailRoute) {
+            return route
+        }
+        let components = trip.subtitle.split(separator: "·", maxSplits: 1, omittingEmptySubsequences: true)
+        if let first = components.first {
+            return normalizedText(String(first))
+        }
+        return nil
+    }
+
+    private func normalizedText(_ value: String?) -> String? {
+        guard let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        let folded = raw.folding(options: [.diacriticInsensitive], locale: Locale.current)
+        return folded.lowercased()
     }
 
     private func historyStatCard(
@@ -747,15 +1041,14 @@ private extension TripDetailSheet {
                     .fontWeight(.semibold)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.3), lineWidth: 1)
-        )
+        .padding(.vertical, 12)
     }
+}
+
+private struct RouteHistoryMetrics {
+    let rideCount: Int
+    let totalDistance: Double?
+    let totalDuration: TimeInterval?
 }
 
 private struct TripTimingSnapshot {
@@ -861,6 +1154,267 @@ private struct TerminalInfoView: View {
             }
             .font(.subheadline)
         }
+    }
+}
+
+private struct SeatInfoCard: View {
+    let icon: String
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: icon)
+                .font(.headline)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title.uppercased())
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .overlay(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
+        )
+    }
+}
+
+private struct SeatEditorSheet: View {
+    @Binding var carText: String
+    @Binding var seatsText: String
+    var onSave: () -> Void
+    var onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Coach") {
+                    TextField("e.g. 12", text: $carText)
+                        .textInputAutocapitalization(.characters)
+                }
+
+                Section("Seats") {
+                    TextField("e.g. 22A, 22B", text: $seatsText)
+                        .textInputAutocapitalization(.never)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemBackground))
+            .navigationTitle("Seat Details")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(action: onSave) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title2)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+    }
+}
+
+private struct TicketQRSheet: View {
+    @Binding var code: String?
+    var onScan: (String?) -> Void
+    var onDismiss: () -> Void
+
+    @State private var isScanning: Bool
+
+    init(code: Binding<String?>, onScan: @escaping (String?) -> Void, onDismiss: @escaping () -> Void) {
+        self._code = code
+        self.onScan = onScan
+        self.onDismiss = onDismiss
+        _isScanning = State(initialValue: code.wrappedValue == nil)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                if isScanning {
+                    ScannerHostView(onScan: handleScan)
+                        .frame(maxWidth: .infinity, maxHeight: 320)
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(Color(.systemGray4), lineWidth: 1)
+                        )
+                    Text("Point your camera at the QR code to save it for easy access.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                } else if let value = code {
+                    QRCodeDisplayView(code: value)
+                    Button("Scan Again") {
+                        isScanning = true
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    Text("No QR code available.")
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Ticket")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done", action: onDismiss)
+                }
+            }
+        }
+    }
+
+    private func handleScan(_ payload: String) {
+        code = payload
+        isScanning = false
+        onScan(payload)
+    }
+}
+
+private struct QRCodeDisplayView: View {
+    let code: String
+
+    var body: some View {
+        VStack(spacing: 16) {
+            if let image = QRCodeImageGenerator.makeImage(from: code) {
+                Image(uiImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 240, height: 240)
+                    .padding()
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                    )
+            } else {
+                Image(systemName: "qrcode")
+                    .font(.system(size: 80))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(code)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+}
+
+private struct ScannerHostView: View {
+    var onScan: (String) -> Void
+
+    var body: some View {
+        Group {
+#if canImport(VisionKit)
+            if #available(iOS 16.0, *), QRScannerView.isAvailable {
+                QRScannerView(onScan: onScan)
+            } else {
+                ScannerUnavailableView()
+            }
+#else
+            ScannerUnavailableView()
+#endif
+        }
+    }
+}
+
+private struct ScannerUnavailableView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "camera.viewfinder")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+            Text("Scanner unavailable on this device.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.secondarySystemBackground))
+    }
+}
+
+#if canImport(VisionKit)
+@available(iOS 16.0, *)
+private struct QRScannerView: UIViewControllerRepresentable {
+    var onScan: (String) -> Void
+
+    static var isAvailable: Bool {
+        DataScannerViewController.isSupported && DataScannerViewController.isAvailable
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onScan: onScan)
+    }
+
+    func makeUIViewController(context: Context) -> DataScannerViewController {
+        let controller = DataScannerViewController(
+            recognizedDataTypes: [.barcode(symbologies: [.QR])],
+            qualityLevel: .balanced,
+            recognizesMultipleItems: false,
+            isHighFrameRateTrackingEnabled: true,
+            isHighlightingEnabled: true
+        )
+        controller.delegate = context.coordinator
+        DispatchQueue.main.async {
+            try? controller.startScanning()
+        }
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: DataScannerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, DataScannerViewControllerDelegate {
+        private let onScan: (String) -> Void
+
+        init(onScan: @escaping (String) -> Void) {
+            self.onScan = onScan
+        }
+
+        func dataScanner(
+            _ dataScanner: DataScannerViewController,
+            didAdd addedItems: [RecognizedItem],
+            allItems: [RecognizedItem]
+        ) {
+            for item in addedItems {
+                if case let .barcode(barcode) = item, let payload = barcode.payloadStringValue {
+                    onScan(payload)
+                    try? dataScanner.stopScanning()
+                    break
+                }
+            }
+        }
+    }
+}
+#endif
+
+private enum QRCodeImageGenerator {
+    static func makeImage(from string: String) -> UIImage? {
+        let data = Data(string.utf8)
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = data
+        filter.correctionLevel = "M"
+        guard let outputImage = filter.outputImage else { return nil }
+        let transform = CGAffineTransform(scaleX: 10, y: 10)
+        let scaledImage = outputImage.transformed(by: transform)
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else { return nil }
+        return UIImage(cgImage: cgImage)
     }
 }
 
