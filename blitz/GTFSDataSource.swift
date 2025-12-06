@@ -1,7 +1,7 @@
 import Foundation
 import SQLite3
 
-struct GTFSStop: Identifiable, Equatable {
+struct ScheduleStop: Identifiable, Equatable {
     let id: String
     let name: String
     let sequence: Int
@@ -9,7 +9,7 @@ struct GTFSStop: Identifiable, Equatable {
     let longitude: Double
 }
 
-extension GTFSDataSource.GTFSStopSchedule {
+extension TrainScheduleDataSource.StopSchedule {
     func arrivalDate(on baseDate: Date) -> Date? {
         guard let arrivalSeconds else { return nil }
         return baseDate.addingTimeInterval(TimeInterval(arrivalSeconds))
@@ -21,8 +21,8 @@ extension GTFSDataSource.GTFSStopSchedule {
     }
 }
 
-final class GTFSDataSource {
-    static let shared = GTFSDataSource()
+final class TrainScheduleDataSource {
+    static let shared = TrainScheduleDataSource()
 
     private var database: OpaquePointer?
     private let searchLimit = 25
@@ -41,14 +41,14 @@ final class GTFSDataSource {
 
         let fetchLimit = Int32(limit ?? searchLimit)
         let sql = """
-        SELECT trips.trip_id,
-               COALESCE(trips.trip_short_name, trips.trip_id) AS train_code,
-               COALESCE(routes.route_long_name, routes.route_short_name, '') AS route_name,
-               routes.agency_id
-        FROM trips
-        LEFT JOIN routes ON trips.route_id = routes.route_id
-        WHERE trips.trip_id LIKE ? OR routes.route_long_name LIKE ?
-        ORDER BY trips.trip_id ASC
+        SELECT DISTINCT train_id, category, operator, total_km
+        FROM trains
+        WHERE train_id LIKE ?
+           OR train_id IN (
+               SELECT train_id FROM route_segments
+               WHERE station_origin_name LIKE ? OR station_dest_name LIKE ?
+           )
+        ORDER BY train_id ASC
         LIMIT ?
         """
 
@@ -63,49 +63,42 @@ final class GTFSDataSource {
         let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
         sqlite3_bind_text(statement, 1, pattern, -1, SQLITE_TRANSIENT)
         sqlite3_bind_text(statement, 2, pattern, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_int(statement, 3, fetchLimit)
+        sqlite3_bind_text(statement, 3, pattern, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int(statement, 4, fetchLimit)
 
         var trips: [Trip] = []
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let tripCString = sqlite3_column_text(statement, 0) else { continue }
             let tripID = String(cString: tripCString)
-            let trainCode: String
-            if let codeCString = sqlite3_column_text(statement, 1) {
-                trainCode = String(cString: codeCString).trimmingCharacters(in: .whitespacesAndNewlines)
+            let category = sqlite3_column_text(statement, 1).map { String(cString: $0) } ?? ""
+            let operatorCode = sqlite3_column_text(statement, 2).map { String(cString: $0) }
+            let totalKM = sqlite3_column_double(statement, 3)
+
+            let (originName, destinationName) = routeEndpoints(for: tripID)
+            let routeText: String
+            if let originName, let destinationName {
+                routeText = "\(originName) → \(destinationName)"
             } else {
-                trainCode = ""
-            }
-            let routeName: String
-            if let routeCString = sqlite3_column_text(statement, 2) {
-                routeName = String(cString: routeCString).trimmingCharacters(in: .whitespacesAndNewlines)
-            } else {
-                routeName = ""
-            }
-            let agencyId: String?
-            if let agencyCString = sqlite3_column_text(statement, 3) {
-                let raw = String(cString: agencyCString).trimmingCharacters(in: .whitespacesAndNewlines)
-                agencyId = raw.isEmpty ? nil : raw
-            } else {
-                agencyId = nil
+                routeText = "Route information unavailable"
             }
 
-            let subtitle = routeName.isEmpty ? "Route info unavailable" : routeName
-            let displayTitle: String
-            if trainCode.isEmpty {
-                displayTitle = tripID
-            } else if trainCode.contains(tripID) {
-                displayTitle = trainCode
+            let displayTitle = category.isEmpty ? tripID : "\(category) \(tripID)"
+            let detailDistance: String?
+            if totalKM > 0 {
+                detailDistance = formattedDistance(from: totalKM)
             } else {
-                displayTitle = "\(trainCode) \(tripID)"
+                detailDistance = nil
             }
+
             trips.append(
                 Trip(
                     id: tripID,
                     title: displayTitle,
-                    subtitle: subtitle,
-                    agencyId: agencyId,
-                    detailRoute: subtitle,
-                    gtfsTripId: tripID
+                    subtitle: routeText,
+                    agencyId: operatorCode,
+                    detailRoute: routeText,
+                    gtfsTripId: tripID,
+                    detailDistance: detailDistance
                 )
             )
         }
@@ -113,14 +106,23 @@ final class GTFSDataSource {
         return trips
     }
 
-    func stops(for tripId: String) -> [GTFSStop] {
+    func stops(for tripId: String) -> [ScheduleStop] {
         guard let database else { return [] }
         let sql = """
-        SELECT stops.stop_id, stops.stop_name, stop_times.stop_sequence, stops.stop_lat, stops.stop_lon
-        FROM stop_times
-        INNER JOIN stops ON stops.stop_id = stop_times.stop_id
-        WHERE stop_times.trip_id = ?
-        ORDER BY stop_times.stop_sequence ASC
+        SELECT rs.sequence,
+               rs.station_origin_code,
+               rs.station_origin_name,
+               so.stop_lat,
+               so.stop_lon,
+               rs.station_dest_code,
+               rs.station_dest_name,
+               sd.stop_lat,
+               sd.stop_lon
+        FROM route_segments rs
+        LEFT JOIN stations so ON so.stop_id = rs.station_origin_code
+        LEFT JOIN stations sd ON sd.stop_id = rs.station_dest_code
+        WHERE rs.train_id = ?
+        ORDER BY rs.sequence ASC
         """
 
         var statement: OpaquePointer?
@@ -133,60 +135,80 @@ final class GTFSDataSource {
         let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
         sqlite3_bind_text(statement, 1, tripId, -1, SQLITE_TRANSIENT)
 
-        var stops: [GTFSStop] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
-            guard
-                let stopIdC = sqlite3_column_text(statement, 0),
-                let stopNameC = sqlite3_column_text(statement, 1)
-            else { continue }
+        var orderedStops: [ScheduleStop] = []
+        var seen: Set<String> = []
+        var sequenceCounter = 1
 
-            let sequence = Int(sqlite3_column_int(statement, 2))
-            let latitude = sqlite3_column_double(statement, 3)
-            let longitude = sqlite3_column_double(statement, 4)
-            let stop = GTFSStop(
-                id: String(cString: stopIdC),
-                name: String(cString: stopNameC),
-                sequence: sequence,
-                latitude: latitude,
-                longitude: longitude
-            )
-            stops.append(stop)
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let originCode = sqlite3_column_text(statement, 1).map { String(cString: $0) }
+            let originName = sqlite3_column_text(statement, 2).map { String(cString: $0) }
+            let originLat = sqlite3_column_double(statement, 3)
+            let originLon = sqlite3_column_double(statement, 4)
+            let destinationCode = sqlite3_column_text(statement, 5).map { String(cString: $0) }
+            let destinationName = sqlite3_column_text(statement, 6).map { String(cString: $0) }
+            let destinationLat = sqlite3_column_double(statement, 7)
+            let destinationLon = sqlite3_column_double(statement, 8)
+
+            if let originCode, let originName, !seen.contains(originCode) {
+                orderedStops.append(
+                    ScheduleStop(
+                        id: originCode,
+                        name: originName,
+                        sequence: sequenceCounter,
+                        latitude: originLat,
+                        longitude: originLon
+                    )
+                )
+                seen.insert(originCode)
+                sequenceCounter += 1
+            }
+
+            if let destinationCode, let destinationName, !seen.contains(destinationCode) {
+                orderedStops.append(
+                    ScheduleStop(
+                        id: destinationCode,
+                        name: destinationName,
+                        sequence: sequenceCounter,
+                        latitude: destinationLat,
+                        longitude: destinationLon
+                    )
+                )
+                seen.insert(destinationCode)
+                sequenceCounter += 1
+            }
         }
 
-        return stops
+        return orderedStops
     }
 
-    struct GTFSStopSchedule {
+    struct StopSchedule {
         let arrivalSeconds: Int?
         let departureSeconds: Int?
     }
 
-    func stopSchedule(for tripId: String, stopId: String) -> GTFSStopSchedule? {
+    func stopSchedule(for tripId: String, stopId: String) -> StopSchedule? {
         guard let database else { return nil }
-        let sql = """
-        SELECT arrival_time, departure_time
-        FROM stop_times
-        WHERE trip_id = ? AND stop_id = ?
+
+        let arrivalSQL = """
+        SELECT arrival_time_seconds
+        FROM route_segments
+        WHERE train_id = ? AND station_dest_code = ?
+        ORDER BY sequence ASC
         LIMIT 1
         """
 
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
-            logError("Failed to prepare stop schedule query")
-            return nil
-        }
-        defer { sqlite3_finalize(statement) }
+        let departureSQL = """
+        SELECT departure_time_seconds
+        FROM route_segments
+        WHERE train_id = ? AND station_origin_code = ?
+        ORDER BY sequence ASC
+        LIMIT 1
+        """
 
-        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        sqlite3_bind_text(statement, 1, tripId, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(statement, 2, stopId, -1, SQLITE_TRANSIENT)
+        let arrivalSeconds = fetchTime(sql: arrivalSQL, tripId: tripId, stopId: stopId)
+        let departureSeconds = fetchTime(sql: departureSQL, tripId: tripId, stopId: stopId)
 
-        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
-
-        let arrivalSeconds = sqlite3_column_text(statement, 0).flatMap { parseTimeSeconds(String(cString: $0)) }
-        let departureSeconds = sqlite3_column_text(statement, 1).flatMap { parseTimeSeconds(String(cString: $0)) }
-
-        return GTFSStopSchedule(arrivalSeconds: arrivalSeconds, departureSeconds: departureSeconds)
+        return StopSchedule(arrivalSeconds: arrivalSeconds, departureSeconds: departureSeconds)
     }
 
     private func parseTimeSeconds(_ value: String) -> Int? {
@@ -199,30 +221,111 @@ final class GTFSDataSource {
         return hours * 3600 + minutes * 60 + seconds
     }
 
+    private func fetchTime(sql: String, tripId: String, stopId: String) -> Int? {
+        guard let database else { return nil }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            logError("Failed to prepare time query")
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(statement, 1, tripId, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(statement, 2, stopId, -1, SQLITE_TRANSIENT)
+
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        if sqlite3_column_type(statement, 0) == SQLITE_NULL {
+            return nil
+        }
+        let seconds = sqlite3_column_int(statement, 0)
+        return Int(seconds)
+    }
+
+    private func routeEndpoints(for trainId: String) -> (String?, String?) {
+        guard let database else { return (nil, nil) }
+        let firstSQL = """
+        SELECT station_origin_name
+        FROM route_segments
+        WHERE train_id = ?
+        ORDER BY sequence ASC
+        LIMIT 1
+        """
+
+        let lastSQL = """
+        SELECT station_dest_name
+        FROM route_segments
+        WHERE train_id = ?
+        ORDER BY sequence DESC
+        LIMIT 1
+        """
+
+        let origin = singleString(sql: firstSQL, trainId: trainId)
+        let destination = singleString(sql: lastSQL, trainId: trainId)
+        return (origin, destination)
+    }
+
+    private func singleString(sql: String, trainId: String) -> String? {
+        guard let database else { return nil }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(statement) }
+
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(statement, 1, trainId, -1, SQLITE_TRANSIENT)
+
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        guard let cString = sqlite3_column_text(statement, 0) else { return nil }
+        return String(cString: cString)
+    }
+
+    private func formattedDistance(from kilometers: Double) -> String {
+        if kilometers >= 1 {
+            return String(format: "%.0f km", kilometers)
+        }
+        let meters = kilometers * 1000
+        return String(format: "%.0f m", meters)
+    }
+
     private func openDatabase() {
         guard database == nil else { return }
         guard let url = locateDatabaseURL() else {
-            logError("Unable to locate gtfs.sqlite")
+            logError("Unable to locate train_schedule.sqlite")
             return
         }
 
         if sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) != SQLITE_OK {
-            logError("Unable to open gtfs.sqlite at \(url.path)")
+            logError("Unable to open train_schedule.sqlite at \(url.path)")
             sqlite3_close(database)
             database = nil
         }
     }
 
     private func locateDatabaseURL() -> URL? {
-        if let bundleURL = Bundle.main.url(forResource: "gtfs", withExtension: "sqlite") {
+        if let bundleURL = Bundle.main.url(forResource: "train_schedule", withExtension: "sqlite") {
             return bundleURL
+        }
+        if let bundleDBURL = Bundle.main.url(forResource: "train_schedule", withExtension: "db") {
+            return bundleDBURL
         }
         #if DEBUG
         let fileManager = FileManager.default
         let cwd = URL(fileURLWithPath: fileManager.currentDirectoryPath)
-        let candidate = cwd.appendingPathComponent("blitz/gtfs.sqlite")
-        if fileManager.fileExists(atPath: candidate.path) {
-            return candidate
+        let directSQLite = cwd.appendingPathComponent("train_schedule.sqlite")
+        if fileManager.fileExists(atPath: directSQLite.path) {
+            return directSQLite
+        }
+        let directDB = cwd.appendingPathComponent("train_schedule.db")
+        if fileManager.fileExists(atPath: directDB.path) {
+            return directDB
+        }
+        let nestedSQLite = cwd.appendingPathComponent("blitz/train_schedule.sqlite")
+        if fileManager.fileExists(atPath: nestedSQLite.path) {
+            return nestedSQLite
+        }
+        let nestedDB = cwd.appendingPathComponent("blitz/train_schedule.db")
+        if fileManager.fileExists(atPath: nestedDB.path) {
+            return nestedDB
         }
         #endif
         return nil
@@ -230,7 +333,7 @@ final class GTFSDataSource {
 
     private func logError(_ message: String) {
         #if DEBUG
-        print("[GTFSDataSource] \(message)")
+        print("[TrainScheduleDataSource] \(message)")
         #endif
     }
 }

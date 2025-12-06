@@ -32,7 +32,7 @@ struct TripDetailSheet: View {
     @State private var isPresentingTicketSheet = false
     @State private var isShowingStationDelaySheet = false
 
-    private let dataSource = GTFSDataSource.shared
+    private let dataSource = TrainScheduleDataSource.shared
     private let secondTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let minuteTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 

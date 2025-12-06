@@ -14,9 +14,9 @@ struct SheetContent: View {
     @State private var searchTask: Task<Void, Never>?
     @State private var addStep: AddTripStep = .search
     @State private var pendingTrip: Trip?
-    @State private var availableStops: [GTFSStop] = []
+    @State private var availableStops: [ScheduleStop] = []
     @State private var selectedDate: Date = Date()
-    @State private var selectedOrigin: GTFSStop?
+    @State private var selectedOrigin: ScheduleStop?
     @State private var originQuery: String = ""
     @State private var destinationQuery: String = ""
     @State private var tripSortKeys: [String: Date] = [:]
@@ -24,7 +24,7 @@ struct SheetContent: View {
     @State private var pendingDeletionIDs: [String] = []
     @State private var isShowingDeleteConfirmation = false
 
-    private let dataSource = GTFSDataSource.shared
+    private let dataSource = TrainScheduleDataSource.shared
     private let pruneTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     init(
@@ -261,7 +261,7 @@ struct SheetContent: View {
         }
     }
 
-    private func stopListView(stops: [GTFSStop], emptyText: String, action: @escaping (GTFSStop) -> Void) -> some View {
+    private func stopListView(stops: [ScheduleStop], emptyText: String, action: @escaping (ScheduleStop) -> Void) -> some View {
         Group {
             if stops.isEmpty {
                 SearchPlaceholderView(text: emptyText)
@@ -394,7 +394,7 @@ struct SheetContent: View {
         addStep = .origin
     }
 
-    private func finalizeTrip(with destination: GTFSStop) {
+    private func finalizeTrip(with destination: ScheduleStop) {
         guard let baseTrip = pendingTrip, let origin = selectedOrigin else { return }
         guard destination.sequence > origin.sequence else { return }
 
@@ -547,14 +547,14 @@ struct SheetContent: View {
         return .distantFuture
     }
 
-    private var filteredOriginStops: [GTFSStop] {
+    private var filteredOriginStops: [ScheduleStop] {
         guard !availableStops.isEmpty else { return [] }
         let keyword = originQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !keyword.isEmpty else { return availableStops }
         return availableStops.filter { $0.name.localizedCaseInsensitiveContains(keyword) }
     }
 
-    private var filteredDestinationStops: [GTFSStop] {
+    private var filteredDestinationStops: [ScheduleStop] {
         guard let origin = selectedOrigin else { return [] }
         let candidates = availableStops.filter { $0.sequence > origin.sequence }
         let keyword = destinationQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -691,7 +691,7 @@ struct TripRowView: View {
     @State private var derivedStops: StopPair?
     @State private var now = Date()
     @State private var liveDelayInfo: DelayInfo?
-    private let dataSource = GTFSDataSource.shared
+    private let dataSource = TrainScheduleDataSource.shared
     private let secondTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let minuteTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
@@ -1166,7 +1166,7 @@ private struct StopDescriptor {
         name = stop.name
     }
 
-    init(_ stop: GTFSStop) {
+    init(_ stop: ScheduleStop) {
         id = stop.id
         name = stop.name
     }
