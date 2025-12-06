@@ -27,6 +27,7 @@ struct ContentView: View {
 
     var body: some View {
         Map(position: $mapPosition) {
+            UserAnnotation()
             if let focusedTrip = selectedTrip, let stops = focusedTrip.stops, !isAddTripMode {
                 detailMapContent(for: focusedTrip, stops: stops)
             } else {
@@ -38,6 +39,10 @@ struct ContentView: View {
             MapUserLocationButton()
                 .mapControlVisibility(.visible)
         }
+        .safeAreaInset(edge: .top, alignment: .center) {
+            Color.clear
+                .frame(height: 20)
+        }
         .ignoresSafeArea()
         .sheet(isPresented: $isSheetPresented) {
             SheetContent(
@@ -48,7 +53,7 @@ struct ContentView: View {
                 pastTrips: $pastTrips
             )
             .presentationDetents(detents, selection: $selectedDetent)
-            .presentationBackground(Color.white)
+            .presentationBackground(Color(.systemBackground))
             .presentationBackgroundInteraction(.enabled)
             .presentationDragIndicator(.hidden)
             .interactiveDismissDisabled(true)
@@ -231,7 +236,8 @@ extension ContentView {
 
     private func offsetRegion(for region: MKCoordinateRegion) -> MKCoordinateRegion {
         var adjusted = region
-        adjusted.center.latitude += region.span.latitudeDelta * -1
+        adjusted.center.latitude += region.span.latitudeDelta * -0.6
+        //-.5 for frac and
         return adjusted
     }
 }
@@ -377,6 +383,7 @@ struct StoredStop: Identifiable, Codable, Equatable {
     let sequence: Int
     var arrivalDelayMinutes: Int?
     var departureDelayMinutes: Int?
+    var platform: String?
 
     init(
         id: String,
@@ -385,7 +392,8 @@ struct StoredStop: Identifiable, Codable, Equatable {
         longitude: Double,
         sequence: Int,
         arrivalDelayMinutes: Int? = nil,
-        departureDelayMinutes: Int? = nil
+        departureDelayMinutes: Int? = nil,
+        platform: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -394,6 +402,7 @@ struct StoredStop: Identifiable, Codable, Equatable {
         self.sequence = sequence
         self.arrivalDelayMinutes = arrivalDelayMinutes
         self.departureDelayMinutes = departureDelayMinutes
+        self.platform = platform
     }
 
     var coordinate: CLLocationCoordinate2D {

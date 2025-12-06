@@ -28,3 +28,6 @@
 - InfoFerScraper mirrors the site's form submission: it loads the shell page with stored cookies, mirrors every hidden input (including confirmation/reCAPTCHA fields), reposts to `/Trains/TrainsResult`, and parses the returned HTML.
 - Sync button supports a long-press “forget delay/platform” gesture, and cleared values are persisted/propagate back to the dashboard.
 - TripDetailView now allows editing coach/seat info via sheet-based forms, persists past trip statistics, and hosts a floating blue-glass “Ticket QR” action that scans or displays stored QR codes.
+- InfoFer scraping now captures platform plus per-station arrival/departure delays, letting us persist that data on each stop and surface it inside a dedicated “Station Delays” sheet accessible from the detail toolbar.
+- Terminal cards in TripDetailView read that per-stop delay state so the clock, color, and status copy stay in sync (e.g., early arrivals show green time with “X m early” and no strikethrough).
+- Map view shows Apple’s user-location dot at all times via `UserAnnotation()` while the default “center on me” button remains available (slightly inset) so the map still respects the glassmorphic overlay.

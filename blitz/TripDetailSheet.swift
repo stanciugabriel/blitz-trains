@@ -24,11 +24,13 @@ struct TripDetailSheet: View {
     @State private var liveDelayInfo: DelayInfo?
     @State private var syncStatusText: String?
     @State private var shouldSkipNextSync = false
+    @State private var hasTriggeredSyncLongPress = false
     @State private var isPresentingSeatEditor = false
     @State private var seatEditorCar = ""
     @State private var seatEditorSeats = ""
     @State private var ticketCode: String?
     @State private var isPresentingTicketSheet = false
+    @State private var isShowingStationDelaySheet = false
 
     private let dataSource = GTFSDataSource.shared
     private let secondTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -62,20 +64,21 @@ struct TripDetailSheet: View {
                             Divider()
                             if hasSegmentData {
                                 VStack(alignment: .leading, spacing: 24) {
-                                    TerminalInfoView(
-                                        icon: "arrow.up.right.circle.fill",
-                                        title: trip.originName ?? "Origin",
-                                        timeText: formattedTime(adjustedDepartureDate),
-                                        originalTimeText: hasActiveDelay ? formattedTime(timing.departureDate) : nil,
-                                        relativeText: departureRelativeText,
-                                        statusText: statusLabel,
-                                        statusColor: statusColor,
-                                        platformText: platformText(trip.originPlatform),
-                                        isDelayed: hasActiveDelay
-                                    )
+                            TerminalInfoView(
+                                icon: "arrow.up.right.circle.fill",
+                                title: trip.originName ?? "Origin",
+                                timeText: formattedTime(adjustedDepartureDate),
+                                originalTimeText: departureTerminalDisplay.originalTimeText,
+                                relativeText: departureRelativeText,
+                                statusText: departureTerminalDisplay.statusText,
+                                statusColor: departureTerminalDisplay.statusColor,
+                                timeColor: departureTerminalDisplay.timeColor,
+                                platformText: departureTerminalDisplay.platformText,
+                                showsOriginalTime: departureTerminalDisplay.showsOriginalTime
+                            )
 
-                                    if shouldShowTravelSummaryRow {
-                                        HStack(spacing: 12) {
+                            if shouldShowTravelSummaryRow {
+                                HStack(spacing: 12) {
                                             HStack(spacing: 8) {
                                                 Image(systemName: "clock.arrow.circlepath")
                                                 travelSummaryContent
@@ -93,21 +96,22 @@ struct TripDetailSheet: View {
                                         .padding(.vertical, 4)
                                     }
 
-                                    TerminalInfoView(
-                                        icon: "arrow.down.right.circle.fill",
-                                        title: trip.destinationName ?? "Destination",
-                                        timeText: formattedTime(adjustedArrivalDate),
-                                        originalTimeText: hasActiveDelay ? formattedTime(timing.arrivalDate) : nil,
-                                        relativeText: arrivalRelativeText,
-                                        statusText: statusLabel,
-                                        statusColor: statusColor,
-                                        platformText: platformText(trip.destinationPlatform),
-                                        showsNextDayBadge: isOvernightTrip,
-                                        isDelayed: hasActiveDelay
-                                    )
-                                    seatInfoGrid
-                                    goodToKnowSection
-                                    historySection
+                            TerminalInfoView(
+                                icon: "arrow.down.right.circle.fill",
+                                title: trip.destinationName ?? "Destination",
+                                timeText: formattedTime(adjustedArrivalDate),
+                                originalTimeText: arrivalTerminalDisplay.originalTimeText,
+                                relativeText: arrivalRelativeText,
+                                statusText: arrivalTerminalDisplay.statusText,
+                                statusColor: arrivalTerminalDisplay.statusColor,
+                                timeColor: arrivalTerminalDisplay.timeColor,
+                                platformText: arrivalTerminalDisplay.platformText,
+                                showsNextDayBadge: isOvernightTrip,
+                                showsOriginalTime: arrivalTerminalDisplay.showsOriginalTime
+                            )
+                            seatInfoGrid
+                            goodToKnowSection
+                            historySection
                                 }
                             } else {
                                 Text("Schedule information unavailable for this trip.")
@@ -123,7 +127,7 @@ struct TripDetailSheet: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal)
                             .padding(.vertical, 12)
-                            .background(Color.white)
+                            .background(Color(.systemBackground))
                     }
                 }
                 .padding(.bottom, 40)
@@ -145,10 +149,18 @@ struct TripDetailSheet: View {
                 }) {
                     Label("Sync", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
                 }
-                .simultaneousGesture(LongPressGesture().onEnded { _ in
-                    shouldSkipNextSync = true
-                    forgetDelay()
-                })
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.6)
+                        .onChanged { _ in
+                            guard !hasTriggeredSyncLongPress else { return }
+                            hasTriggeredSyncLongPress = true
+                            shouldSkipNextSync = true
+                            forgetDelay()
+                        }
+                        .onEnded { _ in
+                            hasTriggeredSyncLongPress = false
+                        }
+                )
                 .disabled(isSyncingDelay)
             }
 
@@ -156,6 +168,16 @@ struct TripDetailSheet: View {
                 Button(action: openTicketSheet) {
                     Label("Ticket", systemImage: "qrcode")
                 }
+            }
+
+            ToolbarItem(placement: .bottomBar) {
+                Button(action: {
+                    guard !stationDelayEntries.isEmpty else { return }
+                    isShowingStationDelaySheet = true
+                }) {
+                    Label("Delays", systemImage: "list.bullet.rectangle")
+                }
+                .disabled(stationDelayEntries.isEmpty)
             }
         }
         .task(id: trip.id) {
@@ -185,6 +207,12 @@ struct TripDetailSheet: View {
                 onDismiss: { isPresentingTicketSheet = false }
             )
         }
+        .background(Color(.systemBackground))
+        .sheet(isPresented: $isShowingStationDelaySheet) {
+            StationDelaysSheet(entries: stationDelayEntries) {
+                isShowingStationDelaySheet = false
+            }
+        }
         .onChange(of: trip.ticketQRCode ?? "") { _ in
             ticketCode = trip.ticketQRCode
         }
@@ -210,9 +238,13 @@ struct TripDetailSheet: View {
             Button(action: { onClose?() }) {
                 Image(systemName: "xmark")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(.primary)
                     .frame(width: 32, height: 32)
-                    .background(.regularMaterial)
+                    .background(Color(.secondarySystemBackground))
+                    .overlay(
+                        Circle()
+                            .stroke(Color(.separator), lineWidth: 0.5)
+                    )
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
@@ -247,27 +279,34 @@ struct TripDetailSheet: View {
         trip.subtitle.split(separator: "·", maxSplits: 1, omittingEmptySubsequences: true).map { String($0) }
     }
 
-    private var statusColor: Color {
-        currentDelayMinutes > 0 ? .red : .green
-    }
-
-    private var statusLabel: String {
-        if currentDelayMinutes > 0 {
-            return "Delayed by \(currentDelayMinutes) min"
-        }
-        return "On time"
-    }
-
     private var activeDelayMinutes: Int? {
         liveDelayInfo?.delayMinutes ?? trip.delayMinutes
     }
 
-    private var currentDelayMinutes: Int {
-        activeDelayMinutes ?? 0
+    private var orderedStops: [StoredStop] {
+        trip.stops?.sorted(by: { $0.sequence < $1.sequence }) ?? []
     }
 
-    private var hasActiveDelay: Bool {
-        currentDelayMinutes > 0
+    private var originStoredStop: StoredStop? {
+        storedStop(for: trip.originStopId, sequence: trip.originSequence, fallback: orderedStops.first)
+    }
+
+    private var destinationStoredStop: StoredStop? {
+        storedStop(for: trip.destinationStopId, sequence: trip.destinationSequence, fallback: orderedStops.last)
+    }
+
+    private var departureStationDepartureDelayMinutes: Int? {
+        originStoredStop?.departureDelayMinutes
+            ?? stationDelayFromLiveInfo(for: .departure)?.departureDelayMinutes
+    }
+
+    private var arrivalStationArrivalDelayMinutes: Int? {
+        destinationStoredStop?.arrivalDelayMinutes
+            ?? stationDelayFromLiveInfo(for: .arrival)?.arrivalDelayMinutes
+    }
+
+    private var shouldApplyHeaderDelayToEntireTrip: Bool {
+        departureStationDepartureDelayMinutes == nil && activeDelayMinutes != nil
     }
 
     private var departureRelativeText: String {
@@ -345,25 +384,23 @@ struct TripDetailSheet: View {
     }
 
     private func platformText(_ value: String?) -> String {
-        if let override = liveDelayInfo?.platform, !override.isEmpty {
-            return "Platform \(override)"
-        }
-        return "Platform \(value ?? "—")"
+        guard let value, !value.isEmpty else { return "Platform —" }
+        return "Platform \(value)"
     }
 
     private var adjustedDepartureDate: Date? {
         guard let base = timing.departureDate else { return nil }
-        return applyDelayIfNeeded(to: base)
+        return applyDelay(to: base, minutes: terminalDelayMinutes(for: .departure))
     }
 
     private var adjustedArrivalDate: Date? {
         guard let base = timing.arrivalDate else { return nil }
-        return applyDelayIfNeeded(to: base)
+        return applyDelay(to: base, minutes: terminalDelayMinutes(for: .arrival))
     }
 
-    private func applyDelayIfNeeded(to date: Date) -> Date {
-        guard hasActiveDelay else { return date }
-        return date.addingTimeInterval(TimeInterval(currentDelayMinutes * 60))
+    private func applyDelay(to date: Date, minutes: Int?) -> Date {
+        guard let minutes, minutes != 0 else { return date }
+        return date.addingTimeInterval(TimeInterval(minutes * 60))
     }
 
     private func formattedTime(_ date: Date?) -> String {
@@ -569,7 +606,9 @@ extension TripDetailSheet {
             print("[TripDetailSheet] Sync completed delay=\(info.delayMinutes ?? -1) platform=\(info.platform ?? "n/a")")
 
             await MainActor.run {
-                liveDelayInfo = info
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    liveDelayInfo = info
+                }
                 LiveDelayStore.shared.save(info: info, for: trip.id)
                 applyStationDelays(from: info)
                 isSyncingDelay = false
@@ -579,7 +618,9 @@ extension TripDetailSheet {
     }
 
     private func forgetDelay() {
-        liveDelayInfo = nil
+        withAnimation(.easeInOut(duration: 0.35)) {
+            liveDelayInfo = nil
+        }
         LiveDelayStore.shared.clear(tripID: trip.id)
         syncStatusText = "Delay cleared"
     }
@@ -623,6 +664,11 @@ private extension TripDetailSheet {
 
             if updatedStops[index].departureDelayMinutes != detail.departureDelayMinutes {
                 updatedStops[index].departureDelayMinutes = detail.departureDelayMinutes
+                hasChanges = true
+            }
+
+            if updatedStops[index].platform != detail.platform {
+                updatedStops[index].platform = detail.platform
                 hasChanges = true
             }
         }
@@ -685,6 +731,155 @@ private extension TripDetailSheet {
         trip.destinationName ?? "Destination"
     }
 
+    private var departureTerminalDisplay: TerminalStatusDisplay {
+        terminalStatusDisplay(for: .departure, scheduledDate: timing.departureDate)
+    }
+
+    private var arrivalTerminalDisplay: TerminalStatusDisplay {
+        terminalStatusDisplay(for: .arrival, scheduledDate: timing.arrivalDate)
+    }
+
+    private var stationDelayEntries: [StationDelayEntry] {
+        let stops = segmentStops
+        guard !stops.isEmpty else { return [] }
+
+        return stops.enumerated().map { index, stop in
+            StationDelayEntry(
+                id: stop.id,
+                name: stop.name,
+                platform: stop.platform,
+                arrivalDelay: stop.arrivalDelayMinutes,
+                departureDelay: stop.departureDelayMinutes,
+                isOrigin: isOriginStop(stop),
+                isDestination: isDestinationStop(stop),
+                isFirst: index == 0,
+                isLast: index == stops.count - 1
+            )
+        }
+    }
+
+    private var segmentStops: [StoredStop] {
+        guard !orderedStops.isEmpty else { return [] }
+        guard let start = trip.originSequence, let end = trip.destinationSequence else {
+            return orderedStops
+        }
+        let lower = min(start, end)
+        let upper = max(start, end)
+        return orderedStops.filter { $0.sequence >= lower && $0.sequence <= upper }
+    }
+
+    private func storedStop(for stopId: String?, sequence: Int?, fallback: StoredStop?) -> StoredStop? {
+        guard let stops = trip.stops else { return fallback }
+        if let stopId, let match = stops.first(where: { $0.id == stopId }) {
+            return match
+        }
+        if let sequence, let match = stops.first(where: { $0.sequence == sequence }) {
+            return match
+        }
+        return fallback
+    }
+
+    private func isOriginStop(_ stop: StoredStop) -> Bool {
+        if let originId = trip.originStopId, stop.id == originId { return true }
+        if let originSeq = trip.originSequence, stop.sequence == originSeq { return true }
+        return stop.id == segmentStops.first?.id
+    }
+
+    private func isDestinationStop(_ stop: StoredStop) -> Bool {
+        if let destinationId = trip.destinationStopId, stop.id == destinationId { return true }
+        if let destinationSeq = trip.destinationSequence, stop.sequence == destinationSeq { return true }
+        return stop.id == segmentStops.last?.id
+    }
+
+    private func stationDelayFromLiveInfo(for type: TerminalEventType) -> StationDelay? {
+        guard let info = liveDelayInfo else { return nil }
+        let targetName: String?
+        switch type {
+        case .departure:
+            targetName = trip.originName ?? originStoredStop?.name ?? orderedStops.first?.name
+        case .arrival:
+            targetName = trip.destinationName ?? destinationStoredStop?.name ?? orderedStops.last?.name
+        }
+        guard let name = targetName else { return nil }
+        let normalizedName = normalizeStationName(name)
+        return info.stationDelays.first { normalizeStationName($0.stationName) == normalizedName }
+    }
+
+    private func terminalDelayMinutes(for type: TerminalEventType) -> Int? {
+        switch type {
+        case .departure:
+            if let stationDelay = departureStationDepartureDelayMinutes {
+                return stationDelay
+            }
+            return activeDelayMinutes
+        case .arrival:
+            if shouldApplyHeaderDelayToEntireTrip {
+                return activeDelayMinutes
+            }
+            if let stationDelay = arrivalStationArrivalDelayMinutes {
+                return stationDelay
+            }
+            return activeDelayMinutes
+        }
+    }
+
+    private func terminalPlatform(for type: TerminalEventType) -> String? {
+        switch type {
+        case .departure:
+            return originStoredStop?.platform
+                ?? stationDelayFromLiveInfo(for: .departure)?.platform
+                ?? trip.originPlatform
+        case .arrival:
+            return destinationStoredStop?.platform
+                ?? stationDelayFromLiveInfo(for: .arrival)?.platform
+                ?? trip.destinationPlatform
+        }
+    }
+
+    private func terminalStatusDisplay(for type: TerminalEventType, scheduledDate: Date?) -> TerminalStatusDisplay {
+        let delay = terminalDelayMinutes(for: type)
+        let statusText: String
+        let statusColor: Color
+        let timeColor: Color
+        let showsOriginalTime: Bool
+
+        if let delay {
+            if delay > 0 {
+                statusText = "Delay +\(delay)m"
+                statusColor = .red
+                timeColor = .red
+                showsOriginalTime = true
+            } else if delay < 0 {
+                statusText = "\(abs(delay))m early"
+                statusColor = .green
+                timeColor = .green
+                showsOriginalTime = false
+            } else {
+                statusText = "On time"
+                statusColor = .green
+                timeColor = .green
+                showsOriginalTime = false
+            }
+        } else {
+            statusText = "On time"
+            statusColor = .secondary
+            timeColor = .primary
+            showsOriginalTime = false
+        }
+
+        let originalTimeText = showsOriginalTime ? formattedTime(scheduledDate) : nil
+        let platformLabel = platformText(terminalPlatform(for: type))
+
+        return TerminalStatusDisplay(
+            statusText: statusText,
+            statusColor: statusColor,
+            timeColor: timeColor,
+            showsOriginalTime: showsOriginalTime,
+            originalTimeText: originalTimeText,
+            platformText: platformLabel
+        )
+    }
+
     @ViewBuilder
     private var weatherCard: some View {
         HStack(spacing: 16) {
@@ -710,66 +905,6 @@ private extension TripDetailSheet {
         )
     }
 
-    private var departureDelayText: String {
-        mockDelayText(for: originStationName)
-    }
-
-    private var arrivalDelayText: String {
-        mockDelayText(for: destinationStationName)
-    }
-
-    private func mockDelayText(for station: String) -> String {
-        let minutes = (station.count % 7) + 6
-        return "\(minutes)m delay"
-    }
-
-    private func stationStatusCard(
-        title: String,
-        delayText: String,
-        operationsTitle: String,
-        operationsSubtitle: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Text(title)
-                    .font(.headline)
-                Spacer()
-                Image(systemName: "dot.radiowaves.up.forward")
-                Text(delayText)
-                    .font(.subheadline)
-            }
-
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color.green.opacity(0.2))
-                        .frame(width: 26, height: 26)
-                    Circle()
-                        .fill(Color.green.opacity(0.45))
-                        .frame(width: 19, height: 19)
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 13, height: 13)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(operationsTitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.green)
-                    Text(operationsSubtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.primary)
-                }
-            }
-        }
-        .padding()
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(Color.white.opacity(0.3), lineWidth: 1)
-        )
-    }
 }
 
 private extension TripDetailSheet {
@@ -1073,6 +1208,191 @@ private struct DestinationWeather {
     }
 }
 
+private struct TerminalStatusDisplay {
+    let statusText: String
+    let statusColor: Color
+    let timeColor: Color
+    let showsOriginalTime: Bool
+    let originalTimeText: String?
+    let platformText: String
+}
+
+private struct StationDelayEntry: Identifiable {
+    let id: String
+    let name: String
+    let platform: String?
+    let arrivalDelay: Int?
+    let departureDelay: Int?
+    let isOrigin: Bool
+    let isDestination: Bool
+    let isFirst: Bool
+    let isLast: Bool
+
+    var platformLabel: String {
+        guard let platform, !platform.isEmpty, platform != "-" else { return "—" }
+        return "Linia \(platform)"
+    }
+}
+
+private struct StationDelaysSheet: View {
+    let entries: [StationDelayEntry]
+    var onDismiss: (() -> Void)? = nil
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                StationDelayTimelineView(entries: entries)
+                    .padding()
+            }
+            .navigationTitle("Station Delays")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { onDismiss?() }
+                }
+            }
+        }
+    }
+}
+
+private struct StationDelayTimelineView: View {
+    let entries: [StationDelayEntry]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Station Delays")
+                .font(.system(size: 18, weight: .semibold))
+
+            if entries.isEmpty {
+                Text("No station-level delay data yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(entries.indices, id: \.self) { index in
+                        StationDelayRow(entry: entries[index])
+                        if index < entries.count - 1 {
+                            Divider().opacity(0.2)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color(.separator), lineWidth: 1)
+        )
+    }
+}
+
+private struct StationDelayRow: View {
+    let entry: StationDelayEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            TimelineIndicator(isFirst: entry.isFirst, isLast: entry.isLast, isHighlighted: entry.isOrigin || entry.isDestination)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(entry.name)
+                        .fontWeight(entry.isOrigin || entry.isDestination ? .semibold : .regular)
+                    if entry.isOrigin {
+                        tagView("Origin")
+                    }
+                    if entry.isDestination {
+                        tagView("Destination")
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    DelayBadge(label: "Arr", value: entry.arrivalDelay)
+                    DelayBadge(label: "Dep", value: entry.departureDelay)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Text(entry.platformLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func tagView(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(Capsule())
+    }
+}
+
+private struct TimelineIndicator: View {
+    let isFirst: Bool
+    let isLast: Bool
+    let isHighlighted: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color(.separator))
+                .frame(width: 2, height: isFirst ? 0 : 12)
+            Circle()
+                .fill(isHighlighted ? Color.orange : Color(.label))
+                .frame(width: 10, height: 10)
+                .overlay(
+                    Circle()
+                        .stroke(Color(.separator), lineWidth: 1)
+                )
+            Rectangle()
+                .fill(Color(.separator))
+                .frame(width: 2, height: isLast ? 0 : 12)
+        }
+        .frame(width: 12)
+    }
+}
+
+private struct DelayBadge: View {
+    let label: String
+    let value: Int?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(displayText)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(color)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var displayText: String {
+        guard let value else { return "--" }
+        if value > 0 { return "+\(value)m" }
+        if value < 0 { return "−\(abs(value))m" }
+        return "0m"
+    }
+
+    private var color: Color {
+        guard let value else { return .secondary }
+        if value > 0 { return .orange }
+        if value < 0 { return .green }
+        return .secondary
+    }
+}
+
 private struct TerminalInfoView: View {
     let icon: String
     let title: String
@@ -1081,9 +1401,10 @@ private struct TerminalInfoView: View {
     let relativeText: String
     let statusText: String
     let statusColor: Color
+    let timeColor: Color
     let platformText: String
     let showsNextDayBadge: Bool
-    let isDelayed: Bool
+    let showsOriginalTime: Bool
 
     init(
         icon: String,
@@ -1093,9 +1414,10 @@ private struct TerminalInfoView: View {
         relativeText: String,
         statusText: String,
         statusColor: Color,
+        timeColor: Color,
         platformText: String,
         showsNextDayBadge: Bool = false,
-        isDelayed: Bool
+        showsOriginalTime: Bool
     ) {
         self.icon = icon
         self.title = title
@@ -1104,9 +1426,10 @@ private struct TerminalInfoView: View {
         self.relativeText = relativeText
         self.statusText = statusText
         self.statusColor = statusColor
+        self.timeColor = timeColor
         self.platformText = platformText
         self.showsNextDayBadge = showsNextDayBadge
-        self.isDelayed = isDelayed
+        self.showsOriginalTime = showsOriginalTime
     }
 
     var body: some View {
@@ -1123,10 +1446,11 @@ private struct TerminalInfoView: View {
                 Text(timeText)
                     .font(.largeTitle)
                     .fontWeight(.bold)
-                    .foregroundStyle(timeText == "--:--" ? .secondary : (isDelayed ? .red : statusColor))
+                    .foregroundStyle(timeText == "--:--" ? .secondary : timeColor)
                     .monospacedDigit()
+                    .contentTransition(.numericText())
 
-                if isDelayed, let original = originalTimeText {
+                if showsOriginalTime, let original = originalTimeText {
                     Text(original)
                         .font(.title3)
                         .foregroundStyle(.primary.opacity(0.4))
@@ -1295,11 +1619,11 @@ private struct QRCodeDisplayView: View {
                     .scaledToFit()
                     .frame(width: 240, height: 240)
                     .padding()
-                    .background(.ultraThinMaterial)
+                    .background(Color(.systemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                            .stroke(Color(.separator), lineWidth: 1)
                     )
             } else {
                 Image(systemName: "qrcode")
@@ -1425,9 +1749,5 @@ private struct CompanyLogoView: View {
             .scaledToFit()
             .frame(width: 48, height: 48)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
-            )
     }
 }

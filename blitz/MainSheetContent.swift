@@ -52,7 +52,7 @@ struct SheetContent: View {
                 HStack {
                     Text(headerTitle)
                         .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(.primary)
                     Spacer()
                     headerTrailing
                 }
@@ -88,7 +88,12 @@ struct SheetContent: View {
             PastTripsSheet(
                 trips: sortedPastTrips,
                 onDismiss: { isShowingPastSheet = false },
-                onDeleteTrip: deletePastTrip
+                onDeleteTrip: deletePastTrip,
+                onSelectTrip: { trip in
+                    selectedTrip = trip
+                    isAddTripMode = false
+                    isShowingPastSheet = false
+                }
             )
             .presentationDetents([.fraction(0.6), .large])
             .presentationDragIndicator(.visible)
@@ -132,6 +137,7 @@ struct SheetContent: View {
                     SearchPlaceholderView(text: "No saved trips yet. Tap search to add one.")
                         .listRowInsets(EdgeInsets(top: 40, leading: 0, bottom: 40, trailing: 0))
                         .frame(maxWidth: .infinity, alignment: .center)
+                        .listRowSeparator(.hidden)
                 } else {
                     ForEach(sortedTrips) { trip in
                         Button {
@@ -165,14 +171,14 @@ struct SheetContent: View {
             let binding = bindingForCurrentInput
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundColor(.black.opacity(0.6))
+                    .foregroundStyle(.secondary)
                 TextField(placeholder, text: binding)
                     .textFieldStyle(.plain)
-                    .foregroundColor(.black)
+                    .foregroundStyle(.primary)
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
-            .background(Color(.systemGray5).opacity(0.6))
+            .background(Color(.secondarySystemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .padding(.horizontal)
             .focused($isTextFieldFocused)
@@ -698,7 +704,7 @@ struct TripRowView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            .stroke(Color(.separator).opacity(0.4), lineWidth: 1)
                     )
             } else {
                 rowCore
@@ -828,11 +834,11 @@ struct TripRowView: View {
             } else if hasDepartedButNotArrived {
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(0.15))
+                        .fill(Color(.tertiarySystemFill))
                         .frame(width: 48, height: 48)
                         .overlay(
                             Circle()
-                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                .stroke(Color(.quaternarySystemFill), lineWidth: 1)
                         )
                         .frame(maxWidth: .infinity)
                     Image(systemName: "train.side.front.car")
@@ -1162,6 +1168,7 @@ struct PastTripsSheet: View {
     let trips: [Trip]
     var onDismiss: () -> Void
     var onDeleteTrip: (Trip) -> Void = { _ in }
+    var onSelectTrip: (Trip) -> Void = { _ in }
 
     var body: some View {
         NavigationStack {
@@ -1173,19 +1180,25 @@ struct PastTripsSheet: View {
                 } else {
                     List {
                         ForEach(trips) { trip in
-                            TripRowView(trip: trip)
-                                .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0))
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        withAnimation {
-                                            onDeleteTrip(trip)
-                                        }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
+                            Button {
+                                onSelectTrip(trip)
+                            } label: {
+                                TripRowView(trip: trip)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    withAnimation {
+                                        onDeleteTrip(trip)
                                     }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
+                            }
                         }
                     }
                     .listStyle(.plain)
@@ -1212,14 +1225,14 @@ struct SearchButton: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundColor(.black.opacity(0.6))
+                    .foregroundStyle(.secondary)
                 Text("Search to add trains")
-                    .foregroundColor(.black.opacity(0.8))
+                    .foregroundStyle(.primary)
                 Spacer()
             }
             .padding(.vertical, 16)
             .padding(.horizontal, 14)
-            .background(Color(.systemGray5).opacity(0.5))
+            .background(Color(.secondarySystemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(.plain)
