@@ -64,7 +64,12 @@ struct ContentView: View {
             }
             updateCameraForCurrentState()
         }
-        .onChange(of: selectedTrip) { _, _ in
+        .onChange(of: selectedTrip) { _, newValue in
+            if newValue != nil {
+                DispatchQueue.main.async {
+                    selectedDetent = .medium
+                }
+            }
             updateCameraForCurrentState()
         }
         .onAppear {

@@ -279,6 +279,10 @@ struct TripDetailSheet: View {
         trip.subtitle.split(separator: "·", maxSplits: 1, omittingEmptySubsequences: true).map { String($0) }
     }
 
+    private var syncTravelDate: Date {
+        trip.travelDate ?? timing.departureDate ?? Date()
+    }
+
     private var activeDelayMinutes: Int? {
         liveDelayInfo?.delayMinutes ?? trip.delayMinutes
     }
@@ -602,7 +606,7 @@ extension TripDetailSheet {
         Task {
             print("[TripDetailSheet] Starting InfoFer sync for \(trainNumber)")
             await InfoFerSessionManager.shared.refreshSession(for: trainNumber)
-            let info = await InfoFerScraper.shared.fetchDelay(for: trainNumber)
+            let info = await InfoFerScraper.shared.fetchDelay(for: trainNumber, travelDate: syncTravelDate)
             print("[TripDetailSheet] Sync completed delay=\(info.delayMinutes ?? -1) platform=\(info.platform ?? "n/a")")
 
             await MainActor.run {

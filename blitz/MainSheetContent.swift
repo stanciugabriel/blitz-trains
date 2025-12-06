@@ -62,6 +62,7 @@ struct SheetContent: View {
             contentView
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(searchSheetBackground)
         .onChange(of: isAddTripMode) { _, newValue in
             newValue ? startAddFlow() : resetAddFlow()
         }
@@ -108,6 +109,13 @@ struct SheetContent: View {
         }, message: {
             Text("This trip will be removed from My Trips.")
         })
+    }
+
+    private var searchSheetBackground: some View {
+        Group {
+                Color(.systemBackground)
+                    .ignoresSafeArea()
+        }
     }
 
     @ViewBuilder

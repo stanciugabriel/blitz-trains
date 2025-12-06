@@ -89,48 +89,47 @@ final class InfoFerScraper {
     static let shared = InfoFerScraper()
     private init() {}
 
-    func fetchDelay(for trainNumber: String) async -> DelayInfo {
-            guard let cookies = InfoFerSessionManager.shared.storedCookies() else {
-                print("[InfoFerScraper] ❌ Missing cookies")
-                return DelayInfo(delayMinutes: nil, platform: nil)
-            }
-
-            do {
-                let shellHTML = try await requestShellHTML(for: trainNumber, cookies: cookies)
-                let bodyParams = try extractFormParameters(from: shellHTML)
-                let resultHTML = try await requestResultHTML(with: bodyParams, cookies: cookies, refererTrain: trainNumber)
-                
-                let info = parseResultHTML(resultHTML)
-                
-                // --- PRINT LOGS (CRASH FIXED) ---
-                print("\n🚂 [InfoFerScraper] REPORT FOR IR \(trainNumber)")
-                print("------------------------------------------------")
-                print("🔴 HEADER DELAY: \(info.delayMinutes ?? 0) min")
-                print("🚉 PLATFORM:     \(info.platform ?? "n/a")")
-                print("------------------------------------------------")
-                
-                for station in info.stationDelays {
-                    let name = station.stationName.padding(toLength: 25, withPad: " ", startingAt: 0)
-                    let arr = station.arrivalDelayMinutes != nil ? "\(station.arrivalDelayMinutes!)m" : "-"
-                    let dep = station.departureDelayMinutes != nil ? "\(station.departureDelayMinutes!)m" : "-"
-                    
-                    // Safe Swift Interpolation
-                    print("\(name) | Arr: \(arr) | Dep: \(dep)")
-                }
-                print("------------------------------------------------\n")
-                
-                return info
-                
-            } catch {
-                print("[InfoFerScraper] ❌ Scrape failed: \(error)")
-                return DelayInfo(delayMinutes: nil, platform: nil)
-            }
+    func fetchDelay(for trainNumber: String, travelDate: Date?) async -> DelayInfo {
+        guard let cookies = InfoFerSessionManager.shared.storedCookies() else {
+            print("[InfoFerScraper] ❌ Missing cookies")
+            return DelayInfo(delayMinutes: nil, platform: nil)
         }
+
+        do {
+            let formattedDate = InfoFerSessionManager.formatDate(travelDate ?? Date())
+            let shellHTML = try await requestShellHTML(for: trainNumber, dateString: formattedDate, cookies: cookies)
+            var bodyParams = try extractFormParameters(from: shellHTML)
+            bodyParams["Date"] = formattedDate
+            bodyParams["TravelDate"] = formattedDate
+            let resultHTML = try await requestResultHTML(with: bodyParams, cookies: cookies, refererTrain: trainNumber, dateString: formattedDate)
+
+            let info = parseResultHTML(resultHTML)
+
+            print("\n🚂 [InfoFerScraper] REPORT FOR IR \(trainNumber)")
+            print("------------------------------------------------")
+            print("🔴 HEADER DELAY: \(info.delayMinutes ?? 0) min")
+            print("🚉 PLATFORM:     \(info.platform ?? "n/a")")
+            print("------------------------------------------------")
+
+            for station in info.stationDelays {
+                let name = station.stationName.padding(toLength: 25, withPad: " ", startingAt: 0)
+                let arr = station.arrivalDelayMinutes != nil ? "\(station.arrivalDelayMinutes!)m" : "-"
+                let dep = station.departureDelayMinutes != nil ? "\(station.departureDelayMinutes!)m" : "-"
+                print("\(name) | Arr: \(arr) | Dep: \(dep)")
+            }
+            print("------------------------------------------------\n")
+
+            return info
+
+        } catch {
+            print("[InfoFerScraper] ❌ Scrape failed: \(error)")
+            return DelayInfo(delayMinutes: nil, platform: nil)
+        }
+    }
     // --- Networking ---
 
-    private func requestShellHTML(for trainNumber: String, cookies: [HTTPCookie]) async throws -> String {
-        let date = InfoFerSessionManager.formatDate(Date())
-        let urlString = "https://mersultrenurilor.infofer.ro/ro-RO/Tren/\(trainNumber)?__Invariant=TrainRunningNumber&Date=\(date)"
+    private func requestShellHTML(for trainNumber: String, dateString: String, cookies: [HTTPCookie]) async throws -> String {
+        let urlString = "https://mersultrenurilor.infofer.ro/ro-RO/Tren/\(trainNumber)?__Invariant=TrainRunningNumber&Date=\(dateString)"
         guard let url = URL(string: urlString) else { throw URLError(.badURL) }
 
         var request = URLRequest(url: url)
@@ -143,7 +142,7 @@ final class InfoFerScraper {
         return html
     }
 
-    private func requestResultHTML(with params: [String: String], cookies: [HTTPCookie], refererTrain: String) async throws -> String {
+    private func requestResultHTML(with params: [String: String], cookies: [HTTPCookie], refererTrain: String, dateString: String) async throws -> String {
         let postURL = URL(string: "https://mersultrenurilor.infofer.ro/ro-RO/Trains/TrainsResult")!
         var request = URLRequest(url: postURL)
         request.httpMethod = "POST"
@@ -153,7 +152,7 @@ final class InfoFerScraper {
         
         request.addValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
         request.addValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
-        let referer = "https://mersultrenurilor.infofer.ro/ro-RO/Tren/\(refererTrain)?__Invariant=TrainRunningNumber&Date=\(params["Date"] ?? InfoFerSessionManager.formatDate(Date()))"
+        let referer = "https://mersultrenurilor.infofer.ro/ro-RO/Tren/\(refererTrain)?__Invariant=TrainRunningNumber&Date=\(params["Date"] ?? dateString)"
         request.addValue(referer, forHTTPHeaderField: "Referer")
         request.addValue("https://mersultrenurilor.infofer.ro", forHTTPHeaderField: "Origin")
         request.addValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", forHTTPHeaderField: "User-Agent")
