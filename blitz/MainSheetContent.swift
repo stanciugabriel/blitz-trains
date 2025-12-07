@@ -2,6 +2,7 @@ import SwiftUI
 import CoreLocation
 import Combine
 
+
 struct SheetContent: View {
     @Binding var trips: [Trip]
     @Binding var selectedTrip: Trip?
@@ -23,6 +24,7 @@ struct SheetContent: View {
     @State private var isShowingPastSheet = false
     @State private var pendingDeletionIDs: [String] = []
     @State private var isShowingDeleteConfirmation = false
+    
 
     private let dataSource = GTFSDataSource.shared
     private let pruneTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
@@ -65,6 +67,9 @@ struct SheetContent: View {
         .background(searchSheetBackground)
         .onChange(of: isAddTripMode) { _, newValue in
             newValue ? startAddFlow() : resetAddFlow()
+            if !newValue {
+                
+            }
         }
         .onChange(of: addStep) { _, newValue in
             updateFocus(for: newValue)
@@ -73,16 +78,27 @@ struct SheetContent: View {
             guard isAddTripMode, addStep == .search else { return }
             performTrainSearch(query: newValue)
         }
+        .onChange(of: selectedTrip) { _, newValue in
+            if newValue == nil {
+                
+            }
+        }
         .onAppear {
             refreshSortKeys()
             pruneCompletedTrips()
+            
         }
         .onReceive(pruneTimer) { _ in
             pruneCompletedTrips()
+            
         }
         .onChange(of: trips) { _, _ in
             refreshSortKeys()
             pruneCompletedTrips()
+            
+        }
+        .onChange(of: pastTrips) { _, newValue in
+            TripStorage.shared.savePastTrips(newValue)
         }
         .onDisappear { searchTask?.cancel() }
         .sheet(isPresented: $isShowingPastSheet) {
@@ -788,26 +804,28 @@ struct TripRowView: View {
         HStack(spacing: 16) {
             terminalTimeView(
                 icon: "arrow.up.right.circle.fill",
-                text: formattedTime(adjustedDepartureDate)
+                text: formattedTime(adjustedDepartureDate),
+                color: timeTint(for: .departure)
             )
 
             terminalTimeView(
                 icon: "arrow.down.right.circle.fill",
-                text: formattedTime(adjustedArrivalDate)
+                text: formattedTime(adjustedArrivalDate),
+                color: timeTint(for: .arrival)
             )
 
             Spacer(minLength: 0)
         }
     }
 
-    private func terminalTimeView(icon: String, text: String) -> some View {
+    private func terminalTimeView(icon: String, text: String, color: Color) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .foregroundStyle(timeTint(for: text))
+                .foregroundStyle(color)
             Text(text)
                 .fontWeight(.semibold)
                 .monospacedDigit()
-                .foregroundStyle(timeTint(for: text))
+                .foregroundStyle(color)
         }
         .font(.system(size: 16, weight: .semibold, design: .rounded))
     }
@@ -1011,8 +1029,38 @@ struct TripRowView: View {
         return remaining <= 24 * 3600 && remaining > 3600
     }
 
+    private var activeDelayMinutes: Int? {
+        liveDelayInfo?.delayMinutes ?? trip.delayMinutes
+    }
+
     private var effectiveDelayMinutes: Int {
-        liveDelayInfo?.delayMinutes ?? trip.delayMinutes ?? 0
+        activeDelayMinutes ?? 0
+    }
+
+    private var orderedStops: [StoredStop] {
+        trip.stops?.sorted(by: { $0.sequence < $1.sequence }) ?? []
+    }
+
+    private var originStoredStop: StoredStop? {
+        storedStop(for: trip.originStopId, sequence: trip.originSequence, fallback: orderedStops.first)
+    }
+
+    private var destinationStoredStop: StoredStop? {
+        storedStop(for: trip.destinationStopId, sequence: trip.destinationSequence, fallback: orderedStops.last)
+    }
+
+    private var departureStationDepartureDelayMinutes: Int? {
+        originStoredStop?.departureDelayMinutes
+            ?? stationDelayFromLiveInfo(for: .departure)?.departureDelayMinutes
+    }
+
+    private var arrivalStationArrivalDelayMinutes: Int? {
+        destinationStoredStop?.arrivalDelayMinutes
+            ?? stationDelayFromLiveInfo(for: .arrival)?.arrivalDelayMinutes
+    }
+
+    private var shouldApplyHeaderDelayToEntireTrip: Bool {
+        departureStationDepartureDelayMinutes == nil && activeDelayMinutes != nil
     }
 
     private func formattedDelay(minutes: Int) -> String {
@@ -1027,17 +1075,17 @@ struct TripRowView: View {
 
     private var adjustedDepartureDate: Date? {
         guard let date = timing.departureDate else { return nil }
-        return applyDelay(to: date)
+        return applyDelay(to: date, minutes: terminalDelayMinutes(for: .departure))
     }
 
     private var adjustedArrivalDate: Date? {
         guard let date = timing.arrivalDate else { return nil }
-        return applyDelay(to: date)
+        return applyDelay(to: date, minutes: terminalDelayMinutes(for: .arrival))
     }
 
-    private func applyDelay(to date: Date) -> Date {
-        guard effectiveDelayMinutes != 0 else { return date }
-        return date.addingTimeInterval(TimeInterval(effectiveDelayMinutes * 60))
+    private func applyDelay(to date: Date, minutes: Int?) -> Date {
+        guard let minutes, minutes != 0 else { return date }
+        return date.addingTimeInterval(TimeInterval(minutes * 60))
     }
 
     private func formattedTime(_ date: Date?) -> String {
@@ -1045,11 +1093,12 @@ struct TripRowView: View {
         return Self.timeFormatter.string(from: date)
     }
 
-    private func timeTint(for text: String) -> Color {
+    private func timeTint(for type: TerminalEventType) -> Color {
         if displayMode == .scheduled { return .primary }
-        if text == "--:--" { return .secondary }
-        if isFarOutTrip { return .secondary }
-        return effectiveDelayMinutes > 0 ? .red : .green
+
+        let delay = terminalDelayMinutes(for: type) ?? 0
+        if delay > 0 { return .red }
+        return .green
     }
 
     private func loadTiming() {
@@ -1084,6 +1133,69 @@ struct TripRowView: View {
         formatter.dateFormat = "EEE, d MMM"
         return formatter
     }()
+
+    private func terminalDelayMinutes(for type: TerminalEventType) -> Int? {
+        switch type {
+        case .departure:
+            if let stationDelay = departureStationDepartureDelayMinutes {
+                return stationDelay
+            }
+            return activeDelayMinutes
+        case .arrival:
+            if shouldApplyHeaderDelayToEntireTrip {
+                return activeDelayMinutes
+            }
+            if let stationDelay = arrivalStationArrivalDelayMinutes {
+                return stationDelay
+            }
+            return activeDelayMinutes
+        }
+    }
+
+    private func stationDelayFromLiveInfo(for type: TerminalEventType) -> StationDelay? {
+        guard let info = liveDelayInfo else { return nil }
+        let targetName: String?
+        switch type {
+        case .departure:
+            targetName = trip.originName ?? originStoredStop?.name ?? orderedStops.first?.name
+        case .arrival:
+            targetName = trip.destinationName ?? destinationStoredStop?.name ?? orderedStops.last?.name
+        }
+        if let name = targetName {
+            let normalizedName = normalizeStationName(name)
+            if let match = info.stationDelays.first(where: { normalizeStationName($0.stationName) == normalizedName }) {
+                return match
+            }
+        }
+        switch type {
+        case .departure:
+            return info.stationDelays.first
+        case .arrival:
+            return info.stationDelays.last
+        }
+    }
+
+    private func storedStop(for stopId: String?, sequence: Int?, fallback: StoredStop?) -> StoredStop? {
+        if let stopId, let stop = orderedStops.first(where: { $0.id == stopId }) {
+            return stop
+        }
+        if let sequence, let stop = orderedStops.first(where: { $0.sequence == sequence }) {
+            return stop
+        }
+        return fallback
+    }
+
+    private func normalizeStationName(_ value: String) -> String {
+        value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private enum TerminalEventType {
+        case departure
+        case arrival
+    }
     private func ensureDerivedStops() {
         if derivedStops != nil { return }
 

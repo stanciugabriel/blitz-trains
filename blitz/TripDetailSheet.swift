@@ -15,6 +15,7 @@ struct TripDetailSheet: View {
     var onClose: (() -> Void)?
     var onUpdateTrip: ((Trip) -> Void)?
 
+    @Environment(\.openURL) private var openURL
     @State private var timing = TripTimingSnapshot()
     @State private var destinationWeather: DestinationWeather?
     @State private var isWeatherLoading = false
@@ -61,7 +62,10 @@ struct TripDetailSheet: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                            Divider()
+                            if let bannerText = scraperStatusText {
+                                ScraperStatusBanner(text: bannerText, isDelayed: scraperStatusIsDelayed)
+                                    .padding(.horizontal, -16)
+                            }
                             if hasSegmentData {
                                 VStack(alignment: .leading, spacing: 24) {
                             TerminalInfoView(
@@ -112,6 +116,8 @@ struct TripDetailSheet: View {
                             seatInfoGrid
                             goodToKnowSection
                             historySection
+                            operatorSection
+                            arrivalForecastSection
                                 }
                             } else {
                                 Text("Schedule information unavailable for this trip.")
@@ -277,6 +283,14 @@ struct TripDetailSheet: View {
 
     private var parsedComponents: [String] {
         trip.subtitle.split(separator: "·", maxSplits: 1, omittingEmptySubsequences: true).map { String($0) }
+    }
+
+    private var scraperStatusText: String? {
+        liveDelayInfo?.statusText
+    }
+
+    private var scraperStatusIsDelayed: Bool {
+        (liveDelayInfo?.delayMinutes ?? trip.delayMinutes ?? 0) > 0
     }
 
     private var syncTravelDate: Date {
@@ -616,7 +630,7 @@ extension TripDetailSheet {
                 LiveDelayStore.shared.save(info: info, for: trip.id)
                 applyStationDelays(from: info)
                 isSyncingDelay = false
-                syncStatusText = "Synced at \(Self.timeFormatter.string(from: Date()))"
+                syncStatusText = nil
             }
         }
     }
@@ -804,9 +818,18 @@ private extension TripDetailSheet {
         case .arrival:
             targetName = trip.destinationName ?? destinationStoredStop?.name ?? orderedStops.last?.name
         }
-        guard let name = targetName else { return nil }
-        let normalizedName = normalizeStationName(name)
-        return info.stationDelays.first { normalizeStationName($0.stationName) == normalizedName }
+        if let name = targetName {
+            let normalizedName = normalizeStationName(name)
+            if let match = info.stationDelays.first(where: { normalizeStationName($0.stationName) == normalizedName }) {
+                return match
+            }
+        }
+        switch type {
+        case .departure:
+            return info.stationDelays.first
+        case .arrival:
+            return info.stationDelays.last
+        }
     }
 
     private func terminalDelayMinutes(for type: TerminalEventType) -> Int? {
@@ -951,6 +974,107 @@ private extension TripDetailSheet {
         )
     }
 
+    @ViewBuilder
+    var operatorSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 12) {
+                CompanyLogoView()
+                    .frame(width: 48, height: 48)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("CFR Călători")
+                        .font(.headline)
+                    Text("București")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 12) {
+                OperatorActionButton(title: "Website") {
+                    openOperatorWebsite()
+                }
+                OperatorActionButton(title: "Phone") {
+                    callOperator()
+                }
+            }
+
+            OperatorActionButton(title: "Send a report") {}
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    var arrivalForecastSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Arrival Forecast")
+                    .font(.system(size: 20, weight: .semibold))
+                Text(arrivalForecastSubtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 50) {
+                ForecastStatView(title: "Late", icon: "clock", value: "16%")
+                ForecastStatView(title: "Avg. delay", icon: "stopwatch", value: "12m")
+                ForecastStatView(title: "Observed", icon: "binoculars", value: "42")
+            }
+
+            VStack(spacing: 10) {
+                ForEach(arrivalDistribution, id: \.label) { entry in
+                    HStack(spacing: 12) {
+                        Text(entry.label)
+                            .font(.system(size: 13, weight: .regular))
+                            .frame(width: 65, alignment: .leading)
+
+                        ArrivalBarView(percent: entry.percent, barColor: entry.color)
+
+                        Text("\(entry.percent)%")
+                            .font(.system(size: 13, weight: .regular))
+                            .frame(width: 30, alignment: .trailing)
+                    }
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
+        )
+    }
+
+    private var arrivalDistribution: [(label: String, percent: Int, color: Color)] {
+        [
+            ("Early", 8, Color(.sRGB, red: 0, green: 0.45, blue: 0.1, opacity: 1)),
+            ("On time", 32, Color.green.opacity(0.8)),
+            ("15m late", 25, Color.yellow.opacity(0.8)),
+            ("30m late", 15, Color.orange.opacity(0.85)),
+            ("45m+ late", 12, Color.orange.opacity(0.6)),
+            ("Canceled", 8, Color.red.opacity(0.85))
+        ]
+    }
+
+    private var arrivalForecastSubtitle: String {
+        "\(trainDisplayName) performance over the last 60 days"
+    }
+
+    private var trainDisplayName: String {
+        let title = trip.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let firstComponent = title.split(separator: "•").first {
+            return String(firstComponent).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return title
+    }
+
     private var historyRouteSubtitle: String {
         "\(originStationName) → \(destinationStationName)"
     }
@@ -997,6 +1121,16 @@ private extension TripDetailSheet {
         isPresentingSeatEditor = true
     }
 
+    private func openOperatorWebsite() {
+        guard let url = URL(string: "https://www.cfrcalatori.ro") else { return }
+        openURL(url)
+    }
+
+    private func callOperator() {
+        guard let url = URL(string: "tel://0735443699") else { return }
+        openURL(url)
+    }
+
     private func saveSeatEditor() {
         let trimmedCar = seatEditorCar.trimmingCharacters(in: .whitespacesAndNewlines)
         let carValue = trimmedCar.isEmpty ? nil : trimmedCar
@@ -1036,7 +1170,75 @@ private extension TripDetailSheet {
 
     private func formattedHistoryDuration(from duration: TimeInterval?) -> String {
         guard let duration, duration > 0 else { return "0m" }
-        return Self.totalDurationFormatter.string(from: duration) ?? "0m"
+
+        let components: [(unit: Calendar.Component, label: String)] = [
+            (.year, "y"),
+            (.month, "mo"),
+            (.weekOfYear, "w"),
+            (.day, "d"),
+            (.hour, "h"),
+            (.minute, "m"),
+            (.second, "s")
+        ]
+
+        var remaining = Int(duration)
+        var parts: [String] = []
+
+        for component in components {
+            guard remaining > 0 else { break }
+
+            let value: Int
+            switch component.unit {
+            case .year:
+                value = remaining / (365 * 24 * 3600)
+            case .month:
+                value = remaining / (30 * 24 * 3600)
+            case .weekOfYear:
+                value = remaining / (7 * 24 * 3600)
+            case .day:
+                value = remaining / (24 * 3600)
+            case .hour:
+                value = remaining / 3600
+            case .minute:
+                value = remaining / 60
+            case .second:
+                value = remaining
+            default:
+                value = 0
+            }
+
+            if value > 0 {
+                parts.append("\(value)\(component.label)")
+                remaining -= value * seconds(for: component.unit)
+            }
+
+            if parts.count == 2 {
+                break
+            }
+        }
+
+        return parts.isEmpty ? "0m" : parts.joined(separator: " ")
+    }
+
+    private func seconds(for component: Calendar.Component) -> Int {
+        switch component {
+        case .year:
+            return 365 * 24 * 3600
+        case .month:
+            return 30 * 24 * 3600
+        case .weekOfYear:
+            return 7 * 24 * 3600
+        case .day:
+            return 24 * 3600
+        case .hour:
+            return 3600
+        case .minute:
+            return 60
+        case .second:
+            return 1
+        default:
+            return 1
+        }
     }
 
     private func formattedDistanceText(for kilometers: Double) -> String {
@@ -1753,5 +1955,96 @@ private struct CompanyLogoView: View {
             .scaledToFit()
             .frame(width: 48, height: 48)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct OperatorActionButton: View {
+    let title: String
+    var action: () -> Void = {}
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color(.systemGray5))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct ScraperStatusBanner: View {
+    let text: String
+    let isDelayed: Bool
+
+    private var accentColor: Color {
+        isDelayed ? .red : .green
+    }
+
+    private var backgroundColor: Color {
+        accentColor.opacity(0.12)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(accentColor)
+                .frame(height: 1)
+
+            Text(text)
+                .font(.subheadline)
+                .multilineTextAlignment(.leading)
+                .foregroundStyle(accentColor)
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity)
+                .background(backgroundColor)
+
+            Rectangle()
+                .fill(accentColor)
+                .frame(height: 1)
+        }
+    }
+}
+
+private struct ForecastStatView: View {
+    let title: String
+    let icon: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.headline)
+                Text(value)
+                    .font(.system(size: 16, weight: .semibold))
+            }
+        }
+    }
+}
+
+private struct ArrivalBarView: View {
+    let percent: Int
+    let barColor: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color(.systemGray5))
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(barColor)
+                    .frame(width: max(0, CGFloat(percent) / 100.0 * proxy.size.width))
+            }
+        }
+        .frame(height: 16)
+        .frame(maxWidth: .infinity)
     }
 }

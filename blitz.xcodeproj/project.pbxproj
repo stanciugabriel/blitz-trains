@@ -23,7 +23,22 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		C068524C2EE58E6100C1A387 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		C06852332EE58E6100C1A387 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		C06852352EE58E6100C1A387 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		C0C8521A2EDC81730025047D /* blitz.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = blitz.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0C852272EDC81740025047D /* blitzTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = blitzTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0C852312EDC81740025047D /* blitzUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = blitzUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -72,12 +87,22 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		C06852322EE58E6100C1A387 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				C06852332EE58E6100C1A387 /* WidgetKit.framework */,
+				C06852352EE58E6100C1A387 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		C0C852112EDC81730025047D = {
 			isa = PBXGroup;
 			children = (
 				C0C8521C2EDC81730025047D /* blitz */,
 				C0C8522A2EDC81740025047D /* blitzTests */,
 				C0C852342EDC81740025047D /* blitzUITests */,
+				C06852322EE58E6100C1A387 /* Frameworks */,
 				C0C8521B2EDC81730025047D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -102,6 +127,7 @@
 				C0C852162EDC81730025047D /* Sources */,
 				C0C852172EDC81730025047D /* Frameworks */,
 				C0C852182EDC81730025047D /* Resources */,
+				C068524C2EE58E6100C1A387 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);

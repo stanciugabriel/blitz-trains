@@ -13,11 +13,13 @@ struct StationDelay: Equatable, Codable {
 struct DelayInfo: Equatable, Codable {
     let delayMinutes: Int?
     let platform: String?
+    let statusText: String?
     let stationDelays: [StationDelay]
 
-    init(delayMinutes: Int?, platform: String?, stationDelays: [StationDelay] = []) {
+    init(delayMinutes: Int?, platform: String?, statusText: String? = nil, stationDelays: [StationDelay] = []) {
         self.delayMinutes = delayMinutes
         self.platform = platform
+        self.statusText = statusText
         self.stationDelays = stationDelays
     }
 }
@@ -196,18 +198,33 @@ final class InfoFerScraper {
     private func parseResultHTML(_ html: String) -> DelayInfo {
         let activeBranch = extractActiveBranch(from: html)
         let platform = parsePlatform(in: activeBranch ?? html)
-        let delay = parseHeadlineDelay(from: html)
+        let headline = parseHeadlineDetails(from: html)
+        let delay = headline.delay
         let stationDelays = parseDetailedSchedule(in: activeBranch)
 
-        return DelayInfo(delayMinutes: delay, platform: platform, stationDelays: stationDelays)
+        return DelayInfo(delayMinutes: delay, platform: platform, statusText: headline.text, stationDelays: stationDelays)
     }
 
-    private func parseHeadlineDelay(from html: String) -> Int? {
-        guard let delayClassRange = html.range(of: "class=\"color-firebrick\"", options: .caseInsensitive) else { return 0 }
+    private func parseHeadlineDetails(from html: String) -> (delay: Int?, text: String?) {
+        let paragraphMatches = allMatches(in: html, pattern: "(?is)<p[^>]*class=\\\"[^\\\"]*text-1-1rem[^\\\"]*\\\"[^>]*>(.*?)</p>")
+        if let targetParagraph = paragraphMatches.dropFirst().first ?? paragraphMatches.first {
+            let cleaned = targetParagraph.replacingOccurrences(of: "Puteți apăsa pe butonul ”Hartă” pentru a vedea locația.", with: "")
+            let decoded = decodeHTMLEntities(cleaned).trimmingCharacters(in: .whitespacesAndNewlines)
+            let delayValue = interpretHeadlineDelayValue(from: decoded)
+            return (delayValue, decoded.isEmpty ? nil : decoded)
+        }
+
+        guard let delayClassRange = html.range(of: "class=\"color-firebrick\"", options: .caseInsensitive) else {
+            return (nil, nil)
+        }
         let snippet = html[delayClassRange.upperBound...]
-        guard let closing = snippet.firstIndex(of: "<") else { return 0 }
-        let text = String(snippet[..<closing])
-        return extractDelayNumber(from: text)
+        guard let closing = snippet.firstIndex(of: "<") else {
+            return (nil, nil)
+        }
+        let rawText = String(snippet[..<closing])
+        let decoded = decodeHTMLEntities(rawText).trimmingCharacters(in: .whitespacesAndNewlines)
+        let delayValue = interpretHeadlineDelayValue(from: decoded)
+        return (delayValue, decoded.isEmpty ? nil : decoded)
     }
 
     private func parsePlatform(in html: String) -> String? {
@@ -279,6 +296,10 @@ final class InfoFerScraper {
 
     private func parseDelayFromColumn(_ htmlSnippet: String) -> Int? {
         let clean = decodeHTMLEntities(htmlSnippet)
+
+        if clean.contains("*") {
+            return nil
+        }
         
         // 1. On Time check
         if clean.localizedCaseInsensitiveContains("la timp") {
@@ -318,7 +339,7 @@ final class InfoFerScraper {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
         let nsText = text as NSString
         guard let match = regex.firstMatch(in: text, options: [], range: NSRange(location: 0, length: nsText.length)) else { return nil }
-        
+
         if groupIndex < match.numberOfRanges {
             let range = match.range(at: groupIndex)
             if range.location != NSNotFound {
@@ -328,11 +349,59 @@ final class InfoFerScraper {
         return nil
     }
 
+    private func allMatches(in text: String, pattern: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+        return matches.compactMap { match in
+            guard match.numberOfRanges > 1 else { return nil }
+            let range = match.range(at: 1)
+            guard range.location != NSNotFound else { return nil }
+            return nsText.substring(with: range)
+        }
+    }
+
+    private func interpretHeadlineDelayValue(from text: String) -> Int? {
+        let normalized = text
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+
+        if normalized.contains("fara intarziere") {
+            return 0
+        }
+
+        if let earlyMatch = firstMatch(in: normalized, pattern: "(\\d+)\\s*min\\s+mai\\s+devreme", groupIndex: 1),
+           let value = Int(earlyMatch) {
+            return -value
+        }
+
+        if let lateMatch = firstMatch(in: normalized, pattern: "(\\d+)\\s*min\\s+intarziere", groupIndex: 1),
+           let value = Int(lateMatch) {
+            return value
+        }
+
+        return extractDelayNumber(from: text)
+    }
+
     private func extractDelayNumber(from text: String) -> Int? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pattern = "([+-]?\\d+)"
-        guard let match = firstMatch(in: trimmed, pattern: pattern, groupIndex: 1) else { return nil }
-        return Int(match)
+        guard !trimmed.isEmpty else { return nil }
+
+        let pattern = "([+-]?\\s*\\d+)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        let nsText = trimmed as NSString
+        guard let match = regex.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: nsText.length)) else {
+            return nil
+        }
+
+        let range = match.range(at: 1)
+        guard range.location != NSNotFound else { return nil }
+
+        // Ignore numbers that appear far into the sentence (likely timestamps "Raportat la 2:01")
+        if range.location > 5 { return nil }
+
+        let raw = nsText.substring(with: range).replacingOccurrences(of: " ", with: "")
+        return Int(raw)
     }
 
     private func decodeHTMLEntities(_ text: String) -> String {
