@@ -34,3 +34,7 @@
 - TripDetailView now opens with an InfoFer status banner directly under the header, showing the exact paragraph scraped from the site with green/red chrome based on the latest delay state.
 - Added an Operator section (CFR logo, contact actions, report CTA) and an Arrival Forecast card (mock stats + colored distribution bars) beneath History to spotlight operator touchpoints and historical reliability.
 - Trip rows reuse the same per-terminal delay heuristics as the detail sheet: departure/arrival times adjust independently using station-level delay data, and their colors turn red/green per terminal rather than sharing a single delay tint.
+- GTFS access now comes from the baked `static_data.sqlite` schema; a new datasource layer maps trains, stations, and segments so we can search/service routes without the old GTFS tables.
+- Detail + dashboard maps draw their polylines from the full `trip_segments` chain while dots only appear on commercial stops (or forced termini), keeping overlays clean but accurate.
+- Trip timing uses `ScheduleDateUtils` to normalize post-midnight arrivals; overnight runs show the `+1` badge correctly and stay on the active list until 20 minutes after the real (delay‑adjusted) arrival.
+- TripDetailView ends with a live "Track Speed Limit" card: it evaluates the currently active `trip_segments` window (delay‑aware) and animates the km/h readout / copy in sync with the device clock.

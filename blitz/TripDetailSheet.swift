@@ -32,10 +32,10 @@ struct TripDetailSheet: View {
     @State private var ticketCode: String?
     @State private var isPresentingTicketSheet = false
     @State private var isShowingStationDelaySheet = false
+    @State private var segments: [GTFSSegment] = []
 
     private let dataSource = GTFSDataSource.shared
     private let secondTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-    private let minuteTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     init(
         trip: Trip,
@@ -67,58 +67,7 @@ struct TripDetailSheet: View {
                                     .padding(.horizontal, -16)
                             }
                             if hasSegmentData {
-                                VStack(alignment: .leading, spacing: 24) {
-                            TerminalInfoView(
-                                icon: "arrow.up.right.circle.fill",
-                                title: trip.originName ?? "Origin",
-                                timeText: formattedTime(adjustedDepartureDate),
-                                originalTimeText: departureTerminalDisplay.originalTimeText,
-                                relativeText: departureRelativeText,
-                                statusText: departureTerminalDisplay.statusText,
-                                statusColor: departureTerminalDisplay.statusColor,
-                                timeColor: departureTerminalDisplay.timeColor,
-                                platformText: departureTerminalDisplay.platformText,
-                                showsOriginalTime: departureTerminalDisplay.showsOriginalTime
-                            )
-
-                            if shouldShowTravelSummaryRow {
-                                HStack(spacing: 12) {
-                                            HStack(spacing: 8) {
-                                                Image(systemName: "clock.arrow.circlepath")
-                                                travelSummaryContent
-                                                    .fixedSize(horizontal: true, vertical: false)
-                                            }
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-
-                                            Rectangle()
-                                                .fill(Color(.systemGray4))
-                                                .frame(height: 1)
-                                                .frame(maxWidth: .infinity)
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 4)
-                                    }
-
-                            TerminalInfoView(
-                                icon: "arrow.down.right.circle.fill",
-                                title: trip.destinationName ?? "Destination",
-                                timeText: formattedTime(adjustedArrivalDate),
-                                originalTimeText: arrivalTerminalDisplay.originalTimeText,
-                                relativeText: arrivalRelativeText,
-                                statusText: arrivalTerminalDisplay.statusText,
-                                statusColor: arrivalTerminalDisplay.statusColor,
-                                timeColor: arrivalTerminalDisplay.timeColor,
-                                platformText: arrivalTerminalDisplay.platformText,
-                                showsNextDayBadge: isOvernightTrip,
-                                showsOriginalTime: arrivalTerminalDisplay.showsOriginalTime
-                            )
-                            seatInfoGrid
-                            goodToKnowSection
-                            historySection
-                            operatorSection
-                            arrivalForecastSection
-                                }
+                                timetableSection
                             } else {
                                 Text("Schedule information unavailable for this trip.")
                                     .font(.callout)
@@ -188,14 +137,10 @@ struct TripDetailSheet: View {
         }
         .task(id: trip.id) {
             loadTiming()
+            loadSegments()
             await loadDestinationWeather()
         }
         .onReceive(secondTimer) { value in
-            guard shouldTickEverySecond else { return }
-            now = value
-        }
-        .onReceive(minuteTimer) { value in
-            guard shouldTickEveryMinute else { return }
             now = value
         }
         .sheet(isPresented: $isPresentingSeatEditor) {
@@ -259,6 +204,71 @@ struct TripDetailSheet: View {
 
     private var hasSegmentData: Bool {
         trip.originStopId != nil && trip.destinationStopId != nil
+    }
+
+    private var tripIdentifier: String {
+        trip.gtfsTripId ?? trip.id
+    }
+
+    @ViewBuilder
+    private var timetableSection: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            TerminalInfoView(
+                icon: "arrow.up.right.circle.fill",
+                title: trip.originName ?? "Origin",
+                timeText: formattedTime(adjustedDepartureDate),
+                originalTimeText: departureTerminalDisplay.originalTimeText,
+                relativeText: departureRelativeText,
+                statusText: departureTerminalDisplay.statusText,
+                statusColor: departureTerminalDisplay.statusColor,
+                timeColor: departureTerminalDisplay.timeColor,
+                platformText: departureTerminalDisplay.platformText,
+                showsOriginalTime: departureTerminalDisplay.showsOriginalTime
+            )
+
+            if shouldShowTravelSummaryRow {
+                travelSummaryRow
+            }
+
+            TerminalInfoView(
+                icon: "arrow.down.right.circle.fill",
+                title: trip.destinationName ?? "Destination",
+                timeText: formattedTime(adjustedArrivalDate),
+                originalTimeText: arrivalTerminalDisplay.originalTimeText,
+                relativeText: arrivalRelativeText,
+                statusText: arrivalTerminalDisplay.statusText,
+                statusColor: arrivalTerminalDisplay.statusColor,
+                timeColor: arrivalTerminalDisplay.timeColor,
+                platformText: arrivalTerminalDisplay.platformText,
+                showsNextDayBadge: isOvernightTrip,
+                showsOriginalTime: arrivalTerminalDisplay.showsOriginalTime
+            )
+            seatInfoGrid
+            goodToKnowSection
+            historySection
+            operatorSection
+            arrivalForecastSection
+            trackSpeedSection
+        }
+    }
+
+    private var travelSummaryRow: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "clock.arrow.circlepath")
+                travelSummaryContent
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+
+            Rectangle()
+                .fill(Color(.systemGray4))
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
     }
 
     private var headerLine: String {
@@ -342,25 +352,6 @@ struct TripDetailSheet: View {
 
     private var shouldShowTravelSummaryRow: Bool {
         travelSummaryText != nil || isOvernightTrip
-    }
-
-    private var nextEventInterval: TimeInterval? {
-        let upcoming = [timing.departureDate, timing.arrivalDate].compactMap { date -> TimeInterval? in
-            guard let date else { return nil }
-            let delta = date.timeIntervalSince(now)
-            return delta > 0 ? delta : nil
-        }
-        return upcoming.min()
-    }
-
-    private var shouldTickEverySecond: Bool {
-        guard let interval = nextEventInterval else { return false }
-        return interval <= 3600
-    }
-
-    private var shouldTickEveryMinute: Bool {
-        guard let interval = nextEventInterval else { return false }
-        return interval <= 24 * 3600 && interval > 3600
     }
 
     private var travelSummaryText: String? {
@@ -457,6 +448,10 @@ struct TripDetailSheet: View {
         timing = snapshot
     }
 
+    private func loadSegments() {
+        segments = dataSource.segments(for: tripIdentifier)
+    }
+
     private func timingSnapshot(for trip: Trip) -> TripTimingSnapshot? {
         guard
             let travelDate = trip.travelDate,
@@ -472,7 +467,8 @@ struct TripDetailSheet: View {
         let destinationSchedule = dataSource.stopSchedule(for: tripIdentifier, stopId: destinationId)
 
         let departure = originSchedule?.departureDate(on: base) ?? originSchedule?.arrivalDate(on: base)
-        let arrival = destinationSchedule?.arrivalDate(on: base) ?? destinationSchedule?.departureDate(on: base)
+        let rawArrival = destinationSchedule?.arrivalDate(on: base) ?? destinationSchedule?.departureDate(on: base)
+        let arrival = ScheduleDateUtils.normalizedArrival(rawArrival, relativeTo: departure)
 
         return TripTimingSnapshot(departureDate: departure, arrivalDate: arrival)
     }
@@ -946,7 +942,7 @@ private extension TripDetailSheet {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 60) {
+            HStack(spacing: 50) {
                 historyStatCard(
                     title: "Rides",
                     icon: "train.side.front.car",
@@ -1402,6 +1398,64 @@ private struct TripTimingSnapshot {
     }
 }
 
+private struct SegmentTimelineEntry {
+    let segment: GTFSSegment
+    let startDate: Date
+    let endDate: Date
+}
+
+private struct SegmentSpeedContext {
+    enum State {
+        case upcoming
+        case active
+        case complete
+    }
+
+    let segment: GTFSSegment
+    let startDate: Date
+    let endDate: Date
+    let state: State
+
+    init(entry: SegmentTimelineEntry, state: State) {
+        segment = entry.segment
+        startDate = entry.startDate
+        endDate = entry.endDate
+        self.state = state
+    }
+}
+
+private enum SegmentClockEvent {
+    case departure
+    case arrival
+}
+
+enum ScheduleDateUtils {
+    static let dayInterval: TimeInterval = 24 * 60 * 60
+
+    static func normalizedArrival(_ arrival: Date?, relativeTo departure: Date?) -> Date? {
+        guard var arrival else { return nil }
+        guard let departure else { return arrival }
+        if arrival > departure { return arrival }
+        var iterations = 0
+        while arrival <= departure && iterations < 7 {
+            arrival = arrival.addingTimeInterval(dayInterval)
+            iterations += 1
+        }
+        return arrival
+    }
+
+    static func shiftedForward(_ date: Date, after reference: Date?) -> Date {
+        guard let reference else { return date }
+        var candidate = date
+        var iterations = 0
+        while candidate < reference && iterations < 7 {
+            candidate = candidate.addingTimeInterval(dayInterval)
+            iterations += 1
+        }
+        return candidate
+    }
+}
+
 private struct DestinationWeather {
     let symbolName: String
     let summary: String
@@ -1458,6 +1512,208 @@ private struct StationDelaysSheet: View {
             }
         }
     }
+}
+
+private extension TripDetailSheet {
+    @ViewBuilder
+    var trackSpeedSection: some View {
+        if let context = currentSegmentContext {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Track Speed Limit")
+                    .font(.system(size: 20, weight: .semibold))
+
+                HStack(alignment: .lastTextBaseline, spacing: 8) {
+                    Text(speedDisplayValue(for: context.segment.maxSpeed))
+                        .font(.system(size: 44, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                    if context.segment.maxSpeed > 0 {
+                        Text("km/h")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.35), value: context.segment.id)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(segmentLabel(for: context.segment))
+                        .font(.headline)
+                    Text(segmentStateDescription(for: context))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(segmentWindowDescription(for: context))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
+            )
+        }
+    }
+
+    private func speedDisplayValue(for speed: Int) -> String {
+        speed > 0 ? "\(speed)" : "-"
+    }
+
+    private func segmentLabel(for segment: GTFSSegment) -> String {
+        let origin = segmentStationName(segment.startName, fallback: segment.startId)
+        let destination = segmentStationName(segment.endName, fallback: segment.endId)
+        return "\(origin) → \(destination)"
+    }
+
+    private func segmentStateDescription(for context: SegmentSpeedContext) -> String {
+        switch context.state {
+        case .active:
+            return "Segment in progress"
+        case .upcoming:
+            return "Segment scheduled next"
+        case .complete:
+            return "Segment completed"
+        }
+    }
+
+    private func segmentWindowDescription(for context: SegmentSpeedContext) -> String {
+        let startText = segmentTimeLabel(for: context.startDate)
+        let endText = segmentTimeLabel(for: context.endDate)
+        switch context.state {
+        case .active:
+            return "Live window: \(startText) – \(endText)"
+        case .upcoming:
+            return "Begins around \(startText)"
+        case .complete:
+            return "Ended around \(endText)"
+        }
+    }
+
+    private func segmentStationName(_ name: String?, fallback: String) -> String {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmed, !trimmed.isEmpty {
+            return trimmed
+        }
+        return fallback
+    }
+
+    private func segmentTimeLabel(for date: Date) -> String {
+        TripDetailSheet.timeFormatter.string(from: date)
+    }
+
+    private var currentSegmentContext: SegmentSpeedContext? {
+        let entries = segmentTimelineEntries
+        guard !entries.isEmpty else { return nil }
+        let sorted = entries.sorted { $0.startDate < $1.startDate }
+        let reference = now
+
+        if let active = sorted.first(where: { reference >= $0.startDate && reference <= $0.endDate }) {
+            return SegmentSpeedContext(entry: active, state: .active)
+        }
+
+        if reference < sorted.first!.startDate {
+            let upcoming = sorted.first(where: { reference <= $0.startDate }) ?? sorted.first!
+            return SegmentSpeedContext(entry: upcoming, state: .upcoming)
+        }
+
+        if reference > sorted.last!.endDate {
+            let last = sorted.last!
+            return SegmentSpeedContext(entry: last, state: .complete)
+        }
+
+        if let upcoming = sorted.first(where: { reference <= $0.startDate }) {
+            return SegmentSpeedContext(entry: upcoming, state: .upcoming)
+        }
+
+        return nil
+    }
+
+    private var segmentTimelineEntries: [SegmentTimelineEntry] {
+        guard !segments.isEmpty else { return [] }
+        let baseDate = segmentBaseDate
+        var lastReference: Date?
+        let entries: [SegmentTimelineEntry] = segments.compactMap { segment in
+            guard
+                var startDate = adjustedSegmentDate(seconds: segment.departureSeconds, stopId: segment.startId, stationName: segment.startName, event: .departure, baseDate: baseDate),
+                var endDate = adjustedSegmentDate(seconds: segment.arrivalSeconds, stopId: segment.endId, stationName: segment.endName, event: .arrival, baseDate: baseDate)
+            else {
+                return nil
+            }
+
+            if let arrivalNormalized = ScheduleDateUtils.normalizedArrival(endDate, relativeTo: startDate) {
+                endDate = arrivalNormalized
+            }
+
+            startDate = ScheduleDateUtils.shiftedForward(startDate, after: lastReference)
+            endDate = ScheduleDateUtils.shiftedForward(endDate, after: startDate)
+            lastReference = endDate
+
+            return SegmentTimelineEntry(segment: segment, startDate: startDate, endDate: endDate)
+        }
+        return entries
+    }
+
+    private var segmentBaseDate: Date {
+        let reference = timing.departureDate ?? trip.travelDate ?? syncTravelDate
+        var candidate = Calendar.current.startOfDay(for: reference)
+        if reference < now,
+           let firstSeconds = segments.first?.departureSeconds {
+            let firstStart = candidate.addingTimeInterval(TimeInterval(firstSeconds))
+            if now < firstStart {
+                candidate = candidate.addingTimeInterval(-ScheduleDateUtils.dayInterval)
+            }
+        }
+        return candidate
+    }
+
+    private func adjustedSegmentDate(
+        seconds: Int?,
+        stopId: String,
+        stationName: String?,
+        event: SegmentClockEvent,
+        baseDate: Date
+    ) -> Date? {
+        guard let seconds else { return nil }
+        var date = baseDate.addingTimeInterval(TimeInterval(seconds))
+        if let delay = segmentDelayMinutes(for: stopId, stationName: stationName, event: event) ?? activeDelayMinutes,
+           delay != 0 {
+            date = date.addingTimeInterval(TimeInterval(delay * 60))
+        }
+        return date
+    }
+
+    private func segmentDelayMinutes(
+        for stopId: String,
+        stationName: String?,
+        event: SegmentClockEvent
+    ) -> Int? {
+        if let stop = trip.stops?.first(where: { $0.id == stopId }) {
+            switch event {
+            case .departure:
+                return stop.departureDelayMinutes ?? stop.arrivalDelayMinutes
+            case .arrival:
+                return stop.arrivalDelayMinutes ?? stop.departureDelayMinutes
+            }
+        }
+
+        if let stationName, let detail = delayDetail(forStationName: stationName) {
+            switch event {
+            case .departure:
+                return detail.departureDelayMinutes ?? detail.arrivalDelayMinutes
+            case .arrival:
+                return detail.arrivalDelayMinutes ?? detail.departureDelayMinutes
+            }
+        }
+
+        return nil
+    }
+
+    private func delayDetail(forStationName stationName: String) -> StationDelay? {
+        guard let info = liveDelayInfo else { return nil }
+        let normalized = normalizeStationName(stationName)
+        return info.stationDelays.first { normalizeStationName($0.stationName) == normalized }
+    }
+
 }
 
 private struct StationDelayTimelineView: View {

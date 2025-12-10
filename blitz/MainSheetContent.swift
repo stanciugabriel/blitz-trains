@@ -651,8 +651,16 @@ struct SheetContent: View {
 
         let base = Calendar.current.startOfDay(for: travelDate)
         let identifier = trip.gtfsTripId ?? trip.id
-        guard let schedule = dataSource.stopSchedule(for: identifier, stopId: destinationId) else { return nil }
-        guard let arrival = schedule.arrivalDate(on: base) ?? schedule.departureDate(on: base) else { return nil }
+        guard let destinationSchedule = dataSource.stopSchedule(for: identifier, stopId: destinationId) else { return nil }
+
+        var departureReference: Date?
+        if let originId = trip.originStopId,
+           let originSchedule = dataSource.stopSchedule(for: identifier, stopId: originId) {
+            departureReference = originSchedule.departureDate(on: base) ?? originSchedule.arrivalDate(on: base)
+        }
+
+        guard let rawArrival = destinationSchedule.arrivalDate(on: base) ?? destinationSchedule.departureDate(on: base) else { return nil }
+        guard let arrival = ScheduleDateUtils.normalizedArrival(rawArrival, relativeTo: departureReference) else { return nil }
         let delaySeconds = TimeInterval((trip.delayMinutes ?? 0) * 60)
         return arrival.addingTimeInterval(delaySeconds)
     }
@@ -1118,7 +1126,8 @@ struct TripRowView: View {
         let destinationSchedule = dataSource.stopSchedule(for: tripIdentifier, stopId: destinationId)
 
         let departure = originSchedule?.departureDate(on: base) ?? originSchedule?.arrivalDate(on: base)
-        let arrival = destinationSchedule?.arrivalDate(on: base) ?? destinationSchedule?.departureDate(on: base)
+        let rawArrival = destinationSchedule?.arrivalDate(on: base) ?? destinationSchedule?.departureDate(on: base)
+        let arrival = ScheduleDateUtils.normalizedArrival(rawArrival, relativeTo: departure)
         timing = TripRowTiming(departureDate: departure, arrivalDate: arrival)
     }
 

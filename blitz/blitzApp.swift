@@ -28,8 +28,8 @@ struct ContentView: View {
     var body: some View {
         Map(position: $mapPosition) {
             UserAnnotation()
-            if let focusedTrip = selectedTrip, let stops = focusedTrip.stops, !isAddTripMode {
-                detailMapContent(for: focusedTrip, stops: stops)
+            if let focusedTrip = selectedTrip, !isAddTripMode {
+                detailMapContent(for: focusedTrip)
             } else {
                 dashboardMapContent()
             }
@@ -93,7 +93,7 @@ extension ContentView {
     @MapContentBuilder
     private func dashboardMapContent() -> some MapContent {
         ForEach(trips) { trip in
-            if let line = straightLineCoordinates(for: trip) {
+            if let line = routeCoordinates(for: trip) {
                 MapPolyline(coordinates: line)
                     .stroke(.blue.opacity(0.6), style: StrokeStyle(lineWidth: 4, lineCap: .round))
                 if let start = line.first {
@@ -111,9 +111,10 @@ extension ContentView {
     }
 
     @MapContentBuilder
-    private func detailMapContent(for trip: Trip, stops: [StoredStop]) -> some MapContent {
-        let ordered = stops.sorted { $0.sequence < $1.sequence }
-        let coordinates = ordered.map { $0.coordinate }
+    private func detailMapContent(for trip: Trip) -> some MapContent {
+        let orderedStops = polylineStops(for: trip)
+        let stoppingStops = stationStops(for: trip)
+        let coordinates = orderedStops.map { $0.coordinate }
         if coordinates.count > 1 {
             MapPolyline(coordinates: coordinates)
                 .stroke(
@@ -121,15 +122,25 @@ extension ContentView {
                     style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [6, 6])
                 )
 
-            if let segment = segmentCoordinates(for: trip, orderedStops: ordered) {
+            if let segment = segmentCoordinates(for: trip, orderedStops: orderedStops) {
                 MapPolyline(coordinates: segment)
                     .stroke(.blue, style: StrokeStyle(lineWidth: 5, lineCap: .round))
             }
         }
 
-        ForEach(ordered) { stop in
-            Annotation("", coordinate: stop.coordinate) {
-                MapDot(color: isStopWithinSegment(stop, trip: trip) ? .blue : .gray)
+        if !stoppingStops.isEmpty {
+            if let range = highlightedRange(for: trip, orderedStops: stoppingStops) {
+                ForEach(Array(stoppingStops.enumerated()), id: \.offset) { index, stop in
+                    Annotation("", coordinate: stop.coordinate) {
+                        MapDot(color: range.contains(index) ? .blue : .gray)
+                    }
+                }
+            } else {
+                ForEach(stoppingStops) { stop in
+                    Annotation("", coordinate: stop.coordinate) {
+                        MapDot(color: .gray)
+                    }
+                }
             }
         }
     }
@@ -142,6 +153,43 @@ extension ContentView {
         return [start, end]
     }
 
+    private func routeCoordinates(for trip: Trip) -> [CLLocationCoordinate2D]? {
+        let stops = polylineStops(for: trip)
+        if stops.count > 1 {
+            return stops.map { $0.coordinate }
+        }
+        return straightLineCoordinates(for: trip)
+    }
+
+    private func polylineStops(for trip: Trip) -> [StoredStop] {
+        let identifier = trip.gtfsTripId ?? trip.id
+        let gtfsStops = GTFSDataSource.shared.polylineStops(for: identifier)
+        let baseStops: [StoredStop]
+        if !gtfsStops.isEmpty {
+            baseStops = gtfsStops.map(StoredStop.init(gtfsStop:))
+        } else if let stored = trip.stops {
+            baseStops = stored
+        } else {
+            baseStops = []
+        }
+        return baseStops.sorted { $0.sequence < $1.sequence }
+    }
+
+    private func stationStops(for trip: Trip) -> [StoredStop] {
+        let identifier = trip.gtfsTripId ?? trip.id
+        let gtfsStops = GTFSDataSource.shared.stops(for: identifier)
+        let baseStops: [StoredStop]
+        if !gtfsStops.isEmpty {
+            baseStops = gtfsStops.map(StoredStop.init(gtfsStop:))
+        } else if let stored = trip.stops {
+            baseStops = stored
+        } else {
+            baseStops = []
+        }
+        return baseStops.sorted { $0.sequence < $1.sequence }
+    }
+
+
     private func coordinate(for stopId: String?, sequence: Int?, in trip: Trip) -> CLLocationCoordinate2D? {
         if let id = stopId, let stop = trip.stops?.first(where: { $0.id == id }) {
             return stop.coordinate
@@ -153,15 +201,30 @@ extension ContentView {
     }
 
     private func segmentCoordinates(for trip: Trip, orderedStops: [StoredStop]) -> [CLLocationCoordinate2D]? {
-        guard let startSeq = trip.originSequence, let endSeq = trip.destinationSequence else { return nil }
-        let segment = orderedStops.filter { $0.sequence >= startSeq && $0.sequence <= endSeq }
-        guard segment.count > 1 else { return nil }
-        return segment.map { $0.coordinate }
+        guard let range = highlightedRange(for: trip, orderedStops: orderedStops) else { return nil }
+        let segmentSlice = orderedStops[range]
+        guard segmentSlice.count > 1 else { return nil }
+        return segmentSlice.map { $0.coordinate }
     }
 
-    private func isStopWithinSegment(_ stop: StoredStop, trip: Trip) -> Bool {
-        guard let startSeq = trip.originSequence, let endSeq = trip.destinationSequence else { return false }
-        return stop.sequence >= startSeq && stop.sequence <= endSeq
+    private func highlightedRange(for trip: Trip, orderedStops: [StoredStop]) -> ClosedRange<Int>? {
+        guard !orderedStops.isEmpty else { return nil }
+        let originIndex = indexForStop(id: trip.originStopId, sequence: trip.originSequence, in: orderedStops, fallback: 0)
+        let destinationIndex = indexForStop(id: trip.destinationStopId, sequence: trip.destinationSequence, in: orderedStops, fallback: orderedStops.count - 1)
+        guard originIndex < orderedStops.count, destinationIndex < orderedStops.count else { return nil }
+        let lower = min(originIndex, destinationIndex)
+        let upper = max(originIndex, destinationIndex)
+        return lower...upper
+    }
+
+    private func indexForStop(id: String?, sequence: Int?, in stops: [StoredStop], fallback: Int) -> Int {
+        if let id, let index = stops.firstIndex(where: { $0.id == id }) {
+            return index
+        }
+        if let sequence, let index = stops.firstIndex(where: { $0.sequence == sequence }) {
+            return index
+        }
+        return min(max(fallback, 0), max(stops.count - 1, 0))
     }
 
     private func updateCameraForCurrentState(animated: Bool = true) {
@@ -180,7 +243,7 @@ extension ContentView {
     }
 
     private func focusOnAllTrips(animated: Bool = true) {
-        let coordinates = trips.compactMap { straightLineCoordinates(for: $0) }.flatMap { $0 }
+        let coordinates = trips.compactMap { routeCoordinates(for: $0) }.flatMap { $0 }
         if let region = region(containing: coordinates) {
             setMapRegion(region, animated: animated)
         } else {
@@ -189,11 +252,7 @@ extension ContentView {
     }
 
     private func coordinatesForTrip(_ trip: Trip) -> [CLLocationCoordinate2D]? {
-        if let stops = trip.stops, !stops.isEmpty {
-            let ordered = stops.sorted { $0.sequence < $1.sequence }
-            return ordered.map { $0.coordinate }
-        }
-        return straightLineCoordinates(for: trip)
+        return routeCoordinates(for: trip)
     }
 
     private func region(containing coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion? {
@@ -412,6 +471,18 @@ struct StoredStop: Identifiable, Codable, Equatable {
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+extension StoredStop {
+    init(gtfsStop: GTFSStop) {
+        self.init(
+            id: gtfsStop.id,
+            name: gtfsStop.name,
+            latitude: gtfsStop.latitude,
+            longitude: gtfsStop.longitude,
+            sequence: gtfsStop.sequence
+        )
     }
 }
 
