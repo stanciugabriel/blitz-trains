@@ -18,6 +18,17 @@ struct GTFSSegment: Identifiable, Equatable {
     let departureSeconds: Int?
     let arrivalSeconds: Int?
     let maxSpeed: Int
+    let trainLengthMeters: Int?
+    let trainTonnage: Int?
+}
+
+extension GTFSDataSource {
+    struct AgencyInfo {
+        let id: String
+        let name: String
+        let url: String?
+        let timezone: String?
+    }
 }
 
 extension GTFSDataSource.GTFSStopSchedule {
@@ -37,9 +48,11 @@ final class GTFSDataSource {
 
     private var database: OpaquePointer?
     private let searchLimit = 25
+    private var agenciesById: [String: AgencyInfo] = [:]
 
     private init() {
         openDatabase()
+        loadAgencies()
     }
 
     deinit {
@@ -53,7 +66,7 @@ final class GTFSDataSource {
         let fetchLimit = Int32(limit ?? searchLimit)
         let sql = """
         WITH first_segment AS (
-            SELECT ts.train_number, ts.sequence_id, ts.uic_start
+            SELECT ts.train_number, ts.sequence_id, ts.uic_start, ts.train_length_meters, ts.train_tonnage
             FROM trip_segments ts
             INNER JOIN (
                 SELECT train_number, MIN(sequence_id) AS min_sequence
@@ -73,7 +86,9 @@ final class GTFSDataSource {
                t.category,
                t.operator_id,
                origin.name AS origin_name,
-               destination.name AS destination_name
+               destination.name AS destination_name,
+               fs.train_length_meters,
+               fs.train_tonnage
         FROM trains t
         LEFT JOIN first_segment fs ON fs.train_number = t.train_number
         LEFT JOIN stations origin ON origin.uic_code = fs.uic_start
@@ -141,10 +156,26 @@ final class GTFSDataSource {
             } else {
                 destinationName = nil
             }
+            let lengthMeters: Int?
+            if sqlite3_column_type(statement, 5) == SQLITE_NULL {
+                lengthMeters = nil
+            } else {
+                lengthMeters = Int(sqlite3_column_int(statement, 5))
+            }
+
+            let tonnageValue: Int?
+            if sqlite3_column_type(statement, 6) == SQLITE_NULL {
+                tonnageValue = nil
+            } else {
+                tonnageValue = Int(sqlite3_column_int(statement, 6))
+            }
 
             let routeName = routeDescription(origin: originName, destination: destinationName)
             let subtitle = routeName ?? "Route info unavailable"
             let displayTitle = formattedTrainTitle(category: category, number: trainNumber)
+            let trainType = category.flatMap { TrainType(categoryCode: $0) }
+            let lengthText = formattedTrainLength(meters: lengthMeters)
+            let tonnageText = formattedTrainTonnage(tons: tonnageValue)
             trips.append(
                 Trip(
                     id: trainNumber,
@@ -152,12 +183,23 @@ final class GTFSDataSource {
                     subtitle: subtitle,
                     agencyId: agencyId,
                     detailRoute: routeName,
-                    gtfsTripId: trainNumber
+                    gtfsTripId: trainNumber,
+                    trainType: trainType,
+                    trainLength: lengthText,
+                    trainTonnage: tonnageText
                 )
             )
         }
 
         return trips
+    }
+
+    func agencyInfo(for id: String?) -> AgencyInfo? {
+        guard let id else { return nil }
+        if agenciesById.isEmpty {
+            loadAgencies()
+        }
+        return agenciesById[id]
     }
 
     func stops(for tripId: String) -> [GTFSStop] {
@@ -303,6 +345,8 @@ final class GTFSDataSource {
             trip_segments.departure_time,
             trip_segments.arrival_time,
             trip_segments.max_speed_kmh,
+            trip_segments.train_length_meters,
+            trip_segments.train_tonnage,
             origin.name,
             destination.name
         FROM trip_segments
@@ -340,8 +384,22 @@ final class GTFSDataSource {
             } else {
                 maxSpeed = Int(sqlite3_column_int(statement, 5))
             }
-            let startName = sqlite3_column_text(statement, 6).map { String(cString: $0) }
-            let endName = sqlite3_column_text(statement, 7).map { String(cString: $0) }
+            let lengthValue: Int?
+            if sqlite3_column_type(statement, 6) == SQLITE_NULL {
+                lengthValue = nil
+            } else {
+                lengthValue = Int(sqlite3_column_int(statement, 6))
+            }
+
+            let tonnageValue: Int?
+            if sqlite3_column_type(statement, 7) == SQLITE_NULL {
+                tonnageValue = nil
+            } else {
+                tonnageValue = Int(sqlite3_column_int(statement, 7))
+            }
+
+            let startName = sqlite3_column_text(statement, 8).map { String(cString: $0) }
+            let endName = sqlite3_column_text(statement, 9).map { String(cString: $0) }
 
             let segment = GTFSSegment(
                 id: sequence,
@@ -351,7 +409,9 @@ final class GTFSDataSource {
                 endName: endName,
                 departureSeconds: departureSeconds,
                 arrivalSeconds: arrivalSeconds,
-                maxSpeed: maxSpeed
+                maxSpeed: maxSpeed,
+                trainLengthMeters: lengthValue,
+                trainTonnage: tonnageValue
             )
             segments.append(segment)
         }
@@ -512,6 +572,16 @@ final class GTFSDataSource {
         return "\(category) \(number)"
     }
 
+    private func formattedTrainLength(meters: Int?) -> String? {
+        guard let meters, meters > 0 else { return nil }
+        return "\(meters) m"
+    }
+
+    private func formattedTrainTonnage(tons: Int?) -> String? {
+        guard let tons, tons > 0 else { return nil }
+        return "\(tons) t"
+    }
+
     private func routeDescription(origin: String?, destination: String?) -> String? {
         let sanitizedOrigin = sanitizedStationName(origin)
         let sanitizedDestination = sanitizedStationName(destination)
@@ -542,6 +612,37 @@ final class GTFSDataSource {
             sqlite3_close(database)
             database = nil
         }
+    }
+
+    private func loadAgencies() {
+        guard let database, agenciesById.isEmpty else { return }
+        let sql = "SELECT agency_id, agency_name, agency_url, agency_timezone FROM agencies"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            logError("Failed to prepare agencies query")
+            return
+        }
+        defer { sqlite3_finalize(statement) }
+
+        var lookup: [String: AgencyInfo] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let idPointer = sqlite3_column_text(statement, 0) else { continue }
+            let id = String(cString: idPointer)
+            let name: String
+            if let namePointer = sqlite3_column_text(statement, 1) {
+                let raw = String(cString: namePointer).trimmingCharacters(in: .whitespacesAndNewlines)
+                name = raw.isEmpty ? "Operator" : raw
+            } else {
+                name = "Operator"
+            }
+            let rawURL = sqlite3_column_text(statement, 2).map { String(cString: $0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            let urlString = rawURL?.isEmpty == false ? rawURL : nil
+            let rawTimezone = sqlite3_column_text(statement, 3).map { String(cString: $0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            let timezone = rawTimezone?.isEmpty == false ? rawTimezone : nil
+            lookup[id] = AgencyInfo(id: id, name: name, url: urlString, timezone: timezone)
+        }
+
+        agenciesById = lookup
     }
 
     private func locateDatabaseURL() -> URL? {

@@ -317,6 +317,85 @@ private struct MapDot: View {
     }
 }
 
+enum TrainType: String, Codable, CaseIterable, Identifiable, Hashable {
+    case intercity = "IC"
+    case interregio = "IR"
+    case interregioNight = "IR-N"
+    case regioExpress = "R-E"
+    case regio = "R"
+
+    var id: String { rawValue }
+
+    var name: String {
+        switch self {
+        case .intercity:
+            return "InterCity"
+        case .interregio:
+            return "InterRegio"
+        case .interregioNight:
+            return "InterRegio Night"
+        case .regioExpress:
+            return "Regio Express"
+        case .regio:
+            return "Regio"
+        }
+    }
+
+    var displayLabel: String {
+        "\(rawValue) • \(name)"
+    }
+
+    init?(categoryCode: String) {
+        let normalized = categoryCode
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        switch normalized {
+        case Self.intercity.rawValue:
+            self = .intercity
+        case Self.interregio.rawValue:
+            self = .interregio
+        case "IRN", "IR-N", "IR N":
+            self = .interregioNight
+        case "RE", Self.regioExpress.rawValue:
+            self = .regioExpress
+        case "R", "REGIO":
+            self = .regio
+        default:
+            return nil
+        }
+    }
+
+    static func inferred(fromTitle title: String) -> TrainType? {
+        guard let prefix = title.split(separator: " ").first else { return nil }
+        return TrainType(categoryCode: String(prefix))
+    }
+}
+
+enum TrainPowerType: String, Codable, CaseIterable, Identifiable, Hashable {
+    case electric
+    case diesel
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .electric:
+            return "Electric"
+        case .diesel:
+            return "Diesel"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .electric:
+            return "bolt.fill"
+        case .diesel:
+            return "fuelpump.fill"
+        }
+    }
+}
+
 struct Trip: Identifiable, Codable, Equatable {
     let id: String
     let title: String
@@ -340,6 +419,11 @@ struct Trip: Identifiable, Codable, Equatable {
     let seatCar: String?
     let seatNumbers: [String]?
     let ticketQRCode: String?
+    let trainType: TrainType?
+    let trainLength: String?
+    let trainTonnage: String?
+    let trainIdentifier: String?
+    let trainPower: TrainPowerType?
 
     init(
         id: String = UUID().uuidString,
@@ -362,7 +446,12 @@ struct Trip: Identifiable, Codable, Equatable {
         originSequence: Int? = nil,
         destinationSequence: Int? = nil,
         seatCar: String? = nil,
-        seatNumbers: [String]? = nil
+        seatNumbers: [String]? = nil,
+        trainType: TrainType? = nil,
+        trainLength: String? = nil,
+        trainTonnage: String? = nil,
+        trainIdentifier: String? = nil,
+        trainPower: TrainPowerType? = nil
     ) {
         self.init(
             id: id,
@@ -386,7 +475,12 @@ struct Trip: Identifiable, Codable, Equatable {
             destinationSequence: destinationSequence,
             seatCar: seatCar,
             seatNumbers: seatNumbers,
-            ticketQRCode: nil
+            ticketQRCode: nil,
+            trainType: trainType,
+            trainLength: trainLength,
+            trainTonnage: trainTonnage,
+            trainIdentifier: trainIdentifier,
+            trainPower: trainPower
         )
     }
 
@@ -412,7 +506,12 @@ struct Trip: Identifiable, Codable, Equatable {
         destinationSequence: Int? = nil,
         seatCar: String? = nil,
         seatNumbers: [String]? = nil,
-        ticketQRCode: String?
+        ticketQRCode: String?,
+        trainType: TrainType? = nil,
+        trainLength: String? = nil,
+        trainTonnage: String? = nil,
+        trainIdentifier: String? = nil,
+        trainPower: TrainPowerType? = nil
     ) {
         self.id = id
         self.title = title
@@ -436,6 +535,11 @@ struct Trip: Identifiable, Codable, Equatable {
         self.seatCar = seatCar
         self.seatNumbers = seatNumbers
         self.ticketQRCode = ticketQRCode
+        self.trainType = trainType
+        self.trainLength = trainLength
+        self.trainTonnage = trainTonnage
+        self.trainIdentifier = trainIdentifier
+        self.trainPower = trainPower
     }
 }
 
@@ -487,7 +591,15 @@ extension StoredStop {
 }
 
 extension Trip {
-    func updatingSeatInfo(car: String?, seats: [String]?) -> Trip {
+    func updatingSeatInfo(
+        car: String?,
+        seats: [String]?,
+        trainType: TrainType?,
+        trainLength: String?,
+        trainTonnage: String?,
+        trainIdentifier: String?,
+        trainPower: TrainPowerType?
+    ) -> Trip {
         Trip(
             id: id,
             title: title,
@@ -510,7 +622,12 @@ extension Trip {
             destinationSequence: destinationSequence,
             seatCar: car,
             seatNumbers: seats,
-            ticketQRCode: ticketQRCode
+            ticketQRCode: ticketQRCode,
+            trainType: trainType,
+            trainLength: trainLength,
+            trainTonnage: trainTonnage,
+            trainIdentifier: trainIdentifier,
+            trainPower: trainPower
         )
     }
 
@@ -537,7 +654,12 @@ extension Trip {
             destinationSequence: destinationSequence,
             seatCar: seatCar,
             seatNumbers: seatNumbers,
-            ticketQRCode: code
+            ticketQRCode: code,
+            trainType: trainType,
+            trainLength: trainLength,
+            trainTonnage: trainTonnage,
+            trainIdentifier: trainIdentifier,
+            trainPower: trainPower
         )
     }
 
@@ -564,7 +686,12 @@ extension Trip {
             destinationSequence: destinationSequence,
             seatCar: seatCar,
             seatNumbers: seatNumbers,
-            ticketQRCode: ticketQRCode
+            ticketQRCode: ticketQRCode,
+            trainType: trainType,
+            trainLength: trainLength,
+            trainTonnage: trainTonnage,
+            trainIdentifier: trainIdentifier,
+            trainPower: trainPower
         )
     }
 
@@ -603,7 +730,12 @@ extension Trip {
             destinationSequence: destinationSequence,
             seatCar: seatCar,
             seatNumbers: seatNumbers,
-            ticketQRCode: ticketQRCode
+            ticketQRCode: ticketQRCode,
+            trainType: trainType,
+            trainLength: trainLength,
+            trainTonnage: trainTonnage,
+            trainIdentifier: trainIdentifier,
+            trainPower: trainPower
         )
     }
 }

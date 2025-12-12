@@ -38,7 +38,7 @@ struct AgencyBadge: View {
 
     private static let registry: [String: Entry] = [
         "6100826": Entry(background: Color.blue.opacity(0.8), foreground: .white, symbol: "tram.fill", initials: nil),
-        "200000": Entry(background: Color.purple.opacity(0.8), foreground: .white, symbol: "sparkles", initials: nil),
+        "237330": Entry(background: Color.purple.opacity(0.8), foreground: .white, symbol: "sparkles", initials: nil),
         "906090": Entry(background: Color.green.opacity(0.8), foreground: .white, symbol: "leaf.fill", initials: nil),
         "236037": Entry(background: Color.orange.opacity(0.8), foreground: .white, symbol: "bus.fill", initials: nil),
         "227098": Entry(background: Color.teal.opacity(0.8), foreground: .white, symbol: "bolt.fill", initials: nil),

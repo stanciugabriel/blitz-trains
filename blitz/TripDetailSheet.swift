@@ -29,6 +29,8 @@ struct TripDetailSheet: View {
     @State private var isPresentingSeatEditor = false
     @State private var seatEditorCar = ""
     @State private var seatEditorSeats = ""
+    @State private var seatEditorTrainIdentifier = ""
+    @State private var seatEditorTrainPower: TrainPowerType?
     @State private var ticketCode: String?
     @State private var isPresentingTicketSheet = false
     @State private var isShowingStationDelaySheet = false
@@ -147,6 +149,8 @@ struct TripDetailSheet: View {
             SeatEditorSheet(
                 carText: $seatEditorCar,
                 seatsText: $seatEditorSeats,
+                trainIdentifierText: $seatEditorTrainIdentifier,
+                trainPower: $seatEditorTrainPower,
                 onSave: saveSeatEditor,
                 onCancel: { isPresentingSeatEditor = false }
             )
@@ -174,7 +178,7 @@ struct TripDetailSheet: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
-            CompanyLogoView()
+            OperatorLogoView(logoName: operatorLogoName)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(headerLine)
@@ -249,6 +253,7 @@ struct TripDetailSheet: View {
             operatorSection
             arrivalForecastSection
             trackSpeedSection
+            trainInfoSection
         }
     }
 
@@ -974,13 +979,13 @@ private extension TripDetailSheet {
     var operatorSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 12) {
-                CompanyLogoView()
+                OperatorLogoView(logoName: operatorLogoName)
                     .frame(width: 48, height: 48)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CFR Călători")
+                    Text(operatorDisplayName)
                         .font(.headline)
-                    Text("București")
+                    Text(operatorSecondaryText)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -988,12 +993,18 @@ private extension TripDetailSheet {
                 Spacer(minLength: 0)
             }
 
-            HStack(spacing: 12) {
-                OperatorActionButton(title: "Website") {
-                    openOperatorWebsite()
-                }
-                OperatorActionButton(title: "Phone") {
-                    callOperator()
+            if operatorHasActions {
+                HStack(spacing: 12) {
+                    if operatorHasWebsite {
+                        OperatorActionButton(title: "Website") {
+                            openOperatorWebsite()
+                        }
+                    }
+                    if operatorHasPhone {
+                        OperatorActionButton(title: "Phone") {
+                            callOperator()
+                        }
+                    }
                 }
             }
 
@@ -1077,31 +1088,110 @@ private extension TripDetailSheet {
 
     private var seatInfoGrid: some View {
         HStack(spacing: 16) {
-            Button(action: openSeatEditor) {
-                SeatInfoCard(
-                    icon: "train.side.rear.car",
-                    title: "Coach",
-                    value: seatCarText
-                )
-            }
-            .buttonStyle(.plain)
+            editorInfoCard(
+                icon: "train.side.rear.car",
+                title: "Coach",
+                value: seatCarText,
+                isPlaceholder: isSeatCarPlaceholder
+            )
 
-            Button(action: openSeatEditor) {
-                SeatInfoCard(
-                    icon: "airplaneseat",
-                    title: "Seats",
-                    value: seatNumbersText
-                )
-            }
-            .buttonStyle(.plain)
+            editorInfoCard(
+                icon: "airplaneseat",
+                title: "Seats",
+                value: seatNumbersText,
+                isPlaceholder: isSeatNumbersPlaceholder
+            )
         }
     }
 
-    private var seatCarText: String {
-        if let car = trip.seatCar, !car.trimmingCharacters(in: .whitespaces).isEmpty {
-            return car
+    @ViewBuilder
+    private var trainInfoSection: some View {
+        Button(action: openSeatEditor) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("About the Train")
+                            .font(.system(size: 20, weight: .semibold))
+                        Text("Tap to edit seats, license & traction")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    trainPowerChip
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                trainFactRow(
+                    title: "Type",
+                    value: trainTypeFact.text,
+                    isPlaceholder: trainTypeFact.isPlaceholder
+                )
+
+                Divider()
+
+                trainFactRow(
+                    title: "License",
+                    value: trainIdentifierFact.text,
+                    isPlaceholder: trainIdentifierFact.isPlaceholder
+                )
+
+                Divider()
+
+                trainFactRow(
+                    title: "Length",
+                    value: trainLengthFact.text,
+                    isPlaceholder: trainLengthFact.isPlaceholder
+                )
+
+                Divider()
+
+                trainFactRow(
+                    title: "Tonnage",
+                    value: trainTonnageFact.text,
+                    isPlaceholder: trainTonnageFact.isPlaceholder
+                )
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
+            )
         }
-        return "Add coach"
+        .buttonStyle(.plain)
+    }
+
+    private func editorInfoCard(
+        icon: String,
+        title: String,
+        value: String,
+        isPlaceholder: Bool
+    ) -> some View {
+        Button(action: openSeatEditor) {
+            InfoTileCard(
+                icon: icon,
+                title: title,
+                value: value,
+                isPlaceholder: isPlaceholder
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var seatCarText: String {
+        guard let car = trip.seatCar?.trimmingCharacters(in: .whitespacesAndNewlines), !car.isEmpty else {
+            return "Add coach"
+        }
+        return car
+    }
+
+    private var isSeatCarPlaceholder: Bool {
+        guard let car = trip.seatCar?.trimmingCharacters(in: .whitespacesAndNewlines), !car.isEmpty else {
+            return true
+        }
+        return false
     }
 
     private var seatNumbersText: String {
@@ -1111,19 +1201,185 @@ private extension TripDetailSheet {
         return "Add seats"
     }
 
+    private var isSeatNumbersPlaceholder: Bool {
+        guard let seats = trip.seatNumbers else { return true }
+        return seats.isEmpty
+    }
+
+    private var resolvedTrainType: TrainType? {
+        if let stored = trip.trainType {
+            return stored
+        }
+        return TrainType.inferred(fromTitle: trip.title)
+    }
+
+    private var trainTypeFact: (text: String, isPlaceholder: Bool) {
+        if let type = resolvedTrainType {
+            return (type.displayLabel, false)
+        }
+        return ("Add train type", true)
+    }
+
+    private var trainIdentifierFact: (text: String, isPlaceholder: Bool) {
+        guard let identifier = trip.trainIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !identifier.isEmpty else {
+            return ("Add train license", true)
+        }
+        return (identifier, false)
+    }
+
+    private var trainLengthFact: (text: String, isPlaceholder: Bool) {
+        if let stored = trip.trainLength?.trimmingCharacters(in: .whitespacesAndNewlines), !stored.isEmpty {
+            return (stored, false)
+        }
+        if let derived = derivedTrainLengthText {
+            return (derived, false)
+        }
+        return ("Add train length", true)
+    }
+
+    private var trainTonnageFact: (text: String, isPlaceholder: Bool) {
+        if let stored = trip.trainTonnage?.trimmingCharacters(in: .whitespacesAndNewlines), !stored.isEmpty {
+            return (stored, false)
+        }
+        if let derived = derivedTrainTonnageText {
+            return (derived, false)
+        }
+        return ("Add tonnage", true)
+    }
+
+    private var derivedTrainLengthText: String? {
+        guard let meters = segments.first?.trainLengthMeters, meters > 0 else { return nil }
+        return "\(meters) m"
+    }
+
+    private var derivedTrainTonnageText: String? {
+        guard let tons = segments.first?.trainTonnage, tons > 0 else { return nil }
+        return "\(tons) t"
+    }
+
+    private var operatorBranding: OperatorBranding {
+        OperatorBrandingCatalog.branding(for: trip.agencyId)
+    }
+
+    private var operatorLogoName: String? {
+        operatorBranding.logoName
+    }
+
+    private var operatorPhoneNumber: String? {
+        operatorBranding.phoneNumber
+    }
+
+    private var operatorAgencyInfo: GTFSDataSource.AgencyInfo? {
+        dataSource.agencyInfo(for: trip.agencyId)
+    }
+
+    private var operatorDisplayName: String {
+        operatorAgencyInfo?.name ?? "Operator"
+    }
+
+    private var operatorSecondaryText: String {
+        operatorLocationText ?? operatorWebsiteHost ?? "Romania"
+    }
+
+    private var operatorLocationText: String? {
+        OperatorBrandingCatalog.city(for: trip.agencyId)
+            ?? inferredLocationFromTimezone
+            ?? operatorWebsiteHost
+    }
+
+    private var inferredLocationFromTimezone: String? {
+        guard let timezone = operatorAgencyInfo?.timezone else { return nil }
+        guard let component = timezone.split(separator: "/").last else { return nil }
+        let city = component.replacingOccurrences(of: "_", with: " ")
+        return city.isEmpty ? nil : city
+    }
+
+    private var operatorWebsiteString: String? {
+        operatorAgencyInfo?.url
+    }
+
+    private var operatorWebsiteURL: URL? {
+        guard let raw = operatorWebsiteString, !raw.isEmpty else { return nil }
+        if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
+            return URL(string: raw)
+        }
+        return URL(string: "https://\(raw)")
+    }
+
+    private var operatorWebsiteHost: String? {
+        guard let raw = operatorWebsiteString, !raw.isEmpty else { return nil }
+        var sanitized = raw
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+        sanitized = sanitized.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return sanitized.isEmpty ? nil : sanitized
+    }
+
+    private var operatorHasWebsite: Bool {
+        operatorWebsiteURL != nil
+    }
+
+    private var operatorHasPhone: Bool {
+        operatorPhoneNumber != nil
+    }
+
+    private var operatorHasActions: Bool {
+        operatorHasWebsite || operatorHasPhone
+    }
+
+    @ViewBuilder
+    private func trainFactRow(title: String, value: String, isPlaceholder: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased())
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundStyle(isPlaceholder ? .secondary : .primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var trainPowerChip: some View {
+        if let power = trip.trainPower {
+            Label(power.displayName, systemImage: power.systemImage)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .foregroundStyle(power == .electric ? Color.blue : Color.orange)
+                .background((power == .electric ? Color.blue : Color.orange).opacity(0.15))
+                .clipShape(Capsule())
+        } else {
+            Text("Set traction")
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .foregroundStyle(.secondary)
+                .background(Color(.systemGray5))
+                .clipShape(Capsule())
+        }
+    }
+
     private func openSeatEditor() {
         seatEditorCar = trip.seatCar ?? ""
         seatEditorSeats = trip.seatNumbers?.joined(separator: ", ") ?? ""
+        seatEditorTrainIdentifier = trip.trainIdentifier ?? ""
+        seatEditorTrainPower = trip.trainPower
         isPresentingSeatEditor = true
     }
 
     private func openOperatorWebsite() {
-        guard let url = URL(string: "https://www.cfrcalatori.ro") else { return }
+        guard let url = operatorWebsiteURL else { return }
         openURL(url)
     }
 
     private func callOperator() {
-        guard let url = URL(string: "tel://0735443699") else { return }
+        guard let phone = operatorPhoneNumber else { return }
+        let sanitized = phone.filter { $0.isNumber || $0 == "+" }
+        guard !sanitized.isEmpty, let url = URL(string: "tel://\(sanitized)") else { return }
         openURL(url)
     }
 
@@ -1137,12 +1393,23 @@ private extension TripDetailSheet {
             .filter { !$0.isEmpty }
         let seatsValue = seatTokens.isEmpty ? nil : seatTokens
 
+        let trimmedIdentifier = seatEditorTrainIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trainIdentifierValue = trimmedIdentifier.isEmpty ? nil : trimmedIdentifier
+
         guard let onUpdateTrip else {
             isPresentingSeatEditor = false
             return
         }
 
-        let updatedTrip = trip.updatingSeatInfo(car: carValue, seats: seatsValue)
+        let updatedTrip = trip.updatingSeatInfo(
+            car: carValue,
+            seats: seatsValue,
+            trainType: trip.trainType ?? resolvedTrainType,
+            trainLength: trip.trainLength ?? derivedTrainLengthText,
+            trainTonnage: trip.trainTonnage ?? derivedTrainTonnageText,
+            trainIdentifier: trainIdentifierValue,
+            trainPower: seatEditorTrainPower
+        )
         onUpdateTrip(updatedTrip)
         isPresentingSeatEditor = false
     }
@@ -1943,10 +2210,11 @@ private struct TerminalInfoView: View {
     }
 }
 
-private struct SeatInfoCard: View {
+private struct InfoTileCard: View {
     let icon: String
     let title: String
     let value: String
+    var isPlaceholder: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1960,6 +2228,7 @@ private struct SeatInfoCard: View {
                 Text(value)
                     .font(.title3)
                     .fontWeight(.semibold)
+                    .foregroundStyle(isPlaceholder ? .secondary : .primary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1974,6 +2243,8 @@ private struct SeatInfoCard: View {
 private struct SeatEditorSheet: View {
     @Binding var carText: String
     @Binding var seatsText: String
+    @Binding var trainIdentifierText: String
+    @Binding var trainPower: TrainPowerType?
     var onSave: () -> Void
     var onCancel: () -> Void
 
@@ -1983,16 +2254,34 @@ private struct SeatEditorSheet: View {
                 Section("Coach") {
                     TextField("e.g. 12", text: $carText)
                         .textInputAutocapitalization(.characters)
+                        .disableAutocorrection(true)
                 }
 
                 Section("Seats") {
                     TextField("e.g. 22A, 22B", text: $seatsText)
                         .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                }
+
+                Section("Train License") {
+                    TextField("e.g. 90 53 0481 001-2", text: $trainIdentifierText)
+                        .textInputAutocapitalization(.characters)
+                        .disableAutocorrection(true)
+                }
+
+                Section("Traction") {
+                    Picker("Power", selection: $trainPower) {
+                        Text("Not set").tag(nil as TrainPowerType?)
+                        ForEach(TrainPowerType.allCases) { power in
+                            Text(power.displayName).tag(power as TrainPowerType?)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
             }
             .scrollContentBackground(.hidden)
             .background(Color(.systemBackground))
-            .navigationTitle("Seat Details")
+            .navigationTitle("Seat & Train Details")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onCancel)
@@ -2201,16 +2490,6 @@ private enum QRCodeImageGenerator {
         let context = CIContext()
         guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else { return nil }
         return UIImage(cgImage: cgImage)
-    }
-}
-
-private struct CompanyLogoView: View {
-    var body: some View {
-        Image("cfr")
-            .resizable()
-            .scaledToFit()
-            .frame(width: 48, height: 48)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 

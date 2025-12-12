@@ -450,7 +450,12 @@ struct SheetContent: View {
             detailDistance: distanceText,
             stops: storedStops,
             originSequence: origin.sequence,
-            destinationSequence: destination.sequence
+            destinationSequence: destination.sequence,
+            trainType: baseTrip.trainType,
+            trainLength: baseTrip.trainLength,
+            trainTonnage: baseTrip.trainTonnage,
+            trainIdentifier: baseTrip.trainIdentifier,
+            trainPower: baseTrip.trainPower
         )
 
         if !trips.contains(where: { $0.id == savedTrip.id }) {
@@ -775,16 +780,8 @@ struct TripRowView: View {
 
 
     private var headerRow: some View {
-        HStack(spacing: 5) {
-//            Image("cfr")
-//                .resizable()
-//                .scaledToFit()
-//                .frame(width: 35, height: 17)
-//                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-//                .overlay(
-//                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-//                        .stroke(Color.white.opacity(0.25), lineWidth: 1)
-//                )
+        HStack(spacing: 6) {
+            OperatorLogoView(logoName: operatorLogoName, size: 18)
 
             Text(trip.title)
                 .font(.system(size: 14, weight: .regular, design: .rounded))
@@ -806,6 +803,10 @@ struct TripRowView: View {
             .font(.system(size: 18, weight: .medium, design: .rounded))
             .foregroundStyle(.secondary)
             .lineLimit(1)
+    }
+
+    private var operatorLogoName: String? {
+        OperatorBrandingCatalog.branding(for: trip.agencyId).logoName
     }
 
     private var terminalTimesRow: some View {
