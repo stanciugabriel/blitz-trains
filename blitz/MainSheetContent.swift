@@ -24,6 +24,8 @@ struct SheetContent: View {
     @State private var isShowingPastSheet = false
     @State private var pendingDeletionIDs: [String] = []
     @State private var isShowingDeleteConfirmation = false
+    @State private var activeConnectionInfo: ConnectionInfo?
+    @State private var isGeneratingRandomTrip = false
     
 
     private let dataSource = GTFSDataSource.shared
@@ -101,6 +103,11 @@ struct SheetContent: View {
             TripStorage.shared.savePastTrips(newValue)
         }
         .onDisappear { searchTask?.cancel() }
+        .sheet(item: $activeConnectionInfo) { info in
+            ConnectionDetailSheet(info: info) {
+                activeConnectionInfo = nil
+            }
+        }
         .sheet(isPresented: $isShowingPastSheet) {
             PastTripsSheet(
                 trips: sortedPastTrips,
@@ -163,16 +170,26 @@ struct SheetContent: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .listRowSeparator(.hidden)
                 } else {
-                    ForEach(sortedTrips) { trip in
+                    let trips = sortedTrips
+                    ForEach(Array(trips.enumerated()), id: \.element.id) { index, entry in
+                        if index > 0, let connection = connectionInfo(between: trips[index - 1], and: entry) {
+                            Button {
+                                activeConnectionInfo = connection
+                            } label: {
+                                ConnectionRowView(info: connection)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
                         Button {
-                            selectedTrip = trip
+                            selectedTrip = entry
                         } label: {
-                            TripRowView(trip: trip)
+                            TripRowView(trip: entry)
                         }
                         .buttonStyle(.plain)
                     }
                     .onDelete { offsets in
-                        requestDeletion(for: offsets, from: sortedTrips)
+                        requestDeletion(for: offsets, from: trips)
                     }
                 }
             }
@@ -229,20 +246,9 @@ struct SheetContent: View {
     private var addStepContent: some View {
         switch addStep {
         case .search:
-            if normalizedTrainQuery.isEmpty {
-                SearchPlaceholderView(text: "Type a train number to look up schedules.")
-            } else if searchResults.isEmpty {
-                SearchPlaceholderView(text: "No trains found for \"\(trainSearchQuery)\"")
-            } else {
-                List(searchResults) { trip in
-                    Button {
-                        handleTrainSelection(trip)
-                    } label: {
-                        TripRowView(trip: trip, displayMode: .scheduled)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .listStyle(.plain)
+            VStack(spacing: 12) {
+                randomTripButton
+                searchResultsPanel
             }
         case .date:
             VStack(spacing: 12) {
@@ -303,6 +309,154 @@ struct SheetContent: View {
                 .listStyle(.plain)
             }
         }
+    }
+
+    private var randomTripButton: some View {
+        Button(action: addRandomTrip) {
+            HStack(spacing: 10) {
+                Image(systemName: "wand.and.stars")
+                    .font(.headline)
+                Text(isGeneratingRandomTrip ? "Adding random trip…" : "Add a random active trip")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if isGeneratingRandomTrip {
+                    ProgressView()
+                }
+            }
+            .padding(.vertical, 14)
+            .padding(.horizontal, 16)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color(.separator).opacity(0.3), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal)
+        .disabled(isGeneratingRandomTrip)
+    }
+
+    @ViewBuilder
+    private var searchResultsPanel: some View {
+        if normalizedTrainQuery.isEmpty {
+            SearchPlaceholderView(text: "Type a train number to look up schedules.")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if searchResults.isEmpty {
+            SearchPlaceholderView(text: "No trains found for \"\(trainSearchQuery)\"")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List(searchResults) { trip in
+                Button {
+                    handleTrainSelection(trip)
+                } label: {
+                    TripRowView(trip: trip, displayMode: .scheduled)
+                }
+                .buttonStyle(.plain)
+            }
+            .listStyle(.plain)
+        }
+    }
+
+    private func addRandomTrip() {
+        guard !isGeneratingRandomTrip else { return }
+        isGeneratingRandomTrip = true
+        defer { isGeneratingRandomTrip = false }
+        guard let newTrip = generateRandomActiveTrip() else { return }
+        trips.append(newTrip)
+        selectedTrip = newTrip
+        isAddTripMode = false
+    }
+
+    private func generateRandomActiveTrip() -> Trip? {
+        let maxAttempts = 10
+        for _ in 0..<maxAttempts {
+            guard let baseTrip = dataSource.randomTrip() else { return nil }
+            let tripIdentifier = baseTrip.gtfsTripId ?? baseTrip.id
+            let gtfsStops = dataSource.stops(for: tripIdentifier)
+            guard gtfsStops.count >= 2, let destination = gtfsStops.last else { continue }
+            guard let destinationSchedule = dataSource.stopSchedule(for: tripIdentifier, stopId: destination.id) else { continue }
+            guard let arrivalSeconds = destinationSchedule.arrivalSeconds ?? destinationSchedule.departureSeconds else { continue }
+
+            var originCandidates = Array(gtfsStops.dropLast())
+            originCandidates.shuffle()
+            for origin in originCandidates {
+                guard let originSchedule = dataSource.stopSchedule(for: tripIdentifier, stopId: origin.id) else { continue }
+                guard let departureSeconds = originSchedule.departureSeconds ?? originSchedule.arrivalSeconds else { continue }
+                guard departureSeconds < arrivalSeconds else { continue }
+                guard let timing = makeTravelTiming(departureSeconds: departureSeconds, arrivalSeconds: arrivalSeconds) else { continue }
+                let subsetStops = storedStops(from: gtfsStops, startingAt: origin.sequence)
+                return assembleRandomTrip(
+                    baseTrip: baseTrip,
+                    origin: origin,
+                    destination: destination,
+                    travelDate: timing.travelDate,
+                    stops: subsetStops
+                )
+            }
+        }
+        return nil
+    }
+
+    private func makeTravelTiming(departureSeconds: Int, arrivalSeconds: Int) -> (travelDate: Date, departureDate: Date, arrivalDate: Date)? {
+        let calendar = Calendar.current
+        let now = Date()
+        let baseToday = calendar.startOfDay(for: now)
+        let offsets = [0, -1, 1, -2, 2]
+
+        for offset in offsets {
+            guard let base = calendar.date(byAdding: .day, value: offset, to: baseToday) else { continue }
+            let departureDate = base.addingTimeInterval(TimeInterval(departureSeconds))
+            let arrivalBase = base.addingTimeInterval(TimeInterval(arrivalSeconds))
+            let normalizedArrival = ScheduleDateUtils.normalizedArrival(arrivalBase, relativeTo: departureDate) ?? arrivalBase
+            if departureDate <= now && normalizedArrival > now {
+                return (base, departureDate, normalizedArrival)
+            }
+        }
+
+        return nil
+    }
+
+    private func assembleRandomTrip(
+        baseTrip: Trip,
+        origin: GTFSStop,
+        destination: GTFSStop,
+        travelDate: Date,
+        stops: [StoredStop]
+    ) -> Trip {
+        let routeLine = "\(origin.name) → \(destination.name)"
+        let dateText = formattedDate(travelDate)
+        let subtitle = "\(routeLine) · \(dateText)"
+        let delayMinutes = Int.random(in: 0...12)
+
+        return Trip(
+            id: UUID().uuidString,
+            title: baseTrip.title,
+            subtitle: subtitle,
+            agencyId: baseTrip.agencyId,
+            detailDate: dateText,
+            detailRoute: routeLine,
+            gtfsTripId: baseTrip.gtfsTripId ?? baseTrip.id,
+            travelDate: travelDate,
+            originStopId: origin.id,
+            originName: origin.name,
+            destinationStopId: destination.id,
+            destinationName: destination.name,
+            delayMinutes: delayMinutes,
+            detailDistance: baseTrip.detailDistance,
+            stops: stops,
+            originSequence: origin.sequence,
+            destinationSequence: destination.sequence,
+            trainType: baseTrip.trainType,
+            trainLength: baseTrip.trainLength,
+            trainTonnage: baseTrip.trainTonnage,
+            trainIdentifier: baseTrip.trainIdentifier,
+            trainPower: baseTrip.trainPower
+        )
+    }
+
+    private func storedStops(from stops: [GTFSStop], startingAt sequence: Int) -> [StoredStop] {
+        stops.filter { $0.sequence >= sequence }.map { StoredStop(gtfsStop: $0) }
     }
 
     private var headerTitle: String {
@@ -650,6 +804,57 @@ struct SheetContent: View {
         return arrival.addingTimeInterval(20 * 60)
     }
 
+    private static let maxConnectionInterval: TimeInterval = 6 * 60 * 60
+
+    private func connectionInfo(between arrivingTrip: Trip, and departingTrip: Trip) -> ConnectionInfo? {
+        guard tripsShareStation(arrivingTrip: arrivingTrip, departingTrip: departingTrip) else { return nil }
+        guard let arrivalDate = arrivalDateWithDelay(for: arrivingTrip),
+              let departureDate = departureDateWithDelay(for: departingTrip) else { return nil }
+        let interval = departureDate.timeIntervalSince(arrivalDate)
+        guard interval > 0, interval <= Self.maxConnectionInterval else { return nil }
+        let stationName = arrivingTrip.destinationName
+            ?? departingTrip.originName
+            ?? "Connection Station"
+        let tightness = tightness(for: interval)
+        return ConnectionInfo(
+            fromTrip: arrivingTrip,
+            toTrip: departingTrip,
+            stationName: stationName,
+            duration: interval,
+            arrivalDate: arrivalDate,
+            departureDate: departureDate,
+            tightness: tightness
+        )
+    }
+
+    private func tripsShareStation(arrivingTrip: Trip, departingTrip: Trip) -> Bool {
+        if let destId = arrivingTrip.destinationStopId, let originId = departingTrip.originStopId, destId == originId {
+            return true
+        }
+        if let destName = normalizedText(arrivingTrip.destinationName),
+           let originName = normalizedText(departingTrip.originName),
+           destName == originName {
+            return true
+        }
+        return false
+    }
+
+    private func tightness(for interval: TimeInterval) -> ConnectionInfo.Tightness {
+        if interval >= 2 * 60 * 60 {
+            return .relaxed
+        }
+        if interval >= 45 * 60 {
+            return .tight
+        }
+        return .risky
+    }
+
+    private func normalizedText(_ value: String?) -> String? {
+        guard let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        let folded = raw.folding(options: [.diacriticInsensitive], locale: .current)
+        return folded.lowercased()
+    }
+
     private func arrivalDateWithDelay(for trip: Trip) -> Date? {
         guard let travelDate = trip.travelDate else { return nil }
         guard let destinationId = trip.destinationStopId else { return nil }
@@ -668,6 +873,18 @@ struct SheetContent: View {
         guard let arrival = ScheduleDateUtils.normalizedArrival(rawArrival, relativeTo: departureReference) else { return nil }
         let delaySeconds = TimeInterval((trip.delayMinutes ?? 0) * 60)
         return arrival.addingTimeInterval(delaySeconds)
+    }
+
+    private func departureDateWithDelay(for trip: Trip) -> Date? {
+        guard let travelDate = trip.travelDate else { return nil }
+        guard let originId = trip.originStopId else { return nil }
+
+        let base = Calendar.current.startOfDay(for: travelDate)
+        let identifier = trip.gtfsTripId ?? trip.id
+        guard let originSchedule = dataSource.stopSchedule(for: identifier, stopId: originId) else { return nil }
+        guard let departure = originSchedule.departureDate(on: base) ?? originSchedule.arrivalDate(on: base) else { return nil }
+        let delaySeconds = TimeInterval((trip.delayMinutes ?? 0) * 60)
+        return departure.addingTimeInterval(delaySeconds)
     }
 
     private func archiveTrips(_ completedTrips: [Trip]) {
@@ -1267,6 +1484,198 @@ struct TripRowView: View {
         }
         return trimmed
     }
+}
+
+private struct ConnectionRowView: View {
+    let info: ConnectionInfo
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("\(info.durationText) at \(info.stationName)")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer()
+            HStack(spacing: 6) {
+                Image(systemName: info.tightness.iconName)
+                    .foregroundStyle(info.tightness.tint)
+                Text(info.tightness.label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(info.tightness.tint)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+private struct ConnectionDetailSheet: View {
+    let info: ConnectionInfo
+    var onDismiss: (() -> Void)?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    connectionSummary
+                    timelineSection
+                    tipsSection
+                }
+                .padding()
+            }
+            .navigationTitle("Connection")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        onDismiss?()
+                    }
+                }
+            }
+        }
+    }
+
+    private var connectionSummary: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(info.durationText)
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+            Label(info.tightness.label, systemImage: info.tightness.iconName)
+                .font(.headline)
+                .foregroundStyle(info.tightness.tint)
+            Text("Stay at \(info.stationName)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var timelineSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Timeline")
+                .font(.headline)
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "clock.fill")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    timelineRow(title: info.arrivalTitle, time: info.arrivalTimeText, detail: info.fromTrip.title)
+                    timelineRow(title: info.departureTitle, time: info.departureTimeText, detail: info.toTrip.title)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var tipsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Connection tips")
+                .font(.headline)
+            Text(info.tightness.tip)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func timelineRow(title: String, time: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased())
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(time)
+                .font(.title3.weight(.semibold))
+            Text(detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct ConnectionInfo: Identifiable {
+    enum Tightness {
+        case relaxed
+        case tight
+        case risky
+
+        var label: String {
+            switch self {
+            case .relaxed: return "Relaxed"
+            case .tight: return "Tight"
+            case .risky: return "Risky"
+            }
+        }
+
+        var iconName: String {
+            switch self {
+            case .relaxed: return "figure.walk"
+            case .tight: return "figure.run"
+            case .risky: return "exclamationmark.triangle"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .relaxed: return .green
+            case .tight: return .orange
+            case .risky: return .red
+            }
+        }
+
+        var tip: String {
+            switch self {
+            case .relaxed:
+                return "Plenty of time for a coffee or a lounge visit—watch the boards at your pace."
+            case .tight:
+                return "Head straight to the next platform and keep essentials handy for a brisk transfer."
+            case .risky:
+                return "Move quickly, ask staff for help, and be ready with contingency plans."
+            }
+        }
+    }
+
+    let fromTrip: Trip
+    let toTrip: Trip
+    let stationName: String
+    let duration: TimeInterval
+    let arrivalDate: Date
+    let departureDate: Date
+    let tightness: Tightness
+
+    var id: String { "\(fromTrip.id)->\(toTrip.id)" }
+
+    var durationText: String {
+        ConnectionInfo.durationFormatter.string(from: duration) ?? "--"
+    }
+
+    var arrivalTitle: String {
+        "Arrival"
+    }
+
+    var departureTitle: String {
+        "Departure"
+    }
+
+    var arrivalTimeText: String {
+        ConnectionInfo.timeFormatter.string(from: arrivalDate)
+    }
+
+    var departureTimeText: String {
+        ConnectionInfo.timeFormatter.string(from: departureDate)
+    }
+
+    private static let durationFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 }
 
 private struct TripRowTiming {

@@ -30,7 +30,8 @@
 - TripDetailView now allows editing coach/seat info via sheet-based forms, persists past trip statistics, and hosts a floating blue-glass “Ticket QR” action that scans or displays stored QR codes.
 - InfoFer scraping now captures platform plus per-station arrival/departure delays, letting us persist that data on each stop and surface it inside a dedicated “Station Delays” sheet accessible from the detail toolbar.
 - Terminal cards in TripDetailView read that per-stop delay state so the clock, color, and status copy stay in sync (e.g., early arrivals show green time with “X m early” and no strikethrough).
-- Map view shows Apple’s user-location dot at all times via `UserAnnotation()` while the default “center on me” button remains available (slightly inset) so the map still respects the glassmorphic overlay.
+- Map view only surfaces the user-location dot and Apple’s center-on-me button from 10 minutes before departure through arrival, keeping them hidden on the dashboard and outside the rider’s active window.
+- Live train marker now appears only after the consist leaves its origin stop (and persists through arrival) while user vs. train indicators remain mutually exclusive.
 - TripDetailView now opens with an InfoFer status banner directly under the header, showing the exact paragraph scraped from the site with green/red chrome based on the latest delay state.
 - Added an Operator section (CFR logo, contact actions, report CTA) and an Arrival Forecast card (mock stats + colored distribution bars) beneath History to spotlight operator touchpoints and historical reliability.
 - Trip rows reuse the same per-terminal delay heuristics as the detail sheet: departure/arrival times adjust independently using station-level delay data, and their colors turn red/green per terminal rather than sharing a single delay tint.

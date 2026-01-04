@@ -194,6 +194,107 @@ final class GTFSDataSource {
         return trips
     }
 
+    func randomTrip() -> Trip? {
+        guard let database else { return nil }
+        let sql = """
+        WITH first_segment AS (
+            SELECT ts.train_number, ts.sequence_id, ts.uic_start, ts.train_length_meters, ts.train_tonnage
+            FROM trip_segments ts
+            INNER JOIN (
+                SELECT train_number, MIN(sequence_id) AS min_sequence
+                FROM trip_segments
+                GROUP BY train_number
+            ) grouped ON grouped.train_number = ts.train_number AND grouped.min_sequence = ts.sequence_id
+        ), last_segment AS (
+            SELECT ts.train_number, ts.sequence_id, ts.uic_end
+            FROM trip_segments ts
+            INNER JOIN (
+                SELECT train_number, MAX(sequence_id) AS max_sequence
+                FROM trip_segments
+                GROUP BY train_number
+            ) grouped ON grouped.train_number = ts.train_number AND grouped.max_sequence = ts.sequence_id
+        )
+        SELECT t.train_number,
+               t.category,
+               t.operator_id,
+               origin.name AS origin_name,
+               destination.name AS destination_name,
+               fs.train_length_meters,
+               fs.train_tonnage
+        FROM trains t
+        LEFT JOIN first_segment fs ON fs.train_number = t.train_number
+        LEFT JOIN stations origin ON origin.uic_code = fs.uic_start
+        LEFT JOIN last_segment ls ON ls.train_number = t.train_number
+        LEFT JOIN stations destination ON destination.uic_code = ls.uic_end
+        ORDER BY RANDOM()
+        LIMIT 1
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            logError("Failed to prepare random trip query")
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+
+        let trainNumber = sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? UUID().uuidString
+
+        let category: String?
+        if let pointer = sqlite3_column_text(statement, 1) {
+            let raw = String(cString: pointer).trimmingCharacters(in: .whitespacesAndNewlines)
+            category = raw.isEmpty ? nil : raw
+        } else {
+            category = nil
+        }
+
+        let agencyId: String?
+        if let pointer = sqlite3_column_text(statement, 2) {
+            let raw = String(cString: pointer).trimmingCharacters(in: .whitespacesAndNewlines)
+            agencyId = raw.isEmpty ? nil : raw
+        } else {
+            agencyId = nil
+        }
+
+        let originName: String?
+        if let pointer = sqlite3_column_text(statement, 3) {
+            let raw = String(cString: pointer).trimmingCharacters(in: .whitespacesAndNewlines)
+            originName = raw.isEmpty ? nil : raw
+        } else {
+            originName = nil
+        }
+
+        let destinationName: String?
+        if let pointer = sqlite3_column_text(statement, 4) {
+            let raw = String(cString: pointer).trimmingCharacters(in: .whitespacesAndNewlines)
+            destinationName = raw.isEmpty ? nil : raw
+        } else {
+            destinationName = nil
+        }
+        let lengthValue = sqlite3_column_type(statement, 5) == SQLITE_NULL ? nil : Int(sqlite3_column_int(statement, 5))
+        let tonnageValue = sqlite3_column_type(statement, 6) == SQLITE_NULL ? nil : Int(sqlite3_column_int(statement, 6))
+
+        let routeName = routeDescription(origin: originName, destination: destinationName)
+        let subtitle = routeName ?? "Route info unavailable"
+        let displayTitle = formattedTrainTitle(category: category, number: trainNumber)
+        let trainType = category.flatMap { TrainType(categoryCode: $0) }
+        let lengthText = formattedTrainLength(meters: lengthValue)
+        let tonnageText = formattedTrainTonnage(tons: tonnageValue)
+
+        return Trip(
+            id: trainNumber,
+            title: displayTitle,
+            subtitle: subtitle,
+            agencyId: agencyId,
+            detailRoute: routeName,
+            gtfsTripId: trainNumber,
+            trainType: trainType,
+            trainLength: lengthText,
+            trainTonnage: tonnageText
+        )
+    }
+
     func agencyInfo(for id: String?) -> AgencyInfo? {
         guard let id else { return nil }
         if agenciesById.isEmpty {

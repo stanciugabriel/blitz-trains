@@ -35,6 +35,9 @@ struct TripDetailSheet: View {
     @State private var isPresentingTicketSheet = false
     @State private var isShowingStationDelaySheet = false
     @State private var segments: [GTFSSegment] = []
+    @StateObject private var locationProvider = DeviceLocationProvider()
+    @State private var isShowingSpeedPage = false
+    @State private var isSpeedPageLoading = false
 
     private let dataSource = GTFSDataSource.shared
     private let secondTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -55,46 +58,26 @@ struct TripDetailSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    Section {
-                        VStack(alignment: .leading, spacing: 20) {
-                            if let status = syncStatusText {
-                                Text(status)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if let bannerText = scraperStatusText {
-                                ScraperStatusBanner(text: bannerText, isDelayed: scraperStatusIsDelayed)
-                                    .padding(.horizontal, -16)
-                            }
-                            if hasSegmentData {
-                                timetableSection
-                            } else {
-                                Text("Schedule information unavailable for this trip.")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                        .padding(.horizontal)
-                        .padding(.top, 4)
-                    } header: {
-                        header
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal)
-                            .padding(.vertical, 12)
-                            .background(Color(.systemBackground))
-                    }
+            Group {
+                if isShowingSpeedPage {
+                    speedDashboard
+                } else {
+                    detailScrollContent
                 }
-                .padding(.bottom, 40)
             }
-            .scrollIndicators(.hidden)
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
         }
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
+            ToolbarItem(placement: .bottomBar) {
+                Button(action: toggleSpeedDashboard) {
+                    Label(
+                        isShowingSpeedPage ? "Details" : "Speed",
+                        systemImage: isShowingSpeedPage ? "list.bullet" : "speedometer"
+                    )
+                }
+            }
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
                 Button(action: {
@@ -173,6 +156,247 @@ struct TripDetailSheet: View {
         }
         .onChange(of: trip.id) { _ in
             ticketCode = trip.ticketQRCode
+            exitSpeedDashboard()
+        }
+        .onDisappear {
+            locationProvider.disableTracking()
+        }
+    }
+
+    private var detailScrollContent: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                Section {
+                    VStack(alignment: .leading, spacing: 20) {
+                        if let status = syncStatusText {
+                            Text(status)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let bannerText = scraperStatusText {
+                            ScraperStatusBanner(text: bannerText, isDelayed: scraperStatusIsDelayed)
+                                .padding(.horizontal, -16)
+                        }
+                        if hasSegmentData {
+                            timetableSection
+                        } else {
+                            Text("Schedule information unavailable for this trip.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(.horizontal)
+                    .padding(.top, 4)
+                } header: {
+                    header
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                        .padding(.vertical, 12)
+                        .background(Color(.systemBackground))
+                }
+            }
+            .padding(.bottom, 40)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private var speedDashboard: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                if isSpeedPageLoading {
+                    speedLoadingCard
+                } else {
+                    currentSpeedCard
+                    speedLimitCard
+                    gpsStatusCard
+                }
+            }
+            .padding(.top, 40)
+            .padding(.bottom, 60)
+            .padding(.horizontal)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private var speedLoadingCard: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .progressViewStyle(.circular)
+                .scaleEffect(1.3)
+            Text("Calibrating speed sensors…")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(36)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color(.systemGray4), lineWidth: 1)
+        )
+    }
+
+    private var currentSpeedCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Current Speed")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .lastTextBaseline, spacing: 8) {
+                Text(currentSpeedDisplayValue)
+                    .font(.system(size: 68, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                Text("km/h")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(currentSpeedDetailText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(28)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color(.systemGray4), lineWidth: 1)
+        )
+    }
+
+    private var speedLimitCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Track Speed Limit")
+                .font(.headline)
+
+            HStack(alignment: .lastTextBaseline, spacing: 8) {
+                Text(maxSpeedDisplayValue)
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                Text("km/h")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            if let label = speedLimitSegmentLabel {
+                Text(label)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+            }
+
+            if let comparison = speedComparisonDetailText {
+                Text(comparison)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(24)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color(.systemGray4), lineWidth: 1)
+        )
+    }
+
+    private var gpsStatusCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "location.fill")
+                    .font(.title3)
+                    .foregroundStyle(.blue)
+                Text("GPS Status")
+                    .font(.headline)
+            }
+
+            Text(gpsStatusDescription)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(24)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color(.systemGray4), lineWidth: 1)
+        )
+    }
+
+    private var currentSpeedKPH: Double? {
+        guard let rawSpeed = locationProvider.currentSpeed, rawSpeed >= 0 else { return nil }
+        let value = rawSpeed * 3.6
+        return value.isFinite ? value : nil
+    }
+
+    private var currentSpeedDisplayValue: String {
+        guard let speed = currentSpeedKPH else { return "--" }
+        return String(format: "%.0f", speed)
+    }
+
+    private var currentSpeedDetailText: String {
+        switch locationProvider.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            if currentSpeedKPH == nil {
+                return "Waiting for a fresh GPS reading…"
+            }
+            return "Based on your device's live GPS reading."
+        case .notDetermined:
+            return "Grant location access to measure your speed."
+        case .denied:
+            return "Location access denied. Enable it in Settings to track speed."
+        case .restricted:
+            return "Location access is restricted on this device."
+        @unknown default:
+            return "Awaiting GPS authorization."
+        }
+    }
+
+    private var referenceSpeedSegment: GTFSSegment? {
+        currentSegmentContext?.segment ?? segments.first
+    }
+
+    private var maxSegmentSpeedValue: Int {
+        referenceSpeedSegment?.maxSpeed ?? 0
+    }
+
+    private var maxSpeedDisplayValue: String {
+        maxSegmentSpeedValue > 0 ? "\(maxSegmentSpeedValue)" : "--"
+    }
+
+    private var speedLimitSegmentLabel: String? {
+        guard let segment = referenceSpeedSegment else { return nil }
+        return segmentLabel(for: segment)
+    }
+
+    private var speedComparisonDetailText: String? {
+        guard let current = currentSpeedKPH, maxSegmentSpeedValue > 0 else { return nil }
+        let delta = Int(round(Double(maxSegmentSpeedValue) - current))
+        if delta >= 0 {
+            return "≈ \(delta) km/h below the limit"
+        }
+        return "≈ \(abs(delta)) km/h above the limit"
+    }
+
+    private var gpsStatusDescription: String {
+        switch locationProvider.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            if currentSpeedKPH == nil {
+                return "GPS lock in progress. Stay near a window for a faster fix."
+            }
+            return "GPS lock acquired. Updating speed continuously."
+        case .notDetermined:
+            return "We need your permission to start measuring live speed."
+        case .denied:
+            return "Location is turned off for Raily. Enable it in Settings to track speed."
+        case .restricted:
+            return "Location access is restricted by system controls."
+        @unknown default:
+            return "Awaiting GPS authorization."
         }
     }
 
@@ -252,8 +476,10 @@ struct TripDetailSheet: View {
             historySection
             operatorSection
             arrivalForecastSection
-            trackSpeedSection
+//            trackSpeedSection
             trainInfoSection
+            trainCompositionSection
+            foodMenuSection
         }
     }
 
@@ -455,6 +681,36 @@ struct TripDetailSheet: View {
 
     private func loadSegments() {
         segments = dataSource.segments(for: tripIdentifier)
+    }
+
+    private func toggleSpeedDashboard() {
+        if isShowingSpeedPage {
+            exitSpeedDashboard()
+        } else {
+            enterSpeedDashboard()
+        }
+    }
+
+    private func enterSpeedDashboard() {
+        guard !isShowingSpeedPage else { return }
+        isShowingSpeedPage = true
+        isSpeedPageLoading = true
+        locationProvider.enableTracking()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            if isShowingSpeedPage {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isSpeedPageLoading = false
+                }
+            }
+        }
+    }
+
+    private func exitSpeedDashboard() {
+        guard isShowingSpeedPage || isSpeedPageLoading else { return }
+        isShowingSpeedPage = false
+        isSpeedPageLoading = false
+        locationProvider.disableTracking()
     }
 
     private func timingSnapshot(for trip: Trip) -> TripTimingSnapshot? {
@@ -1123,6 +1379,18 @@ private extension TripDetailSheet {
                         .foregroundStyle(.secondary)
                 }
 
+                if trip.agencyId == "236025" {
+                    HStack() {
+                        Spacer()
+                        Image("train")
+                            .resizable()
+                            .scaledToFill()
+                            .clipped()
+                            .frame(alignment: .leading)
+                            .padding(.trailing, -16)
+                    }
+                }
+
                 trainFactRow(
                     title: "Type",
                     value: trainTypeFact.text,
@@ -1132,7 +1400,7 @@ private extension TripDetailSheet {
                 Divider()
 
                 trainFactRow(
-                    title: "License",
+                    title: "Registration",
                     value: trainIdentifierFact.text,
                     isPlaceholder: trainIdentifierFact.isPlaceholder
                 )
@@ -1152,6 +1420,22 @@ private extension TripDetailSheet {
                     value: trainTonnageFact.text,
                     isPlaceholder: trainTonnageFact.isPlaceholder
                 )
+
+                Divider()
+
+                trainFactRow(
+                    title: "Voltage & Frequency",
+                    value: trainElectrificationFact.text,
+                    isPlaceholder: trainElectrificationFact.isPlaceholder
+                )
+
+                Divider()
+
+                trainFactRow(
+                    title: "Track Gauge",
+                    value: trainTrackGaugeFact.text,
+                    isPlaceholder: trainTrackGaugeFact.isPlaceholder
+                )
             }
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1161,6 +1445,125 @@ private extension TripDetailSheet {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var trainCompositionSection: some View {
+        let cars = trainCompositionCars
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Train Composition")
+                    .font(.system(size: 20, weight: .semibold))
+                Text(trainCompositionSummaryLine)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 14) {
+                ForEach(cars) { car in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: car.iconName)
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(car.tint)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Car \(car.carNumber) • \(car.title)")
+                                    .font(.headline)
+                                Text(car.detail)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer(minLength: 0)
+                        }
+
+                        if !car.amenities.isEmpty {
+                            HStack(spacing: 6) {
+                                ForEach(car.amenities, id: \.self) { amenity in
+                                    Text(amenity)
+                                        .font(.caption2.weight(.semibold))
+                                        .textCase(.uppercase)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .foregroundStyle(car.tint)
+                                        .background(car.tint.opacity(0.12))
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
+
+                    if car.id != cars.last?.id {
+                        Divider()
+                    }
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var foodMenuSection: some View {
+        let categories = foodMenuCategories
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Bistro Menu")
+                    .font(.system(size: 20, weight: .semibold))
+                Text("Chef-prepared plates, daytime bites, and a late-night espresso bar")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 18) {
+                ForEach(categories) { category in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(category.title.uppercased())
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        VStack(spacing: 12) {
+                            ForEach(category.items) { item in
+                                HStack(alignment: .top, spacing: 12) {
+                                    Image(systemName: item.iconName)
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .foregroundStyle(category.tint)
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack(alignment: .firstTextBaseline) {
+                                            Text(item.name)
+                                                .font(.headline)
+                                            Spacer(minLength: 0)
+                                            Text(item.price)
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                        }
+                                        Text(item.detail)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if category.id != categories.last?.id {
+                        Divider()
+                    }
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
+        )
     }
 
     private func editorInfoCard(
@@ -1245,6 +1648,141 @@ private extension TripDetailSheet {
             return (derived, false)
         }
         return ("Add tonnage", true)
+    }
+
+    private var trainElectrificationFact: (text: String, isPlaceholder: Bool) {
+        ("25kV @ 50Hz", false)
+    }
+
+    private var trainTrackGaugeFact: (text: String, isPlaceholder: Bool) {
+        ("1435mm standard", false)
+    }
+
+    private var trainCompositionCars: [TrainCompositionCar] {
+        [
+            TrainCompositionCar(
+                carNumber: 1,
+                title: "First Class Quiet",
+                detail: "1+2 recliners, panoramic windows, staffed concierge",
+                amenities: ["1ST", "QUIET", "AC"],
+                category: .firstClass
+            ),
+            TrainCompositionCar(
+                carNumber: 2,
+                title: "Business Flex",
+                detail: "Work counters, power at every seat, barista corner",
+                amenities: ["1ST", "POWER", "WIFI"],
+                category: .firstClass
+            ),
+            TrainCompositionCar(
+                carNumber: 3,
+                title: "Open Coach A",
+                detail: "2+2 reserved seating with luggage stacks mid-car",
+                amenities: ["2ND", "AC", "FAMILY"],
+                category: .secondClass
+            ),
+            TrainCompositionCar(
+                carNumber: 4,
+                title: "Open Coach B",
+                detail: "2+2 flex cabin, standing bar for short hops",
+                amenities: ["2ND", "USB", "BIKE"],
+                category: .secondClass
+            ),
+            TrainCompositionCar(
+                carNumber: 5,
+                title: "Restaurant & Bistro",
+                detail: "Galley kitchen, 32 dining seats, grab-and-go pantry",
+                amenities: ["DINING", "BAR", "CHEF"],
+                category: .restaurant
+            ),
+            TrainCompositionCar(
+                carNumber: 6,
+                title: "Couchette Nightliner",
+                detail: "4-berth compartments, shower module, secure lockers",
+                amenities: ["SLEEPER", "SHOWERS", "HOST"],
+                category: .sleeper
+            ),
+            TrainCompositionCar(
+                carNumber: 7,
+                title: "Sleeper Deluxe",
+                detail: "En-suite doubles with smart climate + room service",
+                amenities: ["SUITE", "AC", "ROOMSERVICE"],
+                category: .sleeper
+            )
+        ]
+    }
+
+    private var trainCompositionSummaryLine: String {
+        "\(trainCompositionCars.count) cars • \(trainCompositionBreakdownText)"
+    }
+
+    private var trainCompositionBreakdownText: String {
+        let grouped = Dictionary(grouping: trainCompositionCars, by: \.category)
+        let order: [TrainCompositionCar.Category] = [.firstClass, .secondClass, .restaurant, .sleeper]
+        let parts = order.compactMap { category -> String? in
+            guard let count = grouped[category]?.count else { return nil }
+            return "\(count)x \(category.displayName)"
+        }
+        return parts.joined(separator: " • ")
+    }
+
+    private var foodMenuCategories: [FoodMenuCategory] {
+        [
+            FoodMenuCategory(
+                title: "Bistro Plates",
+                tint: .orange,
+                items: [
+                    FoodMenuItem(
+                        name: "Transylvanian Herb Roast",
+                        detail: "Roasted chicken roulade, smoked polenta, pickled carrots",
+                        price: "69 lei",
+                        iconName: "fork.knife"
+                    ),
+                    FoodMenuItem(
+                        name: "Danube Salmon Bowl",
+                        detail: "Seared fillet, dill rice, charred lemon aioli",
+                        price: "74 lei",
+                        iconName: "fish"
+                    )
+                ]
+            ),
+            FoodMenuCategory(
+                title: "Grab & Go",
+                tint: .green,
+                items: [
+                    FoodMenuItem(
+                        name: "Carpathian Picnic",
+                        detail: "Artisanal meats, alpine cheese, sunflower baguette",
+                        price: "48 lei",
+                        iconName: "takeoutbag.and.cup.and.straw"
+                    ),
+                    FoodMenuItem(
+                        name: "Night Shift Snack Stack",
+                        detail: "Protein bar trio, citrus, rosemary almonds",
+                        price: "32 lei",
+                        iconName: "leaf"
+                    )
+                ]
+            ),
+            FoodMenuCategory(
+                title: "Barista & Lounge",
+                tint: .blue,
+                items: [
+                    FoodMenuItem(
+                        name: "Oradea Espresso Tonic",
+                        detail: "Single-origin shot, Mediterranean tonic, burnt orange",
+                        price: "28 lei",
+                        iconName: "cup.and.saucer"
+                    ),
+                    FoodMenuItem(
+                        name: "Sleeper Car Cocoa",
+                        detail: "Valrhona cocoa, oat cream, wildflower honey",
+                        price: "26 lei",
+                        iconName: "mug.fill"
+                    )
+                ]
+            )
+        ]
     }
 
     private var derivedTrainLengthText: String? {
@@ -1626,7 +2164,7 @@ private extension TripDetailSheet {
         return folded.lowercased()
     }
 
-    private func historyStatCard(
+private func historyStatCard(
         title: String,
         icon: String,
         value: String,
@@ -1647,6 +2185,72 @@ private extension TripDetailSheet {
         }
         .padding(.vertical, 12)
     }
+}
+
+private struct TrainCompositionCar: Identifiable {
+    enum Category {
+        case firstClass
+        case secondClass
+        case restaurant
+        case sleeper
+    }
+
+    let carNumber: Int
+    let title: String
+    let detail: String
+    let amenities: [String]
+    let category: Category
+
+    var id: Int { carNumber }
+
+    var iconName: String { category.iconName }
+    var tint: Color { category.tint }
+}
+
+private extension TrainCompositionCar.Category {
+    var displayName: String {
+        switch self {
+        case .firstClass: return "First"
+        case .secondClass: return "Second"
+        case .restaurant: return "Dining"
+        case .sleeper: return "Sleeper"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .firstClass: return "seat.side.front.and.back"
+        case .secondClass: return "person.2.fill"
+        case .restaurant: return "fork.knife"
+        case .sleeper: return "bed.double.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .firstClass: return Color.orange
+        case .secondClass: return Color.blue
+        case .restaurant: return Color.green
+        case .sleeper: return Color.purple
+        }
+    }
+}
+
+private struct FoodMenuItem: Identifiable {
+    let name: String
+    let detail: String
+    let price: String
+    let iconName: String
+
+    var id: String { name }
+}
+
+private struct FoodMenuCategory: Identifiable {
+    let title: String
+    let tint: Color
+    let items: [FoodMenuItem]
+
+    var id: String { title }
 }
 
 private struct RouteHistoryMetrics {
@@ -1955,32 +2559,23 @@ private extension TripDetailSheet {
         event: SegmentClockEvent
     ) -> Int? {
         if let stop = trip.stops?.first(where: { $0.id == stopId }) {
-            switch event {
-            case .departure:
-                return stop.departureDelayMinutes ?? stop.arrivalDelayMinutes
-            case .arrival:
-                return stop.arrivalDelayMinutes ?? stop.departureDelayMinutes
-            }
+            return event == .departure ? stop.departureDelayMinutes : stop.arrivalDelayMinutes
         }
 
-        if let stationName, let detail = delayDetail(forStationName: stationName) {
+        guard let stationName else { return nil }
+        let normalized = normalizeStationName(stationName)
+        if let info = liveDelayInfo,
+           let entry = info.stationDelays.first(where: { normalizeStationName($0.stationName) == normalized }) {
             switch event {
             case .departure:
-                return detail.departureDelayMinutes ?? detail.arrivalDelayMinutes
+                return entry.departureDelayMinutes
             case .arrival:
-                return detail.arrivalDelayMinutes ?? detail.departureDelayMinutes
+                return entry.arrivalDelayMinutes
             }
         }
 
         return nil
     }
-
-    private func delayDetail(forStationName stationName: String) -> StationDelay? {
-        guard let info = liveDelayInfo else { return nil }
-        let normalized = normalizeStationName(stationName)
-        return info.stationDelays.first { normalizeStationName($0.stationName) == normalized }
-    }
-
 }
 
 private struct StationDelayTimelineView: View {

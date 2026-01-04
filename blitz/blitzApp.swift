@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import Combine
 
 @main
 struct BlitzApp: App {
@@ -24,20 +25,38 @@ struct ContentView: View {
     @State private var trainSearchQuery: String = ""
     @State private var trips: [Trip] = TripStorage.shared.loadTrips()
     @State private var pastTrips: [Trip] = TripStorage.shared.loadPastTrips()
+    @State private var liveTrainClock = Date()
+    @StateObject private var locationProvider = DeviceLocationProvider()
+    private let liveTrainTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     var body: some View {
+        let detailState: DetailMapState? = {
+            guard let trip = selectedTrip, !isAddTripMode else { return nil }
+            return detailMapState(for: trip)
+        }()
+        let shouldShowUserLocation = shouldDisplayUserLocationDot(for: detailState)
+        let shouldShowLiveTrainMarker = shouldDisplayLiveTrainMarker(
+            for: detailState,
+            userLocationVisible: shouldShowUserLocation
+        )
+
         Map(position: $mapPosition) {
-            UserAnnotation()
-            if let focusedTrip = selectedTrip, !isAddTripMode {
-                detailMapContent(for: focusedTrip)
+            if shouldShowUserLocation {
+                UserAnnotation()
+            }
+            if let state = detailState {
+                detailMapContent(state: state, showLiveTrainMarker: shouldShowLiveTrainMarker)
             } else {
                 dashboardMapContent()
             }
         }
         .mapStyle(.standard(elevation: .automatic))
+        .animation(.easeInOut(duration: 0.8), value: liveTrainClock)
         .mapControls {
-            MapUserLocationButton()
-                .mapControlVisibility(.visible)
+            if shouldShowUserLocation {
+                MapUserLocationButton()
+                    .mapControlVisibility(.visible)
+            }
         }
         .safeAreaInset(edge: .top, alignment: .center) {
             Color.clear
@@ -62,6 +81,9 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 selectedDetent = newValue ? .large : .medium
             }
+            if newValue {
+                locationProvider.disableTracking()
+            }
             updateCameraForCurrentState()
         }
         .onChange(of: selectedTrip) { _, newValue in
@@ -69,11 +91,18 @@ struct ContentView: View {
                 DispatchQueue.main.async {
                     selectedDetent = .medium
                 }
+            } else {
+                locationProvider.disableTracking()
             }
             updateCameraForCurrentState()
         }
         .onAppear {
             updateCameraForCurrentState(animated: false)
+        }
+        .onReceive(liveTrainTimer) { value in
+            withAnimation(.easeInOut(duration: 0.8)) {
+                liveTrainClock = value
+            }
         }
         .onChange(of: trips) { _, newValue in
             TripStorage.shared.saveTrips(newValue)
@@ -81,6 +110,10 @@ struct ContentView: View {
         }
         .onChange(of: pastTrips) { _, newValue in
             TripStorage.shared.savePastTrips(newValue)
+        }
+        // Run tracking side effect when the user-location visibility changes (and on first render)
+        .task(id: detailState?.trackingResult?.showsUserLocation ?? false) {
+            updateTrackingState(using: detailState?.trackingResult)
         }
     }
 
@@ -93,7 +126,7 @@ extension ContentView {
     @MapContentBuilder
     private func dashboardMapContent() -> some MapContent {
         ForEach(trips) { trip in
-            if let line = routeCoordinates(for: trip) {
+            if let line = userSegmentCoordinates(for: trip) {
                 MapPolyline(coordinates: line)
                     .stroke(.blue.opacity(0.6), style: StrokeStyle(lineWidth: 4, lineCap: .round))
                 if let start = line.first {
@@ -110,10 +143,51 @@ extension ContentView {
         }
     }
 
-    @MapContentBuilder
-    private func detailMapContent(for trip: Trip) -> some MapContent {
+    private func detailMapState(for trip: Trip) -> DetailMapState {
         let orderedStops = polylineStops(for: trip)
         let stoppingStops = stationStops(for: trip)
+        let trackingResult = liveTrainCoordinate(
+            for: trip,
+            orderedStops: orderedStops,
+            stoppingStops: stoppingStops,
+            referenceDate: liveTrainClock,
+            deviceCoordinate: locationProvider.coordinate
+        )
+
+        return DetailMapState(
+            trip: trip,
+            orderedStops: orderedStops,
+            stoppingStops: stoppingStops,
+            trackingResult: trackingResult
+        )
+    }
+
+    private func updateTrackingState(using result: LiveTrainCoordinateResult?) {
+        if result?.showsUserLocation == true {
+            locationProvider.enableTracking()
+        } else {
+            locationProvider.disableTracking()
+        }
+    }
+
+    private func shouldDisplayUserLocationDot(for state: DetailMapState?) -> Bool {
+        return state?.trackingResult?.showsUserLocation ?? false
+    }
+
+    private func shouldDisplayLiveTrainMarker(
+        for state: DetailMapState?,
+        userLocationVisible: Bool
+    ) -> Bool {
+        guard !userLocationVisible else { return false }
+        guard state?.trackingResult?.showsLiveTrainMarker == true else { return false }
+        return state?.trackingResult?.coordinate != nil
+    }
+
+    @MapContentBuilder
+    private func detailMapContent(state: DetailMapState, showLiveTrainMarker: Bool) -> some MapContent {
+        let trip = state.trip
+        let orderedStops = state.orderedStops
+        let stoppingStops = state.stoppingStops
         let coordinates = orderedStops.map { $0.coordinate }
         if coordinates.count > 1 {
             MapPolyline(coordinates: coordinates)
@@ -143,6 +217,12 @@ extension ContentView {
                 }
             }
         }
+
+        if showLiveTrainMarker, let liveCoordinate = state.trackingResult?.coordinate {
+            Annotation("", coordinate: liveCoordinate) {
+                LiveTrainMarkerView()
+            }
+        }
     }
 
     private func straightLineCoordinates(for trip: Trip) -> [CLLocationCoordinate2D]? {
@@ -159,6 +239,24 @@ extension ContentView {
             return stops.map { $0.coordinate }
         }
         return straightLineCoordinates(for: trip)
+    }
+
+    private func userSegmentCoordinates(for trip: Trip) -> [CLLocationCoordinate2D]? {
+        let stops = polylineStops(for: trip)
+        let segmentStops = userSegmentStops(for: trip, stops: stops)
+        if segmentStops.count > 1 {
+            return segmentStops.map { $0.coordinate }
+        }
+        return straightLineCoordinates(for: trip)
+    }
+
+    private func userSegmentStops(for trip: Trip, stops: [StoredStop]) -> [StoredStop] {
+        guard !stops.isEmpty else { return [] }
+        guard let range = highlightedRange(for: trip, orderedStops: stops) else { return stops }
+        let lower = max(range.lowerBound, 0)
+        let upper = min(range.upperBound, stops.count - 1)
+        guard lower <= upper else { return stops }
+        return Array(stops[lower...upper])
     }
 
     private func polylineStops(for trip: Trip) -> [StoredStop] {
@@ -187,6 +285,243 @@ extension ContentView {
             baseStops = []
         }
         return baseStops.sorted { $0.sequence < $1.sequence }
+    }
+
+    private func liveTrainCoordinate(
+        for trip: Trip,
+        orderedStops: [StoredStop],
+        stoppingStops: [StoredStop],
+        referenceDate: Date,
+        deviceCoordinate: CLLocationCoordinate2D?
+    ) -> LiveTrainCoordinateResult? {
+        let segments = GTFSDataSource.shared.segments(for: trip.gtfsTripId ?? trip.id)
+        guard !segments.isEmpty else { return nil }
+
+        var stopLookup: [String: StoredStop] = [:]
+        for stop in orderedStops {
+            stopLookup[stop.id] = stop
+        }
+        for stop in stoppingStops {
+            stopLookup[stop.id] = stop
+        }
+        guard !stopLookup.isEmpty else { return nil }
+
+        let timeline = buildSegmentEntries(
+            segments: segments,
+            trip: trip,
+            stopLookup: stopLookup
+        )
+
+        guard !timeline.isEmpty else { return nil }
+
+        guard let fallback = interpolatedCoordinate(entries: timeline, referenceDate: referenceDate) else {
+            return nil
+        }
+
+        let resolvedStops = resolvedStopIdentifiers(
+            for: trip,
+            orderedStops: orderedStops,
+            stoppingStops: stoppingStops
+        )
+
+        guard
+            let originStopId = resolvedStops.origin,
+            let destinationStopId = resolvedStops.destination,
+            let originDeparture = timeline.first(where: { $0.startStopId == originStopId })?.startDate,
+            let destinationArrival = timeline.first(where: { $0.endStopId == destinationStopId })?.endDate
+        else {
+            return LiveTrainCoordinateResult(
+                coordinate: fallback,
+                mode: .interpolation,
+                showsUserLocation: false,
+                showsLiveTrainMarker: false
+            )
+        }
+
+        let leadTime: TimeInterval = 10 * 60
+        let userWindowStart = originDeparture.addingTimeInterval(-leadTime)
+        let hasDeparted = referenceDate >= originDeparture
+        let hasArrived = referenceDate >= destinationArrival
+        let isWithinUserWindow = referenceDate >= userWindowStart && referenceDate <= destinationArrival
+
+        if hasDeparted && !hasArrived {
+            let coordinate = deviceCoordinate ?? fallback
+            return LiveTrainCoordinateResult(
+                coordinate: coordinate,
+                mode: .device,
+                showsUserLocation: true,
+                showsLiveTrainMarker: true
+            )
+        }
+
+        if isWithinUserWindow {
+            return LiveTrainCoordinateResult(
+                coordinate: fallback,
+                mode: .interpolation,
+                showsUserLocation: true,
+                showsLiveTrainMarker: false
+            )
+        }
+
+        if hasDeparted {
+            // Train has completed the trip; keep marker but hide GPS/user affordances.
+            return LiveTrainCoordinateResult(
+                coordinate: fallback,
+                mode: .interpolation,
+                showsUserLocation: false,
+                showsLiveTrainMarker: true
+            )
+        }
+
+        return LiveTrainCoordinateResult(
+            coordinate: fallback,
+            mode: .interpolation,
+            showsUserLocation: false,
+            showsLiveTrainMarker: false
+        )
+    }
+
+    private func resolvedStopIdentifiers(
+        for trip: Trip,
+        orderedStops: [StoredStop],
+        stoppingStops: [StoredStop]
+    ) -> (origin: String?, destination: String?) {
+        let referenceStops = stoppingStops.isEmpty ? orderedStops : stoppingStops
+        guard !referenceStops.isEmpty else {
+            return (trip.originStopId, trip.destinationStopId)
+        }
+
+        let originIndex = indexForStop(
+            id: trip.originStopId,
+            sequence: trip.originSequence,
+            in: referenceStops,
+            fallback: 0
+        )
+        let destinationIndex = indexForStop(
+            id: trip.destinationStopId,
+            sequence: trip.destinationSequence,
+            in: referenceStops,
+            fallback: max(referenceStops.count - 1, 0)
+        )
+
+        let originStopId = referenceStops.indices.contains(originIndex)
+            ? referenceStops[originIndex].id
+            : trip.originStopId
+        let destinationStopId = referenceStops.indices.contains(destinationIndex)
+            ? referenceStops[destinationIndex].id
+            : trip.destinationStopId
+
+        return (originStopId, destinationStopId)
+    }
+
+    private func buildSegmentEntries(
+        segments: [GTFSSegment],
+        trip: Trip,
+        stopLookup: [String: StoredStop]
+    ) -> [MapSegmentEntry] {
+        let referenceDate = trip.travelDate ?? Date()
+        var baseDate = Calendar.current.startOfDay(for: referenceDate)
+        if let firstSeconds = segments.first?.departureSeconds,
+           baseDate.addingTimeInterval(TimeInterval(firstSeconds)) > referenceDate {
+            baseDate = baseDate.addingTimeInterval(-ScheduleDateUtils.dayInterval)
+        }
+
+        let delaySeconds = TimeInterval((LiveDelayStore.shared.info(for: trip.id)?.delayMinutes ?? trip.delayMinutes ?? 0) * 60)
+
+        var lastReference: Date?
+        var entries: [MapSegmentEntry] = []
+
+        for segment in segments {
+            guard
+                let startStop = stopLookup[segment.startId],
+                let endStop = stopLookup[segment.endId]
+            else {
+                continue
+            }
+
+            guard
+                let departureSeconds = segment.departureSeconds ?? segment.arrivalSeconds,
+                let arrivalSeconds = segment.arrivalSeconds ?? segment.departureSeconds
+            else {
+                continue
+            }
+
+            var startDate = baseDate.addingTimeInterval(TimeInterval(departureSeconds))
+            var endDate = baseDate.addingTimeInterval(TimeInterval(arrivalSeconds))
+
+            if let normalized = ScheduleDateUtils.normalizedArrival(endDate, relativeTo: startDate) {
+                endDate = normalized
+            }
+
+            if let previous = lastReference {
+                startDate = ScheduleDateUtils.shiftedForward(startDate, after: previous)
+            }
+
+            endDate = ScheduleDateUtils.shiftedForward(endDate, after: startDate)
+            lastReference = endDate
+
+            startDate = startDate.addingTimeInterval(delaySeconds)
+            endDate = endDate.addingTimeInterval(delaySeconds)
+
+            entries.append(
+                MapSegmentEntry(
+                    startStopId: segment.startId,
+                    endStopId: segment.endId,
+                    startCoordinate: startStop.coordinate,
+                    endCoordinate: endStop.coordinate,
+                    startDate: startDate,
+                    endDate: endDate
+                )
+            )
+        }
+
+        return entries
+    }
+
+    private func interpolatedCoordinate(
+        entries: [MapSegmentEntry],
+        referenceDate: Date
+    ) -> CLLocationCoordinate2D? {
+        guard let first = entries.first, let last = entries.last else { return nil }
+
+        if referenceDate <= first.startDate {
+            return first.startCoordinate
+        }
+
+        if referenceDate >= last.endDate {
+            return last.endCoordinate
+        }
+
+        for entry in entries {
+            if referenceDate <= entry.startDate {
+                return entry.startCoordinate
+            }
+
+            if referenceDate >= entry.startDate && referenceDate <= entry.endDate {
+                let duration = entry.endDate.timeIntervalSince(entry.startDate)
+                guard duration > 0 else { return entry.endCoordinate }
+                let elapsed = referenceDate.timeIntervalSince(entry.startDate)
+                let progress = max(0, min(elapsed / duration, 1))
+                return interpolateCoordinate(
+                    from: entry.startCoordinate,
+                    to: entry.endCoordinate,
+                    progress: progress
+                )
+            }
+        }
+
+        return last.endCoordinate
+    }
+
+    private func interpolateCoordinate(
+        from start: CLLocationCoordinate2D,
+        to end: CLLocationCoordinate2D,
+        progress: Double
+    ) -> CLLocationCoordinate2D {
+        let clamped = max(0, min(progress, 1))
+        let latitude = start.latitude + (end.latitude - start.latitude) * clamped
+        let longitude = start.longitude + (end.longitude - start.longitude) * clamped
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 
 
@@ -243,7 +578,7 @@ extension ContentView {
     }
 
     private func focusOnAllTrips(animated: Bool = true) {
-        let coordinates = trips.compactMap { routeCoordinates(for: $0) }.flatMap { $0 }
+        let coordinates = trips.compactMap { userSegmentCoordinates(for: $0) }.flatMap { $0 }
         if let region = region(containing: coordinates) {
             setMapRegion(region, animated: animated)
         } else {
@@ -742,4 +1077,48 @@ extension Trip {
 
 #Preview {
     ContentView()
+}
+
+private struct DetailMapState {
+    let trip: Trip
+    let orderedStops: [StoredStop]
+    let stoppingStops: [StoredStop]
+    let trackingResult: LiveTrainCoordinateResult?
+}
+
+private struct MapSegmentEntry {
+    let startStopId: String
+    let endStopId: String
+    let startCoordinate: CLLocationCoordinate2D
+    let endCoordinate: CLLocationCoordinate2D
+    let startDate: Date
+    let endDate: Date
+}
+
+private enum LiveTrainTrackingMode {
+    case interpolation
+    case device
+}
+
+private struct LiveTrainCoordinateResult {
+    let coordinate: CLLocationCoordinate2D?
+    let mode: LiveTrainTrackingMode
+    let showsUserLocation: Bool
+    let showsLiveTrainMarker: Bool
+}
+
+private struct LiveTrainMarkerView: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.blue.opacity(0.9))
+            Circle()
+                .stroke(Color.white, lineWidth: 2)
+            Image(systemName: "tram.fill")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .frame(width: 28, height: 28)
+        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
+    }
 }

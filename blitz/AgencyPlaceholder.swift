@@ -32,7 +32,7 @@ struct AgencyBadge: View {
     private static let defaultEntry = Entry(
         background: Color.gray.opacity(0.1),
         foreground: .primary,
-        symbol: "train.side.front.car.fill",
+        symbol: "tram.fill",
         initials: nil
     )
 
