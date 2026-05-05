@@ -12,6 +12,7 @@ internal import Vision
 struct TripDetailSheet: View {
     let trip: Trip
     let pastTrips: [Trip]
+    let isPastTrip: Bool
     var onClose: (() -> Void)?
     var onUpdateTrip: ((Trip) -> Void)?
 
@@ -45,11 +46,13 @@ struct TripDetailSheet: View {
     init(
         trip: Trip,
         pastTrips: [Trip] = [],
+        isPastTrip: Bool = false,
         onClose: (() -> Void)? = nil,
         onUpdateTrip: ((Trip) -> Void)? = nil
     ) {
         self.trip = trip
         self.pastTrips = pastTrips
+        self.isPastTrip = isPastTrip
         self.onClose = onClose
         self.onUpdateTrip = onUpdateTrip
         _ticketCode = State(initialValue: trip.ticketQRCode)
@@ -79,29 +82,31 @@ struct TripDetailSheet: View {
                 }
             }
             ToolbarSpacer(.flexible, placement: .bottomBar)
-            ToolbarItem(placement: .bottomBar) {
-                Button(action: {
-                    if shouldSkipNextSync {
-                        shouldSkipNextSync = false
-                        return
+            if !isPastTrip {
+                ToolbarItem(placement: .bottomBar) {
+                    Button(action: {
+                        if shouldSkipNextSync {
+                            shouldSkipNextSync = false
+                            return
+                        }
+                        syncDelay()
+                    }) {
+                        Label("Sync", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
                     }
-                    syncDelay()
-                }) {
-                    Label("Sync", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.6)
+                            .onChanged { _ in
+                                guard !hasTriggeredSyncLongPress else { return }
+                                hasTriggeredSyncLongPress = true
+                                shouldSkipNextSync = true
+                                forgetDelay()
+                            }
+                            .onEnded { _ in
+                                hasTriggeredSyncLongPress = false
+                            }
+                    )
+                    .disabled(isSyncingDelay)
                 }
-                .simultaneousGesture(
-                    LongPressGesture(minimumDuration: 0.6)
-                        .onChanged { _ in
-                            guard !hasTriggeredSyncLongPress else { return }
-                            hasTriggeredSyncLongPress = true
-                            shouldSkipNextSync = true
-                            forgetDelay()
-                        }
-                        .onEnded { _ in
-                            hasTriggeredSyncLongPress = false
-                        }
-                )
-                .disabled(isSyncingDelay)
             }
 
             ToolbarItem(placement: .bottomBar) {
@@ -168,12 +173,12 @@ struct TripDetailSheet: View {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                 Section {
                     VStack(alignment: .leading, spacing: 20) {
-                        if let status = syncStatusText {
+                        if !isPastTrip, let status = syncStatusText {
                             Text(status)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        if let bannerText = scraperStatusText {
+                        if !isPastTrip, let bannerText = scraperStatusText {
                             ScraperStatusBanner(text: bannerText, isDelayed: scraperStatusIsDelayed)
                                 .padding(.horizontal, -16)
                         }
@@ -478,8 +483,6 @@ struct TripDetailSheet: View {
             arrivalForecastSection
 //            trackSpeedSection
             trainInfoSection
-            trainCompositionSection
-            foodMenuSection
         }
     }
 
@@ -587,7 +590,7 @@ struct TripDetailSheet: View {
 
     private var travelSummaryText: String? {
         let distance = effectiveDistanceText
-        guard let duration = timing.duration, duration > 0 else { return distance }
+        guard let duration = adjustedTravelDuration, duration > 0 else { return distance }
         let durationText = Self.durationFormatter.string(from: duration) ?? ""
         if let distance {
             return "\(durationText) • \(distance)"
@@ -636,6 +639,15 @@ struct TripDetailSheet: View {
     private var adjustedArrivalDate: Date? {
         guard let base = timing.arrivalDate else { return nil }
         return applyDelay(to: base, minutes: terminalDelayMinutes(for: .arrival))
+    }
+
+    private var adjustedTravelDuration: TimeInterval? {
+        guard let departure = adjustedDepartureDate, let arrival = adjustedArrivalDate else {
+            return timing.duration
+        }
+
+        let duration = arrival.timeIntervalSince(departure)
+        return duration > 0 ? duration : timing.duration
     }
 
     private func applyDelay(to date: Date, minutes: Int?) -> Date {
@@ -1447,125 +1459,6 @@ private extension TripDetailSheet {
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder
-    private var trainCompositionSection: some View {
-        let cars = trainCompositionCars
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Train Composition")
-                    .font(.system(size: 20, weight: .semibold))
-                Text(trainCompositionSummaryLine)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(spacing: 14) {
-                ForEach(cars) { car in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Image(systemName: car.iconName)
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(car.tint)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Car \(car.carNumber) • \(car.title)")
-                                    .font(.headline)
-                                Text(car.detail)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer(minLength: 0)
-                        }
-
-                        if !car.amenities.isEmpty {
-                            HStack(spacing: 6) {
-                                ForEach(car.amenities, id: \.self) { amenity in
-                                    Text(amenity)
-                                        .font(.caption2.weight(.semibold))
-                                        .textCase(.uppercase)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .foregroundStyle(car.tint)
-                                        .background(car.tint.opacity(0.12))
-                                        .clipShape(Capsule())
-                                }
-                            }
-                        }
-                    }
-
-                    if car.id != cars.last?.id {
-                        Divider()
-                    }
-                }
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
-        )
-    }
-
-    @ViewBuilder
-    private var foodMenuSection: some View {
-        let categories = foodMenuCategories
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Bistro Menu")
-                    .font(.system(size: 20, weight: .semibold))
-                Text("Chef-prepared plates, daytime bites, and a late-night espresso bar")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(spacing: 18) {
-                ForEach(categories) { category in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(category.title.uppercased())
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-
-                        VStack(spacing: 12) {
-                            ForEach(category.items) { item in
-                                HStack(alignment: .top, spacing: 12) {
-                                    Image(systemName: item.iconName)
-                                        .font(.system(size: 18, weight: .semibold))
-                                        .foregroundStyle(category.tint)
-
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        HStack(alignment: .firstTextBaseline) {
-                                            Text(item.name)
-                                                .font(.headline)
-                                            Spacer(minLength: 0)
-                                            Text(item.price)
-                                                .font(.subheadline)
-                                                .fontWeight(.semibold)
-                                        }
-                                        Text(item.detail)
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if category.id != categories.last?.id {
-                        Divider()
-                    }
-                }
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
-        )
-    }
-
     private func editorInfoCard(
         icon: String,
         title: String,
@@ -1656,133 +1549,6 @@ private extension TripDetailSheet {
 
     private var trainTrackGaugeFact: (text: String, isPlaceholder: Bool) {
         ("1435mm standard", false)
-    }
-
-    private var trainCompositionCars: [TrainCompositionCar] {
-        [
-            TrainCompositionCar(
-                carNumber: 1,
-                title: "First Class Quiet",
-                detail: "1+2 recliners, panoramic windows, staffed concierge",
-                amenities: ["1ST", "QUIET", "AC"],
-                category: .firstClass
-            ),
-            TrainCompositionCar(
-                carNumber: 2,
-                title: "Business Flex",
-                detail: "Work counters, power at every seat, barista corner",
-                amenities: ["1ST", "POWER", "WIFI"],
-                category: .firstClass
-            ),
-            TrainCompositionCar(
-                carNumber: 3,
-                title: "Open Coach A",
-                detail: "2+2 reserved seating with luggage stacks mid-car",
-                amenities: ["2ND", "AC", "FAMILY"],
-                category: .secondClass
-            ),
-            TrainCompositionCar(
-                carNumber: 4,
-                title: "Open Coach B",
-                detail: "2+2 flex cabin, standing bar for short hops",
-                amenities: ["2ND", "USB", "BIKE"],
-                category: .secondClass
-            ),
-            TrainCompositionCar(
-                carNumber: 5,
-                title: "Restaurant & Bistro",
-                detail: "Galley kitchen, 32 dining seats, grab-and-go pantry",
-                amenities: ["DINING", "BAR", "CHEF"],
-                category: .restaurant
-            ),
-            TrainCompositionCar(
-                carNumber: 6,
-                title: "Couchette Nightliner",
-                detail: "4-berth compartments, shower module, secure lockers",
-                amenities: ["SLEEPER", "SHOWERS", "HOST"],
-                category: .sleeper
-            ),
-            TrainCompositionCar(
-                carNumber: 7,
-                title: "Sleeper Deluxe",
-                detail: "En-suite doubles with smart climate + room service",
-                amenities: ["SUITE", "AC", "ROOMSERVICE"],
-                category: .sleeper
-            )
-        ]
-    }
-
-    private var trainCompositionSummaryLine: String {
-        "\(trainCompositionCars.count) cars • \(trainCompositionBreakdownText)"
-    }
-
-    private var trainCompositionBreakdownText: String {
-        let grouped = Dictionary(grouping: trainCompositionCars, by: \.category)
-        let order: [TrainCompositionCar.Category] = [.firstClass, .secondClass, .restaurant, .sleeper]
-        let parts = order.compactMap { category -> String? in
-            guard let count = grouped[category]?.count else { return nil }
-            return "\(count)x \(category.displayName)"
-        }
-        return parts.joined(separator: " • ")
-    }
-
-    private var foodMenuCategories: [FoodMenuCategory] {
-        [
-            FoodMenuCategory(
-                title: "Bistro Plates",
-                tint: .orange,
-                items: [
-                    FoodMenuItem(
-                        name: "Transylvanian Herb Roast",
-                        detail: "Roasted chicken roulade, smoked polenta, pickled carrots",
-                        price: "69 lei",
-                        iconName: "fork.knife"
-                    ),
-                    FoodMenuItem(
-                        name: "Danube Salmon Bowl",
-                        detail: "Seared fillet, dill rice, charred lemon aioli",
-                        price: "74 lei",
-                        iconName: "fish"
-                    )
-                ]
-            ),
-            FoodMenuCategory(
-                title: "Grab & Go",
-                tint: .green,
-                items: [
-                    FoodMenuItem(
-                        name: "Carpathian Picnic",
-                        detail: "Artisanal meats, alpine cheese, sunflower baguette",
-                        price: "48 lei",
-                        iconName: "takeoutbag.and.cup.and.straw"
-                    ),
-                    FoodMenuItem(
-                        name: "Night Shift Snack Stack",
-                        detail: "Protein bar trio, citrus, rosemary almonds",
-                        price: "32 lei",
-                        iconName: "leaf"
-                    )
-                ]
-            ),
-            FoodMenuCategory(
-                title: "Barista & Lounge",
-                tint: .blue,
-                items: [
-                    FoodMenuItem(
-                        name: "Oradea Espresso Tonic",
-                        detail: "Single-origin shot, Mediterranean tonic, burnt orange",
-                        price: "28 lei",
-                        iconName: "cup.and.saucer"
-                    ),
-                    FoodMenuItem(
-                        name: "Sleeper Car Cocoa",
-                        detail: "Valrhona cocoa, oat cream, wildflower honey",
-                        price: "26 lei",
-                        iconName: "mug.fill"
-                    )
-                ]
-            )
-        ]
     }
 
     private var derivedTrainLengthText: String? {
@@ -2185,72 +1951,6 @@ private func historyStatCard(
         }
         .padding(.vertical, 12)
     }
-}
-
-private struct TrainCompositionCar: Identifiable {
-    enum Category {
-        case firstClass
-        case secondClass
-        case restaurant
-        case sleeper
-    }
-
-    let carNumber: Int
-    let title: String
-    let detail: String
-    let amenities: [String]
-    let category: Category
-
-    var id: Int { carNumber }
-
-    var iconName: String { category.iconName }
-    var tint: Color { category.tint }
-}
-
-private extension TrainCompositionCar.Category {
-    var displayName: String {
-        switch self {
-        case .firstClass: return "First"
-        case .secondClass: return "Second"
-        case .restaurant: return "Dining"
-        case .sleeper: return "Sleeper"
-        }
-    }
-
-    var iconName: String {
-        switch self {
-        case .firstClass: return "seat.side.front.and.back"
-        case .secondClass: return "person.2.fill"
-        case .restaurant: return "fork.knife"
-        case .sleeper: return "bed.double.fill"
-        }
-    }
-
-    var tint: Color {
-        switch self {
-        case .firstClass: return Color.orange
-        case .secondClass: return Color.blue
-        case .restaurant: return Color.green
-        case .sleeper: return Color.purple
-        }
-    }
-}
-
-private struct FoodMenuItem: Identifiable {
-    let name: String
-    let detail: String
-    let price: String
-    let iconName: String
-
-    var id: String { name }
-}
-
-private struct FoodMenuCategory: Identifiable {
-    let title: String
-    let tint: Color
-    let items: [FoodMenuItem]
-
-    var id: String { title }
 }
 
 private struct RouteHistoryMetrics {

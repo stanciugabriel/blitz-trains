@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var trips: [Trip] = TripStorage.shared.loadTrips()
     @State private var pastTrips: [Trip] = TripStorage.shared.loadPastTrips()
     @State private var liveTrainClock = Date()
+    @State private var hasSyncedTripsOnLaunch = false
     @StateObject private var locationProvider = DeviceLocationProvider()
     private let liveTrainTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
@@ -67,9 +68,10 @@ struct ContentView: View {
             SheetContent(
                 trips: $trips,
                 selectedTrip: $selectedTrip,
-                isAddTripMode: $isAddTripMode,
+                isAddTripMode: addTripModeBinding,
                 trainSearchQuery: $trainSearchQuery,
-                pastTrips: $pastTrips
+                pastTrips: $pastTrips,
+                onTripAdded: syncTripAfterAdd
             )
             .presentationDetents(detents, selection: $selectedDetent)
             .presentationBackground(Color(.systemBackground))
@@ -78,8 +80,10 @@ struct ContentView: View {
             .interactiveDismissDisabled(true)
         }
         .onChange(of: isAddTripMode) { _, newValue in
-            DispatchQueue.main.async {
-                selectedDetent = newValue ? .large : .medium
+            if !newValue {
+                DispatchQueue.main.async {
+                    selectedDetent = .medium
+                }
             }
             if newValue {
                 locationProvider.disableTracking()
@@ -98,6 +102,7 @@ struct ContentView: View {
         }
         .onAppear {
             updateCameraForCurrentState(animated: false)
+            syncTripsOnLaunchIfNeeded()
         }
         .onReceive(liveTrainTimer) { value in
             withAnimation(.easeInOut(duration: 0.8)) {
@@ -111,14 +116,136 @@ struct ContentView: View {
         .onChange(of: pastTrips) { _, newValue in
             TripStorage.shared.savePastTrips(newValue)
         }
-        // Run tracking side effect when the user-location visibility changes (and on first render)
-        .task(id: detailState?.trackingResult?.showsUserLocation ?? false) {
+        // Run tracking side effect when the selected trip or user-location visibility changes.
+        .task(id: trackingTaskKey(for: detailState)) {
             updateTrackingState(using: detailState?.trackingResult)
         }
     }
 
     private var detents: Set<PresentationDetent> {
         isAddTripMode ? [.large] : [.fraction(0.3), .medium, .large]
+    }
+
+    private var addTripModeBinding: Binding<Bool> {
+        Binding(
+            get: { isAddTripMode },
+            set: { newValue in
+                if newValue {
+                    selectedDetent = .large
+                    isAddTripMode = true
+                } else {
+                    isAddTripMode = false
+                }
+            }
+        )
+    }
+
+    private func trackingTaskKey(for state: DetailMapState?) -> String {
+        let tripID = state?.trip.id ?? "dashboard"
+        let showsUser = state?.trackingResult?.showsUserLocation == true
+        return "\(tripID)-\(showsUser)"
+    }
+
+    private func syncTripsOnLaunchIfNeeded() {
+        guard !hasSyncedTripsOnLaunch else { return }
+        hasSyncedTripsOnLaunch = true
+
+        let launchTrips = trips
+        guard !launchTrips.isEmpty else { return }
+
+        Task {
+            for trip in launchTrips {
+                await syncTrip(trip)
+            }
+        }
+    }
+
+    private func syncTripAfterAdd(_ trip: Trip) {
+        Task {
+            await syncTrip(trip)
+        }
+    }
+
+    private func syncTrip(_ trip: Trip) async {
+        guard let trainNumber = resolvedTrainNumber(for: trip) else { return }
+        await InfoFerSessionManager.shared.refreshSession(for: trainNumber)
+        let info = await InfoFerScraper.shared.fetchDelay(
+            for: trainNumber,
+            travelDate: trip.travelDate
+        )
+
+        await MainActor.run {
+            LiveDelayStore.shared.save(info: info, for: trip.id)
+            applyLaunchSync(info: info, to: trip.id)
+        }
+    }
+
+    private func resolvedTrainNumber(for trip: Trip) -> String? {
+        let titleComponents = trip.title.split(separator: " ")
+        if let last = titleComponents.last {
+            let digits = last.filter { $0.isNumber }
+            if !digits.isEmpty { return String(digits) }
+        }
+
+        if let code = trip.gtfsTripId, !code.isEmpty {
+            return code
+        }
+
+        return nil
+    }
+
+    private func applyLaunchSync(info: DelayInfo, to tripID: String) {
+        guard !info.stationDelays.isEmpty else { return }
+        guard let index = trips.firstIndex(where: { $0.id == tripID }) else { return }
+        guard let updatedStops = stopsByApplying(info: info, to: trips[index]) else { return }
+
+        let updatedTrip = trips[index].updatingStops(updatedStops)
+        trips[index] = updatedTrip
+
+        if selectedTrip?.id == tripID {
+            selectedTrip = updatedTrip
+        }
+    }
+
+    private func stopsByApplying(info: DelayInfo, to trip: Trip) -> [StoredStop]? {
+        guard let storedStops = trip.stops, !storedStops.isEmpty else { return nil }
+
+        var lookup: [String: StationDelay] = [:]
+        for detail in info.stationDelays {
+            lookup[normalizedStationName(detail.stationName)] = detail
+        }
+
+        var updatedStops = storedStops
+        var hasChanges = false
+
+        for index in updatedStops.indices {
+            let key = normalizedStationName(updatedStops[index].name)
+            guard let detail = lookup[key] else { continue }
+
+            if updatedStops[index].arrivalDelayMinutes != detail.arrivalDelayMinutes {
+                updatedStops[index].arrivalDelayMinutes = detail.arrivalDelayMinutes
+                hasChanges = true
+            }
+
+            if updatedStops[index].departureDelayMinutes != detail.departureDelayMinutes {
+                updatedStops[index].departureDelayMinutes = detail.departureDelayMinutes
+                hasChanges = true
+            }
+
+            if updatedStops[index].platform != detail.platform {
+                updatedStops[index].platform = detail.platform
+                hasChanges = true
+            }
+        }
+
+        return hasChanges ? updatedStops : nil
+    }
+
+    private func normalizedStationName(_ value: String) -> String {
+        value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -324,12 +451,10 @@ extension ContentView {
             stoppingStops: stoppingStops
         )
 
-        guard
-            let originStopId = resolvedStops.origin,
-            let destinationStopId = resolvedStops.destination,
-            let originDeparture = timeline.first(where: { $0.startStopId == originStopId })?.startDate,
-            let destinationArrival = timeline.first(where: { $0.endStopId == destinationStopId })?.endDate
-        else {
+        guard let originStopId = resolvedStops.origin,
+              let destinationStopId = resolvedStops.destination,
+              let serviceDeparture = timeline.first?.startDate,
+              let serviceArrival = timeline.last?.endDate else {
             return LiveTrainCoordinateResult(
                 coordinate: fallback,
                 mode: .interpolation,
@@ -338,33 +463,27 @@ extension ContentView {
             )
         }
 
-        let leadTime: TimeInterval = 10 * 60
-        let userWindowStart = originDeparture.addingTimeInterval(-leadTime)
-        let hasDeparted = referenceDate >= originDeparture
-        let hasArrived = referenceDate >= destinationArrival
-        let isWithinUserWindow = referenceDate >= userWindowStart && referenceDate <= destinationArrival
+        guard let boardingDate = boardingDate(for: originStopId, in: timeline),
+              let destinationArrival = arrivalDate(for: destinationStopId, in: timeline) else {
+            return LiveTrainCoordinateResult(
+                coordinate: fallback,
+                mode: .interpolation,
+                showsUserLocation: false,
+                showsLiveTrainMarker: referenceDate >= serviceDeparture && referenceDate <= serviceArrival
+            )
+        }
 
-        if hasDeparted && !hasArrived {
+        if referenceDate >= boardingDate && referenceDate < destinationArrival {
             let coordinate = deviceCoordinate ?? fallback
             return LiveTrainCoordinateResult(
                 coordinate: coordinate,
                 mode: .device,
                 showsUserLocation: true,
-                showsLiveTrainMarker: true
-            )
-        }
-
-        if isWithinUserWindow {
-            return LiveTrainCoordinateResult(
-                coordinate: fallback,
-                mode: .interpolation,
-                showsUserLocation: true,
                 showsLiveTrainMarker: false
             )
         }
 
-        if hasDeparted {
-            // Train has completed the trip; keep marker but hide GPS/user affordances.
+        if referenceDate <= serviceArrival {
             return LiveTrainCoordinateResult(
                 coordinate: fallback,
                 mode: .interpolation,
@@ -379,6 +498,20 @@ extension ContentView {
             showsUserLocation: false,
             showsLiveTrainMarker: false
         )
+    }
+
+    private func boardingDate(for stopId: String, in timeline: [MapSegmentEntry]) -> Date? {
+        if let arrival = timeline.first(where: { $0.endStopId == stopId })?.endDate {
+            return arrival
+        }
+        return timeline.first(where: { $0.startStopId == stopId })?.startDate
+    }
+
+    private func arrivalDate(for stopId: String, in timeline: [MapSegmentEntry]) -> Date? {
+        if let arrival = timeline.first(where: { $0.endStopId == stopId })?.endDate {
+            return arrival
+        }
+        return timeline.first(where: { $0.startStopId == stopId })?.startDate
     }
 
     private func resolvedStopIdentifiers(
@@ -420,11 +553,7 @@ extension ContentView {
         stopLookup: [String: StoredStop]
     ) -> [MapSegmentEntry] {
         let referenceDate = trip.travelDate ?? Date()
-        var baseDate = Calendar.current.startOfDay(for: referenceDate)
-        if let firstSeconds = segments.first?.departureSeconds,
-           baseDate.addingTimeInterval(TimeInterval(firstSeconds)) > referenceDate {
-            baseDate = baseDate.addingTimeInterval(-ScheduleDateUtils.dayInterval)
-        }
+        let baseDate = Calendar.current.startOfDay(for: referenceDate)
 
         let delaySeconds = TimeInterval((LiveDelayStore.shared.info(for: trip.id)?.delayMinutes ?? trip.delayMinutes ?? 0) * 60)
 

@@ -9,6 +9,7 @@ struct SheetContent: View {
     @Binding var isAddTripMode: Bool
     @Binding var trainSearchQuery: String
     @Binding var pastTrips: [Trip]
+    var onTripAdded: (Trip) -> Void
 
     @FocusState private var isTextFieldFocused: Bool
     @State private var searchResults: [Trip] = []
@@ -26,6 +27,11 @@ struct SheetContent: View {
     @State private var isShowingDeleteConfirmation = false
     @State private var activeConnectionInfo: ConnectionInfo?
     @State private var isGeneratingRandomTrip = false
+    @State private var isSelectedTripPast = false
+    @State private var selectedMainTab: MainSheetTab = .trips
+    @State private var tabBeforeSearch: MainSheetTab = .trips
+    @State private var searchFocusNonce = 0
+    @State private var pendingSearchAutofocus = false
     
 
     private let dataSource = GTFSDataSource.shared
@@ -36,13 +42,15 @@ struct SheetContent: View {
         selectedTrip: Binding<Trip?>,
         isAddTripMode: Binding<Bool>,
         trainSearchQuery: Binding<String>,
-        pastTrips: Binding<[Trip]> = .constant([])
+        pastTrips: Binding<[Trip]> = .constant([]),
+        onTripAdded: @escaping (Trip) -> Void = { _ in }
     ) {
         self._trips = trips
         self._selectedTrip = selectedTrip
         self._isAddTripMode = isAddTripMode
         self._trainSearchQuery = trainSearchQuery
         self._pastTrips = pastTrips
+        self.onTripAdded = onTripAdded
     }
 
     var body: some View {
@@ -67,14 +75,24 @@ struct SheetContent: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(searchSheetBackground)
-        .onChange(of: isAddTripMode) { _, newValue in
-            newValue ? startAddFlow() : resetAddFlow()
-            if !newValue {
-                
-            }
-        }
         .onChange(of: addStep) { _, newValue in
             updateFocus(for: newValue)
+        }
+        .onChange(of: selectedMainTab) { oldValue, newValue in
+            if newValue == .search {
+                if oldValue != .search {
+                    tabBeforeSearch = oldValue
+                }
+                startAddFlow()
+                withAnimation(.easeOut(duration: 0.1)) {
+                    isAddTripMode = true
+                }
+            } else if isAddTripMode {
+                resetAddFlow()
+                withAnimation(.easeOut(duration: 0.1)) {
+                    isAddTripMode = false
+                }
+            }
         }
         .onChange(of: trainSearchQuery) { _, newValue in
             guard isAddTripMode, addStep == .search else { return }
@@ -114,6 +132,7 @@ struct SheetContent: View {
                 onDismiss: { isShowingPastSheet = false },
                 onDeleteTrip: deletePastTrip,
                 onSelectTrip: { trip in
+                    isSelectedTripPast = true
                     selectedTrip = trip
                     isAddTripMode = false
                     isShowingPastSheet = false
@@ -147,22 +166,43 @@ struct SheetContent: View {
             TripDetailSheet(
                 trip: trip,
                 pastTrips: pastTrips,
+                isPastTrip: isSelectedTripPast,
                 onClose: exitDetailView,
                 onUpdateTrip: handleTripUpdate
             )
-        } else if isAddTripMode {
-            addFlowContent
         } else {
-            defaultContent
+            mainTabContent
         }
     }
 
-    private var defaultContent: some View {
-        VStack(spacing: 16) {
-            SearchButton {
-                isAddTripMode = true
+    @ViewBuilder
+    private var mainTabContent: some View {
+        TabView(selection: $selectedMainTab) {
+            Tab(MainSheetTab.trips.title, systemImage: MainSheetTab.trips.icon, value: MainSheetTab.trips) {
+                tripsContent
             }
 
+            Tab(MainSheetTab.friends.title, systemImage: MainSheetTab.friends.icon, value: MainSheetTab.friends) {
+                friendsContent
+            }
+
+            Tab(MainSheetTab.log.title, systemImage: MainSheetTab.log.icon, value: MainSheetTab.log) {
+                logContent
+            }
+
+            Tab(value: MainSheetTab.search, role: .search) {
+                addFlowContent
+            }
+        }
+        .tint(.blue)
+        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeOut(duration: 0.12), value: selectedMainTab)
+    }
+
+    private var tripsContent: some View {
+        VStack(spacing: 16) {
             List {
                 if trips.isEmpty {
                     SearchPlaceholderView(text: "No saved trips yet. Tap search to add one.")
@@ -182,6 +222,7 @@ struct SheetContent: View {
                         }
 
                         Button {
+                            isSelectedTripPast = false
                             selectedTrip = entry
                         } label: {
                             TripRowView(trip: entry)
@@ -194,6 +235,60 @@ struct SheetContent: View {
                 }
             }
             .listStyle(.plain)
+        }
+    }
+
+    private var friendsContent: some View {
+        SearchPlaceholderView(text: "Friends will land here soon.")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal)
+    }
+
+    private var logContent: some View {
+        Group {
+            if sortedPastTrips.isEmpty {
+                SearchPlaceholderView(text: "No past rides yet.")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal)
+            } else {
+                List {
+                    LogSummaryCard(metrics: logSummaryMetrics)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 12, trailing: 0))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+
+                    LogDelaySummaryCard(metrics: logDelaySummaryMetrics)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 12, trailing: 0))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+
+                    ForEach(sortedPastTrips) { trip in
+                        Button {
+                            isSelectedTripPast = true
+                            selectedTrip = trip
+                            isAddTripMode = false
+                        } label: {
+                            TripRowView(trip: trip)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                withAnimation {
+                                    deletePastTrip(trip)
+                                }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+                .padding(.horizontal)
+            }
         }
     }
 
@@ -216,13 +311,17 @@ struct SheetContent: View {
                 TextField(placeholder, text: binding)
                     .textFieldStyle(.plain)
                     .foregroundStyle(.primary)
+                    .focused($isTextFieldFocused)
+                    .id(searchFocusNonce)
+                    .onAppear {
+                        focusSearchFieldIfNeeded()
+                    }
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
             .background(Color(.secondarySystemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .padding(.horizontal)
-            .focused($isTextFieldFocused)
             .submitLabel(.search)
         case .date:
             VStack(alignment: .leading, spacing: 12) {
@@ -364,6 +463,7 @@ struct SheetContent: View {
         defer { isGeneratingRandomTrip = false }
         guard let newTrip = generateRandomActiveTrip() else { return }
         trips.append(newTrip)
+        isSelectedTripPast = false
         selectedTrip = newTrip
         isAddTripMode = false
     }
@@ -460,31 +560,19 @@ struct SheetContent: View {
     }
 
     private var headerTitle: String {
-        if isAddTripMode { return addStep.title }
-        return "My Trips"
+        if selectedMainTab == .search { return addStep.title }
+        return selectedMainTab.title
     }
 
     @ViewBuilder
     private var headerTrailing: some View {
-        if isAddTripMode {
+        if selectedMainTab == .search {
             Button(addStep == .search ? "Cancel" : "Back") {
                 handleAddFlowBack()
             }
             .foregroundStyle(.blue)
         } else {
-            Button {
-                isShowingPastSheet = true
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(Color.blue.opacity(0.25))
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.white)
-                }
-                .frame(width: 48, height: 48)
-            }
-            .buttonStyle(.plain)
+            EmptyView()
         }
     }
 
@@ -492,15 +580,21 @@ struct SheetContent: View {
         selectedTrip != nil && !isAddTripMode
     }
 
+    private var shouldShowMainBottomBar: Bool {
+        selectedTrip == nil && !isAddTripMode
+    }
+
     private func exitDetailView() {
         selectedTrip = nil
+        isSelectedTripPast = false
+        selectedMainTab = .trips
         isAddTripMode = false
     }
 
     private func handleAddFlowBack() {
         switch addStep {
         case .search:
-            isAddTripMode = false
+            selectedMainTab = tabBeforeSearch
         case .date:
             addStep = .search
             pendingTrip = nil
@@ -525,6 +619,9 @@ struct SheetContent: View {
         searchResults = []
         searchTask?.cancel()
         trainSearchQuery = ""
+        isTextFieldFocused = false
+        pendingSearchAutofocus = true
+        searchFocusNonce += 1
     }
 
     private func resetAddFlow() {
@@ -539,11 +636,27 @@ struct SheetContent: View {
         searchTask?.cancel()
         trainSearchQuery = ""
         isTextFieldFocused = false
+        pendingSearchAutofocus = false
     }
 
     private func updateFocus(for step: AddTripStep) {
         DispatchQueue.main.async {
-            isTextFieldFocused = step.showsTextField
+            if step.showsTextField {
+                pendingSearchAutofocus = selectedMainTab == .search
+                focusSearchFieldIfNeeded()
+            } else {
+                pendingSearchAutofocus = false
+                isTextFieldFocused = false
+            }
+        }
+    }
+
+    private func focusSearchFieldIfNeeded() {
+        guard pendingSearchAutofocus, selectedMainTab == .search, addStep.showsTextField else { return }
+        pendingSearchAutofocus = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            guard selectedMainTab == .search, addStep.showsTextField, !isTextFieldFocused else { return }
+            isTextFieldFocused = true
         }
     }
 
@@ -616,7 +729,11 @@ struct SheetContent: View {
             trips.append(savedTrip)
         }
 
+        isSelectedTripPast = false
+        selectedMainTab = .trips
+        isAddTripMode = false
         selectedTrip = savedTrip
+        onTripAdded(savedTrip)
         pendingTrip = nil
         availableStops = []
         selectedOrigin = nil
@@ -655,6 +772,7 @@ struct SheetContent: View {
 
         if let activeTrip = selectedTrip, removalSet.contains(activeTrip.id) {
             selectedTrip = nil
+            isSelectedTripPast = false
         }
     }
 
@@ -713,6 +831,70 @@ struct SheetContent: View {
             }
             return lhsArrival > rhsArrival
         }
+    }
+
+    private var logSummaryMetrics: LogSummaryMetrics {
+        var totalDistance: Double = 0
+        var totalDuration: TimeInterval = 0
+        var visitedStations = Set<String>()
+
+        for trip in pastTrips {
+            if let distance = distanceKilometers(for: trip) {
+                totalDistance += distance
+            }
+
+            if let duration = tripDuration(for: trip) {
+                totalDuration += duration
+            }
+
+            if let origin = normalizedStationKey(id: trip.originStopId, name: trip.originName) {
+                visitedStations.insert(origin)
+            }
+
+            if let destination = normalizedStationKey(id: trip.destinationStopId, name: trip.destinationName) {
+                visitedStations.insert(destination)
+            }
+        }
+
+        return LogSummaryMetrics(
+            tripCount: pastTrips.count,
+            totalDistance: totalDistance,
+            totalDuration: totalDuration,
+            visitedStationCount: visitedStations.count
+        )
+    }
+
+    private var logDelaySummaryMetrics: LogDelaySummaryMetrics {
+        var delayedTrips = 0
+        var earlyTrips = 0
+        var onTimeTrips = 0
+        var totalLateMinutes = 0
+        var totalEarlyMinutes = 0
+        var worstDelayMinutes = 0
+
+        for trip in pastTrips {
+            let delay = arrivalDelayMinutes(for: trip)
+            if delay > 0 {
+                delayedTrips += 1
+                totalLateMinutes += delay
+                worstDelayMinutes = max(worstDelayMinutes, delay)
+            } else if delay < 0 {
+                earlyTrips += 1
+                totalEarlyMinutes += abs(delay)
+            } else {
+                onTimeTrips += 1
+            }
+        }
+
+        return LogDelaySummaryMetrics(
+            tripCount: pastTrips.count,
+            delayedTrips: delayedTrips,
+            earlyTrips: earlyTrips,
+            onTimeTrips: onTimeTrips,
+            totalLateMinutes: totalLateMinutes,
+            totalEarlyMinutes: totalEarlyMinutes,
+            worstDelayMinutes: worstDelayMinutes
+        )
     }
 
     private func fallbackSortDate(for trip: Trip) -> Date {
@@ -796,6 +978,7 @@ struct SheetContent: View {
         trips.removeAll { expiredIDs.contains($0.id) }
         if let activeTrip = selectedTrip, expiredIDs.contains(activeTrip.id) {
             selectedTrip = nil
+            isSelectedTripPast = false
         }
     }
 
@@ -885,6 +1068,103 @@ struct SheetContent: View {
         guard let departure = originSchedule.departureDate(on: base) ?? originSchedule.arrivalDate(on: base) else { return nil }
         let delaySeconds = TimeInterval((trip.delayMinutes ?? 0) * 60)
         return departure.addingTimeInterval(delaySeconds)
+    }
+
+    private func arrivalDelayMinutes(for trip: Trip) -> Int {
+        let liveInfo = LiveDelayStore.shared.info(for: trip.id)
+        let activeDelay = liveInfo?.delayMinutes ?? trip.delayMinutes
+        let arrivalDelay = destinationStop(for: trip)?.arrivalDelayMinutes
+            ?? destinationStationDelay(from: liveInfo, for: trip)?.arrivalDelayMinutes
+
+        if let activeDelay {
+            return activeDelay
+        }
+
+        return arrivalDelay ?? 0
+    }
+
+    private func destinationStationDelay(from info: DelayInfo?, for trip: Trip) -> StationDelay? {
+        guard let info else { return nil }
+        let targetName = trip.destinationName ?? destinationStop(for: trip)?.name ?? trip.stops?.sorted { $0.sequence < $1.sequence }.last?.name
+        if let targetName {
+            let normalizedTarget = normalizeStationName(targetName)
+            if let match = info.stationDelays.first(where: { normalizeStationName($0.stationName) == normalizedTarget }) {
+                return match
+            }
+        }
+        return info.stationDelays.last
+    }
+
+    private func originStop(for trip: Trip) -> StoredStop? {
+        guard let stops = trip.stops else { return nil }
+        if let id = trip.originStopId, let stop = stops.first(where: { $0.id == id }) {
+            return stop
+        }
+        if let sequence = trip.originSequence, let stop = stops.first(where: { $0.sequence == sequence }) {
+            return stop
+        }
+        return nil
+    }
+
+    private func destinationStop(for trip: Trip) -> StoredStop? {
+        guard let stops = trip.stops else { return nil }
+        if let id = trip.destinationStopId, let stop = stops.first(where: { $0.id == id }) {
+            return stop
+        }
+        if let sequence = trip.destinationSequence, let stop = stops.first(where: { $0.sequence == sequence }) {
+            return stop
+        }
+        return nil
+    }
+
+    private func tripDuration(for trip: Trip) -> TimeInterval? {
+        guard let departure = departureDateWithDelay(for: trip),
+              let arrival = arrivalDateWithDelay(for: trip) else { return nil }
+        let duration = arrival.timeIntervalSince(departure)
+        return duration > 0 ? duration : nil
+    }
+
+    private func distanceKilometers(for trip: Trip) -> Double? {
+        if let parsed = parsedDistanceKilometers(from: trip.detailDistance) {
+            return parsed
+        }
+        return distanceKilometersFromStops(for: trip)
+    }
+
+    private func distanceKilometersFromStops(for trip: Trip) -> Double? {
+        guard let stops = trip.stops, stops.count > 1 else { return nil }
+        let sorted = stops.sorted { $0.sequence < $1.sequence }
+        var totalMeters: CLLocationDistance = 0
+        for pair in zip(sorted, sorted.dropFirst()) {
+            let start = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
+            let end = CLLocation(latitude: pair.1.latitude, longitude: pair.1.longitude)
+            totalMeters += start.distance(from: end)
+        }
+        let kilometers = totalMeters / 1000
+        return kilometers > 0 ? kilometers : nil
+    }
+
+    private func parsedDistanceKilometers(from value: String?) -> Double? {
+        guard let value else { return nil }
+        let normalized = value
+            .replacingOccurrences(of: ",", with: ".")
+            .replacingOccurrences(of: "[^0-9.]", with: "", options: .regularExpression)
+        return Double(normalized)
+    }
+
+    private func normalizedStationKey(id: String?, name: String?) -> String? {
+        if let id = id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
+            return "id:\(id)"
+        }
+        guard let name = normalizedText(name) else { return nil }
+        return "name:\(name)"
+    }
+
+    private func normalizeStationName(_ value: String) -> String {
+        value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func archiveTrips(_ completedTrips: [Trip]) {
@@ -1214,6 +1494,9 @@ struct TripRowView: View {
         }
         if delay < 0 {
             return "\(formattedDelay(minutes: abs(delay))) early"
+        }
+        if hasArrived {
+            return "Arrived On Time"
         }
         return "Departs On Time"
     }
@@ -1753,6 +2036,234 @@ struct PastTripsSheet: View {
                     }
                 }
             }
+        }
+    }
+}
+
+private struct LogSummaryMetrics {
+    let tripCount: Int
+    let totalDistance: Double
+    let totalDuration: TimeInterval
+    let visitedStationCount: Int
+
+    var distanceText: String {
+        guard totalDistance > 0 else { return "—" }
+        return "\(Int(totalDistance.rounded())) km"
+    }
+
+    var durationText: String {
+        guard totalDuration > 0 else { return "—" }
+        let totalMinutes = Int((totalDuration / 60).rounded())
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        if hours > 0, minutes > 0 {
+            return "\(hours)h \(minutes)m"
+        }
+        if hours > 0 {
+            return "\(hours)h"
+        }
+        return "\(minutes)m"
+    }
+}
+
+private struct LogDelaySummaryMetrics {
+    let tripCount: Int
+    let delayedTrips: Int
+    let earlyTrips: Int
+    let onTimeTrips: Int
+    let totalLateMinutes: Int
+    let totalEarlyMinutes: Int
+    let worstDelayMinutes: Int
+
+    var delayedShareText: String {
+        percentageText(for: delayedTrips)
+    }
+
+    var earlyShareText: String {
+        percentageText(for: earlyTrips)
+    }
+
+    var onTimeShareText: String {
+        percentageText(for: onTimeTrips)
+    }
+
+    var averageLateText: String {
+        guard delayedTrips > 0 else { return "—" }
+        return "\(Int((Double(totalLateMinutes) / Double(delayedTrips)).rounded()))m"
+    }
+
+    var totalEarlyText: String {
+        guard totalEarlyMinutes > 0 else { return "—" }
+        return "\(totalEarlyMinutes)m"
+    }
+
+    var worstDelayText: String {
+        guard worstDelayMinutes > 0 else { return "—" }
+        return "+\(worstDelayMinutes)m"
+    }
+
+    private func percentageText(for count: Int) -> String {
+        guard tripCount > 0 else { return "0%" }
+        let percent = Int((Double(count) / Double(tripCount) * 100).rounded())
+        return "\(percent)%"
+    }
+}
+
+private struct LogSummaryCard: View {
+    let metrics: LogSummaryMetrics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Rail Log")
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    Text("All past rides combined")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "book.closed.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.blue)
+            }
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
+                LogSummaryTile(title: "Trips", value: "\(metrics.tripCount)", icon: "ticket.fill")
+                LogSummaryTile(title: "Distance", value: metrics.distanceText, icon: "point.topleft.down.curvedto.point.bottomright.up")
+                LogSummaryTile(title: "Trip Time", value: metrics.durationText, icon: "clock.fill")
+                LogSummaryTile(title: "Stations", value: "\(metrics.visitedStationCount)", icon: "mappin.and.ellipse")
+            }
+        }
+        .padding(16)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
+    }
+}
+
+private struct LogDelaySummaryCard: View {
+    let metrics: LogDelaySummaryMetrics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Delay Pattern")
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    Text("Arrival outcomes across past rides")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "clock.badge.exclamationmark.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.orange)
+            }
+
+            HStack(spacing: 8) {
+                DelayOutcomePill(title: "Late", value: metrics.delayedShareText, color: .red)
+                DelayOutcomePill(title: "On Time", value: metrics.onTimeShareText, color: .green)
+                DelayOutcomePill(title: "Early", value: metrics.earlyShareText, color: .blue)
+            }
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
+                LogSummaryTile(title: "Late Rides", value: "\(metrics.delayedTrips)", icon: "exclamationmark.triangle.fill", tint: .red)
+                LogSummaryTile(title: "Avg Late", value: metrics.averageLateText, icon: "clock.arrow.circlepath", tint: .orange)
+                LogSummaryTile(title: "Early Saved", value: metrics.totalEarlyText, icon: "arrow.down.circle.fill", tint: .blue)
+                LogSummaryTile(title: "Worst Delay", value: metrics.worstDelayText, icon: "clock.badge.exclamationmark.fill", tint: .red)
+            }
+        }
+        .padding(16)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
+    }
+}
+
+private struct DelayOutcomePill: View {
+    let title: String
+    let value: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .textCase(.uppercase)
+        }
+        .foregroundStyle(color)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(color.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+private struct LogSummaryTile: View {
+    let title: String
+    let value: String
+    let icon: String
+    var tint: Color = .blue
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 24, height: 24)
+                .background(tint.opacity(0.12))
+                .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(Color(.secondarySystemBackground).opacity(0.65))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private enum MainSheetTab: String, Identifiable {
+    case trips
+    case friends
+    case log
+    case search
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .trips: return "My Trips"
+        case .friends: return "Friends"
+        case .log: return "Log"
+        case .search: return "Search"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .trips: return "tram.fill"
+        case .friends: return "person.2.fill"
+        case .log: return "book.closed.fill"
+        case .search: return "magnifyingglass"
         }
     }
 }

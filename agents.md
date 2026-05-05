@@ -39,3 +39,31 @@
 - Detail + dashboard maps draw their polylines from the full `trip_segments` chain while dots only appear on commercial stops (or forced termini), keeping overlays clean but accurate.
 - Trip timing uses `ScheduleDateUtils` to normalize post-midnight arrivals; overnight runs show the `+1` badge correctly and stay on the active list until 20 minutes after the real (delay‑adjusted) arrival.
 - TripDetailView ends with a live "Track Speed Limit" card: it evaluates the currently active `trip_segments` window (delay‑aware) and animates the km/h readout / copy in sync with the device clock.
+- Past Rides sheet is now a full profile pane: avatar + name editor, "My Rail Log" subtitle, live stats (distance, ride time, most-used station, trip count), and inline Past Rides ledger rows that mirror the latest profile photo/name.
+- Profile edits (name + photo) persist via `ProfilePreferences`, sync to the dashboard avatar button, and expose a sheet-based profile editor plus a form-driven Settings page (notifications, trip auto-archive, map style, privacy actions).
+- TripDetailView hosts mock experiential sections: a speedometer/speed-limit experience, a train-formation inspector, and a bistro menu card so content remains rich even without live data.
+- Main sheet now uses a native SwiftUI `TabView` with tabs for My Trips, Friends, Log, and `Tab(role: .search)` for the add-trip/search flow. Search is locked to the large sheet detent; normal tabs keep `.fraction(0.3)`, `.medium`, and `.large`.
+- Search tab remembers the previous tab and Cancel returns there. Autofocus is intentionally handled with a single pending focus flag from `TextField.onAppear`; avoid adding multiple timer/task-based focus paths because UIKit logs invalid keyboard sessions when focus fires before the native search tab is visible.
+- Past trips opened from Log/detail context pass `isPastTrip` into `TripDetailSheet`; past-trip detail hides the InfoFer banner/status text and the Sync toolbar button.
+- Log tab now replaces the old Past Rides entry point for the main history view. It has side-padded rows plus a Rail Log summary card aggregating all past rides: trip count, total distance, total ride time, and unique visited stations using each ride's origin/destination only.
+- Log tab also has a Delay Pattern card. It should compute delay metrics from the same effective live/header delay source used by compact `TripRowView`: `LiveDelayStore.shared.info(for:)` first, then `trip.delayMinutes`, then destination station delay data if needed.
+- Compact trip rows now show "Arrived On Time" for completed on-time rides instead of "Departs On Time".
+- Trip detail travel summary duration is delay-aware: it uses adjusted departure and adjusted arrival dates, so terminal delay/earlyness changes the displayed ride time.
+- Detail sheet no longer renders the mock Train Composition or Bistro Menu sections; the editable "About the Train" section remains.
+- App launch now auto-syncs saved active trips once via InfoFer and persists delay/platform data into `LiveDelayStore` and stored stop delay fields. Newly added trips also trigger the same single-trip sync immediately after finalizing the add flow.
+- Map marker state was corrected conceptually: before boarding, show the interpolated train marker from service origin to user's boarding station; between user's boarding and destination arrival, prefer user location; after user destination arrival until final train arrival, show the interpolated train marker again. Avoid shifting same-day future segment timelines to yesterday; base map segment timelines on the selected travel date's start of day.
+
+## Current Architecture Risks / Recommended Next Work
+- Extract all sync code from `ContentView` and `TripDetailSheet` into a reusable `TripSyncService`. It should perform InfoFer handshake/fetch, persist `LiveDelayStore`, apply per-station delay/platform data, and return updated `Trip` values.
+- Create one shared `TripTimingResolver` for adjusted departure/arrival, effective delay, earlyness, duration, archive cutoff, status text, colors, and map tracking windows. Dashboard rows, detail cards, Log analytics, pruning, and maps should not each reimplement timing logic.
+- Add "Last synced" UI with timestamp and source state on rows/detail. Users need to distinguish fresh InfoFer data from cached/stale data.
+- Add notification preferences later: thresholds such as "notify if delay changes by 5+ min", "notify if platform changes", and "notify if train becomes early". For reliable timely alerts, prefer server-side APNs monitoring; iOS background refresh is best-effort only.
+- Make Friends useful through shareable trip cards/live ETA sharing before building broader social features.
+- Add focused tests for date/delay math: overnight trips, early arrivals, per-station delay overrides, header delay fallback, archive cutoff, and map marker phase transitions.
+
+## Implementation References / Gotchas
+- `TripDetailSheet.syncDelay()` is the current manual sync reference path. If refactoring, preserve its behavior: refresh InfoFer session, fetch delay/platform, save `LiveDelayStore`, apply station delays to stops, and update the selected trip.
+- `TripRowView` is the current compact-row display reference for effective delay/status wording. Log delay analytics should stay consistent with this row until a shared resolver exists.
+- `ScheduleDateUtils` in `TripDetailSheet.swift` handles post-midnight arrival normalization and is reused by dashboard row timing; keep overnight behavior intact.
+- `static_data.sqlite` is the source of truth for trains/stations/segments. `GTFSDataSource` maps `trains`, `stations`, and `trip_segments`; old GTFS table assumptions are obsolete.
+- Do not reintroduce duplicate focus mechanisms for the Search tab. The native search tab caches content and UIKit is sensitive to repeated focus updates during tab transitions.
