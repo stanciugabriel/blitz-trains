@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/gabriel/dev/blitz/build/Debug-iphoneos/blitz.app/PlugIns/blitzTests.xctest/blitzTests'
+relocations:     []
+...

@@ -1,0 +1,12 @@
+{
+  "/Users/gabriel/dev/blitz/Shared/TrainLiveActivityAttributes.swift" : {
+    "abi-baseline-json" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension.abi.json",
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension-primary.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension-primary.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension-primary.dia",
+    "objc-header" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension-Swift.h",
+    "swiftdoc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension.swiftdoc",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension.swiftmodule",
+    "swiftsourceinfo" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension.swiftsourceinfo"
+  }
+}

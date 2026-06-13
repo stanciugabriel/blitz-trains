@@ -1,0 +1,19 @@
+{
+  "" : {
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests-primary.dia",
+    "emit-module-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests-primary-emit-module.dia",
+    "pch" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests-primary.swiftdeps"
+  },
+  "/Users/gabriel/dev/blitz/blitzTests/blitzTests.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitzTests.build/Objects-normal/arm64/blitzTests~partial.swiftmodule"
+  }
+}

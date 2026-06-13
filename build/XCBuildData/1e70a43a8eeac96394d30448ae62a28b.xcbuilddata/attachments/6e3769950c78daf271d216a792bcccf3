@@ -1,0 +1,91 @@
+{
+  "" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary.dia",
+    "emit-module-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary-emit-module.dia",
+    "pch" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary.swiftdeps"
+  },
+  "/Users/gabriel/dev/blitz/Shared/TrainLiveActivityAttributes.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/TrainLiveActivityAttributes.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/TrainLiveActivityAttributes.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/TrainLiveActivityAttributes.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/AgencyPlaceholder.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/AgencyPlaceholder.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/AgencyPlaceholder.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/AgencyPlaceholder.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/DeviceLocationProvider.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/DeviceLocationProvider.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/DeviceLocationProvider.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/DeviceLocationProvider.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/GTFSDataSource.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/GTFSDataSource.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/GTFSDataSource.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/GTFSDataSource.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/InfoFerScraper.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/InfoFerScraper.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/InfoFerScraper.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/InfoFerScraper.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/LiveActivityManager.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/LiveActivityManager.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/LiveActivityManager.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/LiveActivityManager.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/LiveDelayStore.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/LiveDelayStore.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/LiveDelayStore.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/LiveDelayStore.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/MainSheetContent.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/MainSheetContent.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/MainSheetContent.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/MainSheetContent.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/OperatorBranding.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/OperatorBranding.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/OperatorBranding.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/OperatorBranding.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/ScheduleDateUtils.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/ScheduleDateUtils.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/ScheduleDateUtils.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/ScheduleDateUtils.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/StaticPlatformDataSource.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/StaticPlatformDataSource.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/StaticPlatformDataSource.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/StaticPlatformDataSource.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/TripDetailSheet.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/TripDetailSheet.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/TripDetailSheet.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/TripDetailSheet.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/TripStorage.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/TripStorage.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/TripStorage.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/TripStorage.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/TripTimingResolver.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/TripTimingResolver.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/TripTimingResolver.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/TripTimingResolver.o"
+  },
+  "/Users/gabriel/dev/blitz/blitz/blitzApp.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitzApp.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitzApp.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitzApp.o"
+  },
+  "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/GeneratedAssetSymbols.o"
+  }
+}

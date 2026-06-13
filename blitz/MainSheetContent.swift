@@ -1,6 +1,8 @@
 import SwiftUI
 import CoreLocation
 import Combine
+import PhotosUI
+internal import UIKit
 
 
 struct SheetContent: View {
@@ -25,6 +27,8 @@ struct SheetContent: View {
     @State private var isShowingPastSheet = false
     @State private var pendingDeletionIDs: [String] = []
     @State private var isShowingDeleteConfirmation = false
+    @State private var pendingPastDeletionTrip: Trip?
+    @State private var isShowingPastDeleteConfirmation = false
     @State private var activeConnectionInfo: ConnectionInfo?
     @State private var isGeneratingRandomTrip = false
     @State private var isSelectedTripPast = false
@@ -32,6 +36,11 @@ struct SheetContent: View {
     @State private var tabBeforeSearch: MainSheetTab = .trips
     @State private var searchFocusNonce = 0
     @State private var pendingSearchAutofocus = false
+    @State private var isShowingLogAddedToast = false
+    @State private var logAddedToastTask: Task<Void, Never>?
+    @State private var profile = UserProfilePreferences.load()
+    @State private var isShowingProfileEditor = false
+    @State private var isShowingSettingsSheet = false
     
 
     private let dataSource = GTFSDataSource.shared
@@ -75,6 +84,18 @@ struct SheetContent: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(searchSheetBackground)
+        .overlay(alignment: .top) {
+            if isShowingLogAddedToast {
+                Text("Added to Log")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.82), in: Capsule())
+                    .padding(.top, 58)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .onChange(of: addStep) { _, newValue in
             updateFocus(for: newValue)
         }
@@ -120,11 +141,26 @@ struct SheetContent: View {
         .onChange(of: pastTrips) { _, newValue in
             TripStorage.shared.savePastTrips(newValue)
         }
-        .onDisappear { searchTask?.cancel() }
+        .onDisappear {
+            searchTask?.cancel()
+            logAddedToastTask?.cancel()
+        }
         .sheet(item: $activeConnectionInfo) { info in
             ConnectionDetailSheet(info: info) {
                 activeConnectionInfo = nil
             }
+        }
+        .sheet(isPresented: $isShowingProfileEditor) {
+            ProfileEditorSheet(profile: $profile)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $isShowingSettingsSheet) {
+            SettingsSheet {
+                isShowingSettingsSheet = false
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.hidden)
         }
         .sheet(isPresented: $isShowingPastSheet) {
             PastTripsSheet(
@@ -150,6 +186,16 @@ struct SheetContent: View {
             }
         }, message: {
             Text("This trip will be removed from My Trips.")
+        })
+        .alert("Delete Ride?", isPresented: $isShowingPastDeleteConfirmation, actions: {
+            Button("Delete", role: .destructive) {
+                confirmPastTripDeletion()
+            }
+            Button("Cancel", role: .cancel) {
+                cancelPastTripDeletion()
+            }
+        }, message: {
+            Text("This ride will be removed from your Rail Log.")
         })
     }
 
@@ -202,36 +248,56 @@ struct SheetContent: View {
     }
 
     private var tripsContent: some View {
+        Group {
+            if trips.isEmpty {
+                SearchPlaceholderView(text: "No saved trips yet. Tap search to add one.")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .padding(.horizontal)
+            } else {
+                tripsList
+            }
+        }
+    }
+
+    private var tripsList: some View {
         VStack(spacing: 16) {
             List {
-                if trips.isEmpty {
-                    SearchPlaceholderView(text: "No saved trips yet. Tap search to add one.")
-                        .listRowInsets(EdgeInsets(top: 40, leading: 0, bottom: 40, trailing: 0))
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .listRowSeparator(.hidden)
-                } else {
-                    let trips = sortedTrips
-                    ForEach(Array(trips.enumerated()), id: \.element.id) { index, entry in
-                        if index > 0, let connection = connectionInfo(between: trips[index - 1], and: entry) {
-                            Button {
-                                activeConnectionInfo = connection
-                            } label: {
-                                ConnectionRowView(info: connection)
-                            }
-                            .buttonStyle(.plain)
-                        }
-
+                let trips = sortedTrips
+                ForEach(Array(trips.enumerated()), id: \.element.id) { index, entry in
+                    if index > 0, let connection = connectionInfo(between: trips[index - 1], and: entry) {
                         Button {
-                            isSelectedTripPast = false
-                            selectedTrip = entry
+                            activeConnectionInfo = connection
                         } label: {
-                            TripRowView(trip: entry)
+                            ConnectionRowView(info: connection)
                         }
                         .buttonStyle(.plain)
                     }
-                    .onDelete { offsets in
-                        requestDeletion(for: offsets, from: trips)
+
+                    Button {
+                        isSelectedTripPast = false
+                        selectedTrip = entry
+                    } label: {
+                        TripRowView(trip: entry)
                     }
+                    .buttonStyle(.plain)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            requestDeletion(for: entry)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .tint(.red)
+
+                        Button {
+                            archiveActiveTrip(entry)
+                        } label: {
+                            Label("Archive", systemImage: "archivebox")
+                        }
+                        .tint(.blue)
+                    }
+                }
+                .onDelete { offsets in
+                    requestDeletion(for: offsets, from: trips)
                 }
             }
             .listStyle(.plain)
@@ -253,41 +319,50 @@ struct SheetContent: View {
             } else {
                 List {
                     LogSummaryCard(metrics: logSummaryMetrics)
+                        .padding(.horizontal)
                         .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 12, trailing: 0))
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
 
                     LogDelaySummaryCard(metrics: logDelaySummaryMetrics)
+                        .padding(.horizontal)
                         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 12, trailing: 0))
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
 
-                    ForEach(sortedPastTrips) { trip in
-                        Button {
-                            isSelectedTripPast = true
-                            selectedTrip = trip
-                            isAddTripMode = false
-                        } label: {
-                            TripRowView(trip: trip)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                withAnimation {
-                                    deletePastTrip(trip)
-                                }
+                    ForEach(groupedPastTripsByYear) { section in
+                        LogYearHeaderView(year: section.year, tripCount: section.trips.count)
+                            .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 0, trailing: 0))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+
+                        ForEach(Array(section.trips.enumerated()), id: \.element.id) { index, trip in
+                            Button {
+                                isSelectedTripPast = true
+                                selectedTrip = trip
+                                isAddTripMode = false
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                LogTripRowView(
+                                    trip: trip,
+                                    showsDivider: index < section.trips.count - 1
+                                )
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    requestPastTripDeletion(trip)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
                         }
                     }
                 }
                 .listStyle(.plain)
-                .padding(.horizontal)
             }
         }
     }
@@ -466,6 +541,7 @@ struct SheetContent: View {
         isSelectedTripPast = false
         selectedTrip = newTrip
         isAddTripMode = false
+        onTripAdded(newTrip)
     }
 
     private func generateRandomActiveTrip() -> Trip? {
@@ -572,7 +648,15 @@ struct SheetContent: View {
             }
             .foregroundStyle(.blue)
         } else {
-            EmptyView()
+            ProfileAvatarButton(
+                profile: profile,
+                editAction: {
+                    isShowingProfileEditor = true
+                },
+                settingsAction: {
+                    isShowingSettingsSheet = true
+                }
+            )
         }
     }
 
@@ -697,6 +781,11 @@ struct SheetContent: View {
         }
 
         let distanceText = formattedDistance(for: storedStops)
+        let trainId = baseTrip.gtfsTripId ?? baseTrip.id
+        let originPlatform = StaticPlatformDataSource.shared.platform(trainId: trainId, stationId: origin.id)
+            ?? baseTrip.originPlatform
+        let destinationPlatform = StaticPlatformDataSource.shared.platform(trainId: trainId, stationId: destination.id)
+            ?? baseTrip.destinationPlatform
 
         let savedTrip = Trip(
             id: composedID,
@@ -711,8 +800,8 @@ struct SheetContent: View {
             originName: origin.name,
             destinationStopId: destination.id,
             destinationName: destination.name,
-            originPlatform: baseTrip.originPlatform,
-            destinationPlatform: baseTrip.destinationPlatform,
+            originPlatform: originPlatform,
+            destinationPlatform: destinationPlatform,
             delayMinutes: baseTrip.delayMinutes,
             detailDistance: distanceText,
             stops: storedStops,
@@ -725,21 +814,48 @@ struct SheetContent: View {
             trainPower: baseTrip.trainPower
         )
 
-        if !trips.contains(where: { $0.id == savedTrip.id }) {
-            trips.append(savedTrip)
-        }
+        let shouldAddToLog = Calendar.current.startOfDay(for: selectedDate) < Calendar.current.startOfDay(for: Date())
+        if shouldAddToLog {
+            archiveTrips([savedTrip])
+            isSelectedTripPast = false
+            selectedTrip = nil
+            selectedMainTab = .log
+            isAddTripMode = false
+            showLogAddedToast()
+        } else {
+            if !trips.contains(where: { $0.id == savedTrip.id }) {
+                trips.append(savedTrip)
+            }
 
-        isSelectedTripPast = false
-        selectedMainTab = .trips
-        isAddTripMode = false
-        selectedTrip = savedTrip
-        onTripAdded(savedTrip)
+            isSelectedTripPast = false
+            selectedMainTab = .trips
+            isAddTripMode = false
+            selectedTrip = savedTrip
+            onTripAdded(savedTrip)
+        }
         pendingTrip = nil
         availableStops = []
         selectedOrigin = nil
         originQuery = ""
         destinationQuery = ""
         isAddTripMode = false
+    }
+
+    private func showLogAddedToast() {
+        logAddedToastTask?.cancel()
+        withAnimation(.easeOut(duration: 0.18)) {
+            isShowingLogAddedToast = true
+        }
+        logAddedToastTask = Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeIn(duration: 0.18)) {
+                    isShowingLogAddedToast = false
+                }
+                logAddedToastTask = nil
+            }
+        }
     }
 
     private func requestDeletion(for offsets: IndexSet, from orderedTrips: [Trip]) {
@@ -750,6 +866,11 @@ struct SheetContent: View {
 
         guard !ids.isEmpty else { return }
         pendingDeletionIDs = ids
+        isShowingDeleteConfirmation = true
+    }
+
+    private func requestDeletion(for trip: Trip) {
+        pendingDeletionIDs = [trip.id]
         isShowingDeleteConfirmation = true
     }
 
@@ -773,6 +894,17 @@ struct SheetContent: View {
         if let activeTrip = selectedTrip, removalSet.contains(activeTrip.id) {
             selectedTrip = nil
             isSelectedTripPast = false
+        }
+    }
+
+    private func archiveActiveTrip(_ trip: Trip) {
+        withAnimation {
+            archiveTrips([trip])
+            trips.removeAll { $0.id == trip.id }
+            if selectedTrip?.id == trip.id {
+                selectedTrip = nil
+                isSelectedTripPast = false
+            }
         }
     }
 
@@ -833,6 +965,25 @@ struct SheetContent: View {
         }
     }
 
+    private var groupedPastTripsByYear: [LogYearSection] {
+        let grouped = Dictionary(grouping: sortedPastTrips) { trip in
+            logYear(for: trip)
+        }
+
+        return grouped
+            .map { year, trips in
+                LogYearSection(year: year, trips: trips)
+            }
+            .sorted { lhs, rhs in
+                lhs.year > rhs.year
+            }
+    }
+
+    private func logYear(for trip: Trip) -> Int {
+        let date = arrivalDateWithDelay(for: trip) ?? trip.travelDate ?? fallbackSortDate(for: trip)
+        return Calendar.current.component(.year, from: date)
+    }
+
     private var logSummaryMetrics: LogSummaryMetrics {
         var totalDistance: Double = 0
         var totalDuration: TimeInterval = 0
@@ -869,7 +1020,6 @@ struct SheetContent: View {
         var earlyTrips = 0
         var onTimeTrips = 0
         var totalLateMinutes = 0
-        var totalEarlyMinutes = 0
         var worstDelayMinutes = 0
 
         for trip in pastTrips {
@@ -880,7 +1030,6 @@ struct SheetContent: View {
                 worstDelayMinutes = max(worstDelayMinutes, delay)
             } else if delay < 0 {
                 earlyTrips += 1
-                totalEarlyMinutes += abs(delay)
             } else {
                 onTimeTrips += 1
             }
@@ -892,7 +1041,6 @@ struct SheetContent: View {
             earlyTrips: earlyTrips,
             onTimeTrips: onTimeTrips,
             totalLateMinutes: totalLateMinutes,
-            totalEarlyMinutes: totalEarlyMinutes,
             worstDelayMinutes: worstDelayMinutes
         )
     }
@@ -984,7 +1132,9 @@ struct SheetContent: View {
 
     private func removalCutoffDate(for trip: Trip) -> Date? {
         guard let arrival = arrivalDateWithDelay(for: trip) else { return nil }
-        return arrival.addingTimeInterval(20 * 60)
+        let calendar = Calendar.current
+        let arrivalDay = calendar.startOfDay(for: arrival)
+        return calendar.date(byAdding: .day, value: 1, to: arrivalDay)
     }
 
     private static let maxConnectionInterval: TimeInterval = 6 * 60 * 60
@@ -1191,6 +1341,25 @@ struct SheetContent: View {
 
     private func deletePastTrip(_ trip: Trip) {
         pastTrips.removeAll { $0.id == trip.id }
+    }
+
+    private func requestPastTripDeletion(_ trip: Trip) {
+        pendingPastDeletionTrip = trip
+        isShowingPastDeleteConfirmation = true
+    }
+
+    private func confirmPastTripDeletion() {
+        guard let trip = pendingPastDeletionTrip else { return }
+        withAnimation {
+            deletePastTrip(trip)
+        }
+        pendingPastDeletionTrip = nil
+        isShowingPastDeleteConfirmation = false
+    }
+
+    private func cancelPastTripDeletion() {
+        pendingPastDeletionTrip = nil
+        isShowingPastDeleteConfirmation = false
     }
 
     private func handleTripUpdate(_ updatedTrip: Trip) {
@@ -1986,6 +2155,173 @@ private struct StopDescriptor {
     }
 }
 
+private struct LogYearSection: Identifiable {
+    let year: Int
+    let trips: [Trip]
+
+    var id: Int { year }
+}
+
+private struct LogYearHeaderView: View {
+    let year: Int
+    let tripCount: Int
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(String(year))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Text("\(tripCount) \(tripCount == 1 ? "TRIP" : "TRIPS")")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal)
+
+            Divider()
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 2)
+    }
+}
+
+private struct LogTripRowView: View {
+    let trip: Trip
+    let showsDivider: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            OperatorLogoView(logoName: operatorLogoName, size: 30)
+                
+
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        Text(trainTitle)
+                            .font(rowMetaFont)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+
+                        Text(shortRouteText)
+                            .font(rowMetaFont)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+
+                        Spacer(minLength: 8)
+
+                        Text(dateText)
+                            .font(rowMetaFont)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+
+                    Text(fullRouteText)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+
+                if showsDivider {
+                    Divider()
+                        .padding(.top, 10)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.top, 8)
+        .padding(.bottom, showsDivider ? 0 : 8)
+        .padding(.horizontal)
+    }
+
+    private var rowMetaFont: Font {
+        .system(size: 13, weight: .semibold, design: .rounded)
+    }
+
+    private var operatorLogoName: String? {
+        OperatorBrandingCatalog.branding(for: trip.agencyId).logoName
+    }
+
+    private var trainTitle: String {
+        let trimmed = trip.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Train" : trimmed
+    }
+
+    private var originName: String {
+        firstNonEmpty(
+            trip.originName,
+            trip.stops?.sorted { $0.sequence < $1.sequence }.first?.name,
+            routePartsFromSubtitle?.origin
+        ) ?? "Origin"
+    }
+
+    private var destinationName: String {
+        firstNonEmpty(
+            trip.destinationName,
+            trip.stops?.sorted { $0.sequence < $1.sequence }.last?.name,
+            routePartsFromSubtitle?.destination
+        ) ?? "Destination"
+    }
+
+    private var shortRouteText: String {
+        "\(stationCode(originName)) → \(stationCode(destinationName))"
+    }
+
+    private var fullRouteText: String {
+        "\(originName) to \(destinationName)"
+    }
+
+    private var dateText: String {
+        if let travelDate = trip.travelDate {
+            return Self.dateFormatter.string(from: travelDate)
+        }
+        return firstNonEmpty(trip.detailDate) ?? "-"
+    }
+
+    private var routePartsFromSubtitle: (origin: String, destination: String)? {
+        let separators = ["→", "->", " to "]
+        for separator in separators {
+            let parts = trip.subtitle.components(separatedBy: separator)
+            guard parts.count >= 2 else { continue }
+            let origin = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let destination = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !origin.isEmpty, !destination.isEmpty {
+                return (origin, destination)
+            }
+        }
+        return nil
+    }
+
+    private func stationCode(_ value: String) -> String {
+        let normalized = value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .uppercased()
+        let letters = normalized.filter { $0.isLetter || $0.isNumber }
+        let prefix = String(letters.prefix(3))
+        return prefix.isEmpty ? "---" : prefix
+    }
+
+    private func firstNonEmpty(_ values: String?...) -> String? {
+        for value in values {
+            let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmed, !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return nil
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter
+    }()
+}
+
 struct PastTripsSheet: View {
     let trips: [Trip]
     var onDismiss: () -> Void
@@ -2072,7 +2408,6 @@ private struct LogDelaySummaryMetrics {
     let earlyTrips: Int
     let onTimeTrips: Int
     let totalLateMinutes: Int
-    let totalEarlyMinutes: Int
     let worstDelayMinutes: Int
 
     var delayedShareText: String {
@@ -2092,9 +2427,9 @@ private struct LogDelaySummaryMetrics {
         return "\(Int((Double(totalLateMinutes) / Double(delayedTrips)).rounded()))m"
     }
 
-    var totalEarlyText: String {
-        guard totalEarlyMinutes > 0 else { return "—" }
-        return "\(totalEarlyMinutes)m"
+    var totalDelayText: String {
+        guard totalLateMinutes > 0 else { return "—" }
+        return formattedDuration(minutes: totalLateMinutes)
     }
 
     var worstDelayText: String {
@@ -2106,6 +2441,22 @@ private struct LogDelaySummaryMetrics {
         guard tripCount > 0 else { return "0%" }
         let percent = Int((Double(count) / Double(tripCount) * 100).rounded())
         return "\(percent)%"
+    }
+
+    private func formattedDuration(minutes: Int) -> String {
+        if minutes >= 24 * 60 {
+            let days = minutes / (24 * 60)
+            let hours = (minutes % (24 * 60)) / 60
+            return hours > 0 ? "\(days)d \(hours)h" : "\(days)d"
+        }
+
+        if minutes >= 60 {
+            let hours = minutes / 60
+            let remainingMinutes = minutes % 60
+            return remainingMinutes > 0 ? "\(hours)h \(remainingMinutes)m" : "\(hours)h"
+        }
+
+        return "\(minutes)m"
     }
 }
 
@@ -2173,7 +2524,7 @@ private struct LogDelaySummaryCard: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
                 LogSummaryTile(title: "Late Rides", value: "\(metrics.delayedTrips)", icon: "exclamationmark.triangle.fill", tint: .red)
                 LogSummaryTile(title: "Avg Late", value: metrics.averageLateText, icon: "clock.arrow.circlepath", tint: .orange)
-                LogSummaryTile(title: "Early Saved", value: metrics.totalEarlyText, icon: "arrow.down.circle.fill", tint: .blue)
+                LogSummaryTile(title: "Total Delay", value: metrics.totalDelayText, icon: "sum", tint: .red)
                 LogSummaryTile(title: "Worst Delay", value: metrics.worstDelayText, icon: "clock.badge.exclamationmark.fill", tint: .red)
             }
         }
@@ -2238,6 +2589,316 @@ private struct LogSummaryTile: View {
         .padding(10)
         .background(Color(.secondarySystemBackground).opacity(0.65))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private struct UserProfile: Equatable {
+    var name: String
+    var imageData: Data?
+}
+
+private enum UserProfilePreferences {
+    private static let nameKey = "raily.profile.name"
+    private static let imageDataKey = "raily.profile.imageData"
+
+    static func load() -> UserProfile {
+        let storedName = UserDefaults.standard.string(forKey: nameKey)
+        let name = storedName == "Gabriel" ? defaultName : (storedName ?? defaultName)
+        let imageData = normalizedImageData(UserDefaults.standard.data(forKey: imageDataKey))
+
+        if let imageData {
+            UserDefaults.standard.set(imageData, forKey: imageDataKey)
+        }
+
+        return UserProfile(
+            name: name,
+            imageData: imageData
+        )
+    }
+
+    static func save(_ profile: UserProfile) {
+        let trimmedName = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(trimmedName.isEmpty ? defaultName : trimmedName, forKey: nameKey)
+        if let imageData = normalizedImageData(profile.imageData) {
+            UserDefaults.standard.set(imageData, forKey: imageDataKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: imageDataKey)
+        }
+    }
+
+    private static let defaultName = "Your Name"
+
+    private static func normalizedImageData(_ data: Data?) -> Data? {
+        guard let data, let image = UIImage(data: data) else { return nil }
+        return image.resizedForProfile(maxPixelSize: 512).pngData()
+    }
+}
+
+private struct ProfileAvatarButton: View {
+    let profile: UserProfile
+    var editAction: () -> Void
+    var settingsAction: () -> Void
+
+    var body: some View {
+        Menu {
+            Button(action: editAction) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(displayName)
+                        Text("Edit Profile")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(uiImage: ProfileAvatarRenderer.image(for: profile, size: 28))
+                        .renderingMode(.original)
+                }
+            }
+
+            Button(action: settingsAction) {
+                Label("Settings", systemImage: "gearshape")
+            }
+        } label: {
+            ProfileAvatarView(profile: profile, size: 38)
+        }
+        .buttonStyle(.plain)
+        .menuOrder(.fixed)
+    }
+
+    private var displayName: String {
+        let trimmed = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Your Name" : trimmed
+    }
+}
+
+private enum ProfileAvatarRenderer {
+    static func image(for profile: UserProfile, size: CGFloat) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 0
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size), format: format)
+
+        return renderer.image { context in
+            let rect = CGRect(origin: .zero, size: CGSize(width: size, height: size))
+            let path = UIBezierPath(ovalIn: rect)
+            path.addClip()
+
+            if let image = profile.imageData.flatMap(UIImage.init(data:)) {
+                drawAspectFill(image, in: rect)
+            } else {
+                UIColor.tertiarySystemFill.setFill()
+                context.fill(rect)
+
+                let symbolConfig = UIImage.SymbolConfiguration(
+                    pointSize: max(11, size * 0.48),
+                    weight: .semibold
+                )
+                let symbol = UIImage(systemName: "person.fill", withConfiguration: symbolConfig)?
+                    .withTintColor(.secondaryLabel, renderingMode: .alwaysOriginal)
+                let symbolSize = symbol?.size ?? .zero
+                symbol?.draw(
+                    at: CGPoint(
+                        x: (size - symbolSize.width) / 2,
+                        y: (size - symbolSize.height) / 2
+                    )
+                )
+
+                /*
+                 Keep a text fallback for environments where SF Symbols fail to
+                 resolve during image rendering.
+                 */
+                guard symbol == nil else { return }
+                let text = initials(for: profile)
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: max(10, size * 0.34), weight: .bold),
+                    .foregroundColor: UIColor.secondaryLabel
+                ]
+                let textSize = text.size(withAttributes: attributes)
+                text.draw(
+                    at: CGPoint(
+                        x: (size - textSize.width) / 2,
+                        y: (size - textSize.height) / 2
+                    ),
+                    withAttributes: attributes
+                )
+            }
+        }
+    }
+
+    private static func drawAspectFill(_ image: UIImage, in rect: CGRect) {
+        let imageSize = image.size
+        guard imageSize.width > 0, imageSize.height > 0 else { return }
+        let scale = max(rect.width / imageSize.width, rect.height / imageSize.height)
+        let drawSize = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        let drawRect = CGRect(
+            x: rect.midX - drawSize.width / 2,
+            y: rect.midY - drawSize.height / 2,
+            width: drawSize.width,
+            height: drawSize.height
+        )
+        image.draw(in: drawRect)
+    }
+
+    private static func initials(for profile: UserProfile) -> String {
+        let words = profile.name
+            .split(separator: " ")
+            .map(String.init)
+        let letters = words.prefix(2).compactMap { $0.first }
+        let value = String(letters).uppercased()
+        return value.isEmpty ? "YN" : value
+    }
+}
+
+private struct ProfileAvatarView: View {
+    let profile: UserProfile
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Circle()
+                    .fill(Color(.tertiarySystemFill))
+                Image(systemName: "person.fill")
+                    .font(.system(size: max(13, size * 0.46), weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay {
+            Circle()
+                .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
+        }
+        .contentShape(Circle())
+    }
+
+    private var image: UIImage? {
+        guard let data = profile.imageData else { return nil }
+        return UIImage(data: data)
+    }
+
+    private var initials: String {
+        let words = profile.name
+            .split(separator: " ")
+            .map(String.init)
+        let letters = words.prefix(2).compactMap { $0.first }
+        let value = String(letters).uppercased()
+        return value.isEmpty ? "YN" : value
+    }
+}
+
+private struct ProfileEditorSheet: View {
+    @Binding var profile: UserProfile
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedPhoto: PhotosPickerItem?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    HStack(spacing: 16) {
+                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                            ProfileAvatarView(profile: profile, size: 72)
+                        }
+                        .buttonStyle(.plain)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            TextField("Name", text: nameBinding)
+                                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                                .textInputAutocapitalization(.words)
+
+                            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                                Text("Change Picture")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .navigationTitle("Edit Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        UserProfilePreferences.save(profile)
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+            .onChange(of: selectedPhoto) { _, newValue in
+                loadSelectedPhoto(newValue)
+            }
+        }
+    }
+
+    private var nameBinding: Binding<String> {
+        Binding(
+            get: { profile.name },
+            set: { newValue in
+                profile.name = newValue
+                UserProfilePreferences.save(profile)
+            }
+        )
+    }
+
+    private func loadSelectedPhoto(_ item: PhotosPickerItem?) {
+        guard let item else { return }
+        Task {
+            guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+            await MainActor.run {
+                let normalizedData = UIImage(data: data)?.resizedForProfile(maxPixelSize: 512).pngData()
+                profile.imageData = normalizedData
+                UserProfilePreferences.save(profile)
+            }
+        }
+    }
+}
+
+private extension UIImage {
+    func resizedForProfile(maxPixelSize: CGFloat) -> UIImage {
+        let maxDimension = max(size.width, size.height)
+        guard maxDimension > maxPixelSize else { return self }
+
+        let scale = maxPixelSize / maxDimension
+        let targetSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
+            draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+    }
+}
+
+private struct SettingsSheet: View {
+    var dismissAction: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack {
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(.systemBackground))
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: dismissAction) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    .accessibilityLabel("Close Settings")
+                }
+            }
+        }
     }
 }
 

@@ -39,6 +39,9 @@ struct TripDetailSheet: View {
     @StateObject private var locationProvider = DeviceLocationProvider()
     @State private var isShowingSpeedPage = false
     @State private var isSpeedPageLoading = false
+    @State private var isLiveActivityRunning = false
+    @State private var liveActivityStatusText: String?
+    @State private var liveActivityDiagnosticText: String?
 
     private let dataSource = GTFSDataSource.shared
     private let secondTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -110,9 +113,13 @@ struct TripDetailSheet: View {
             }
 
             ToolbarItem(placement: .bottomBar) {
-                Button(action: openTicketSheet) {
-                    Label("Ticket", systemImage: "qrcode")
+                Button(action: toggleLiveActivity) {
+                    Label(
+                        isLiveActivityRunning ? "Stop Live" : "Live",
+                        systemImage: isLiveActivityRunning ? "bell.slash.fill" : "bell.badge.fill"
+                    )
                 }
+                .disabled(isPastTrip)
             }
 
             ToolbarItem(placement: .bottomBar) {
@@ -128,10 +135,12 @@ struct TripDetailSheet: View {
         .task(id: trip.id) {
             loadTiming()
             loadSegments()
+            refreshLiveActivityState()
             await loadDestinationWeather()
         }
         .onReceive(secondTimer) { value in
             now = value
+            refreshLiveActivityState()
         }
         .sheet(isPresented: $isPresentingSeatEditor) {
             SeatEditorSheet(
@@ -176,6 +185,16 @@ struct TripDetailSheet: View {
                         if !isPastTrip, let status = syncStatusText {
                             Text(status)
                                 .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if !isPastTrip, let status = liveActivityStatusText {
+                            Text(status)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if !isPastTrip, let diagnostic = liveActivityDiagnosticText {
+                            Text(diagnostic)
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                         if !isPastTrip, let bannerText = scraperStatusText {
@@ -811,6 +830,12 @@ struct TripDetailSheet: View {
         return formatter
     }()
 
+    private static let mapDepartureTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
     private static let durationFormatter: DateComponentsFormatter = {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.hour, .minute]
@@ -882,6 +907,10 @@ extension TripDetailSheet {
             syncStatusText = "Train number unavailable"
             return
         }
+        if let serviceDepartureDate, Date() < serviceDepartureDate.addingTimeInterval(-30 * 60) {
+            syncStatusText = "The train does not have data from its trip yet."
+            return
+        }
 
         isSyncingDelay = true
         syncStatusText = "Refreshing session…"
@@ -889,7 +918,11 @@ extension TripDetailSheet {
         Task {
             print("[TripDetailSheet] Starting InfoFer sync for \(trainNumber)")
             await InfoFerSessionManager.shared.refreshSession(for: trainNumber)
-            let info = await InfoFerScraper.shared.fetchDelay(for: trainNumber, travelDate: syncTravelDate)
+            var info = await InfoFerScraper.shared.fetchDelay(for: trainNumber, travelDate: syncTravelDate)
+            let mapInfo = await fetchMapInfo(for: trainNumber)
+            if let liveCoordinate = mapInfo.liveCoordinate {
+                info = info.updatingLiveCoordinate(liveCoordinate)
+            }
             print("[TripDetailSheet] Sync completed delay=\(info.delayMinutes ?? -1) platform=\(info.platform ?? "n/a")")
 
             await MainActor.run {
@@ -897,11 +930,56 @@ extension TripDetailSheet {
                     liveDelayInfo = info
                 }
                 LiveDelayStore.shared.save(info: info, for: trip.id)
-                applyStationDelays(from: info)
+                var updatedTrip = applyStationDelays(from: info) ?? trip
+                let needsRoutePolyline = updatedTrip.routePolylines?.isEmpty != false
+                if needsRoutePolyline, !mapInfo.routePolylines.isEmpty {
+                    updatedTrip = updatedTrip.updatingRoutePolylines(mapInfo.routePolylines)
+                    onUpdateTrip?(updatedTrip)
+                }
+                if mapInfo.gpsPermanentlyUnavailable, !updatedTrip.infoFerGPSUnavailable {
+                    updatedTrip = updatedTrip.updatingInfoFerGPSUnavailable(true)
+                    onUpdateTrip?(updatedTrip)
+                } else if mapInfo.liveCoordinate != nil, updatedTrip.infoFerGPSUnavailable {
+                    updatedTrip = updatedTrip.updatingInfoFerGPSUnavailable(false)
+                    onUpdateTrip?(updatedTrip)
+                }
+                LiveActivityManager.shared.updateActivity(for: updatedTrip, delayInfo: info)
                 isSyncingDelay = false
                 syncStatusText = nil
             }
         }
+    }
+
+    private func fetchMapInfo(for trainNumber: String) async -> InfoFerMapInfo {
+        let needsRoutePolyline = trip.routePolylines?.isEmpty != false
+        let shouldRefreshGPS = !trip.infoFerGPSUnavailable
+        guard needsRoutePolyline || shouldRefreshGPS else {
+            return InfoFerMapInfo(routePolylines: [], liveCoordinate: nil, gpsPermanentlyUnavailable: false)
+        }
+        guard let departureTime = scheduledDepartureTimeString else {
+            return InfoFerMapInfo(routePolylines: [], liveCoordinate: nil, gpsPermanentlyUnavailable: false)
+        }
+        return await InfoFerScraper.shared.fetchMapInfo(
+            for: trainNumber,
+            travelDate: syncTravelDate,
+            departureTime: departureTime
+        )
+    }
+
+    private var scheduledDepartureTimeString: String? {
+        serviceDepartureDate.map { Self.mapDepartureTimeFormatter.string(from: $0) }
+    }
+
+    private var serviceDepartureDate: Date? {
+        let baseDate = Calendar.current.startOfDay(for: syncTravelDate)
+        let segments = dataSource.segments(for: tripIdentifier)
+        guard let firstSegment = segments.min(by: {
+            ($0.departureSeconds ?? $0.arrivalSeconds ?? Int.max) < ($1.departureSeconds ?? $1.arrivalSeconds ?? Int.max)
+        }) else {
+            return nil
+        }
+        guard let departureSeconds = firstSegment.departureSeconds ?? firstSegment.arrivalSeconds else { return nil }
+        return baseDate.addingTimeInterval(TimeInterval(departureSeconds))
     }
 
     private func forgetDelay() {
@@ -909,7 +987,27 @@ extension TripDetailSheet {
             liveDelayInfo = nil
         }
         LiveDelayStore.shared.clear(tripID: trip.id)
+        LiveActivityManager.shared.updateActivity(for: trip)
         syncStatusText = "Delay cleared"
+    }
+
+    private func toggleLiveActivity() {
+        if isLiveActivityRunning {
+            LiveActivityManager.shared.endActivity(for: trip.id)
+            isLiveActivityRunning = false
+            liveActivityStatusText = "Live Activity stopped"
+            refreshLiveActivityState()
+            return
+        }
+
+        let result = LiveActivityManager.shared.startActivity(for: trip, delayInfo: liveDelayInfo)
+        liveActivityStatusText = result.message
+        refreshLiveActivityState()
+    }
+
+    private func refreshLiveActivityState() {
+        isLiveActivityRunning = LiveActivityManager.shared.isActivityRunning(for: trip.id)
+        liveActivityDiagnosticText = LiveActivityManager.shared.diagnosticSummary(for: trip.id)
     }
 
     private var resolvedTrainNumber: String? {
@@ -927,9 +1025,9 @@ extension TripDetailSheet {
 }
 
 private extension TripDetailSheet {
-    func applyStationDelays(from info: DelayInfo) {
-        guard !info.stationDelays.isEmpty else { return }
-        guard let storedStops = trip.stops, !storedStops.isEmpty else { return }
+    func applyStationDelays(from info: DelayInfo) -> Trip? {
+        guard !info.stationDelays.isEmpty else { return nil }
+        guard let storedStops = trip.stops, !storedStops.isEmpty else { return nil }
 
         var lookup: [String: StationDelay] = [:]
         for detail in info.stationDelays {
@@ -960,9 +1058,10 @@ private extension TripDetailSheet {
             }
         }
 
-        guard hasChanges, let onUpdateTrip else { return }
+        guard hasChanges else { return nil }
         let updatedTrip = trip.updatingStops(updatedStops)
-        onUpdateTrip(updatedTrip)
+        onUpdateTrip?(updatedTrip)
+        return updatedTrip
     }
 
     func normalizeStationName(_ value: String) -> String {
@@ -1122,14 +1221,34 @@ private extension TripDetailSheet {
     private func terminalPlatform(for type: TerminalEventType) -> String? {
         switch type {
         case .departure:
-            return originStoredStop?.platform
-                ?? stationDelayFromLiveInfo(for: .departure)?.platform
-                ?? trip.originPlatform
+            return sanitizedPlatform(stationDelayFromLiveInfo(for: .departure)?.platform)
+                ?? staticPlatform(for: .departure)
+                ?? sanitizedPlatform(originStoredStop?.platform)
+                ?? sanitizedPlatform(trip.originPlatform)
         case .arrival:
-            return destinationStoredStop?.platform
-                ?? stationDelayFromLiveInfo(for: .arrival)?.platform
-                ?? trip.destinationPlatform
+            return sanitizedPlatform(stationDelayFromLiveInfo(for: .arrival)?.platform)
+                ?? staticPlatform(for: .arrival)
+                ?? sanitizedPlatform(destinationStoredStop?.platform)
+                ?? sanitizedPlatform(trip.destinationPlatform)
         }
+    }
+
+    private func staticPlatform(for type: TerminalEventType) -> String? {
+        let trainId = trip.gtfsTripId ?? trip.id
+        let stopId: String?
+        switch type {
+        case .departure:
+            stopId = trip.originStopId ?? originStoredStop?.id
+        case .arrival:
+            stopId = trip.destinationStopId ?? destinationStoredStop?.id
+        }
+        guard let stopId else { return nil }
+        return sanitizedPlatform(StaticPlatformDataSource.shared.platform(trainId: trainId, stationId: stopId))
+    }
+
+    private func sanitizedPlatform(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
     }
 
     private func terminalStatusDisplay(for type: TerminalEventType, scheduledDate: Date?) -> TerminalStatusDisplay {
@@ -1998,33 +2117,6 @@ private struct SegmentSpeedContext {
 private enum SegmentClockEvent {
     case departure
     case arrival
-}
-
-enum ScheduleDateUtils {
-    static let dayInterval: TimeInterval = 24 * 60 * 60
-
-    static func normalizedArrival(_ arrival: Date?, relativeTo departure: Date?) -> Date? {
-        guard var arrival else { return nil }
-        guard let departure else { return arrival }
-        if arrival > departure { return arrival }
-        var iterations = 0
-        while arrival <= departure && iterations < 7 {
-            arrival = arrival.addingTimeInterval(dayInterval)
-            iterations += 1
-        }
-        return arrival
-    }
-
-    static func shiftedForward(_ date: Date, after reference: Date?) -> Date {
-        guard let reference else { return date }
-        var candidate = date
-        var iterations = 0
-        while candidate < reference && iterations < 7 {
-            candidate = candidate.addingTimeInterval(dayInterval)
-            iterations += 1
-        }
-        return candidate
-    }
 }
 
 private struct DestinationWeather {

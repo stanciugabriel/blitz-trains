@@ -12,6 +12,8 @@ struct BlitzApp: App {
 }
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
+
     private static let defaultRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 45.9432, longitude: 24.9668),
         span: MKCoordinateSpan(latitudeDelta: 4, longitudeDelta: 4)
@@ -26,9 +28,12 @@ struct ContentView: View {
     @State private var trips: [Trip] = TripStorage.shared.loadTrips()
     @State private var pastTrips: [Trip] = TripStorage.shared.loadPastTrips()
     @State private var liveTrainClock = Date()
+    @State private var trackingRefreshRevision = 0
     @State private var hasSyncedTripsOnLaunch = false
+    @State private var usesGlobeMapStyle = false
     @StateObject private var locationProvider = DeviceLocationProvider()
-    private let liveTrainTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+    private let liveTrainTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let liveActivityRefreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     var body: some View {
         let detailState: DetailMapState? = {
@@ -41,6 +46,7 @@ struct ContentView: View {
             userLocationVisible: shouldShowUserLocation
         )
 
+
         Map(position: $mapPosition) {
             if shouldShowUserLocation {
                 UserAnnotation()
@@ -51,13 +57,27 @@ struct ContentView: View {
                 dashboardMapContent()
             }
         }
-        .mapStyle(.standard(elevation: .automatic))
-        .animation(.easeInOut(duration: 0.8), value: liveTrainClock)
-        .mapControls {
-            if shouldShowUserLocation {
-                MapUserLocationButton()
-                    .mapControlVisibility(.visible)
-            }
+        .mapStyle(usesGlobeMapStyle ? .hybrid(elevation: .realistic) : .standard(elevation: .automatic))
+        .mapControlVisibility(.hidden)
+        .animation(.linear(duration: 1), value: liveTrainClock)
+        .animation(.easeInOut(duration: 1.2), value: trackingRefreshRevision)
+        .overlay(alignment: .topTrailing) {
+            MapToolbarButtons(
+                isGlobeStyle: usesGlobeMapStyle,
+                showLocationButton: shouldShowUserLocation,
+                onToggleStyle: {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        usesGlobeMapStyle.toggle()
+                    }
+                },
+                onCenterOnUser: {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        mapPosition = .userLocation(fallback: .automatic)
+                    }
+                }
+            )
+            .padding(.top, 52)
+            .padding(.trailing, 16)
         }
         .safeAreaInset(edge: .top, alignment: .center) {
             Color.clear
@@ -96,6 +116,9 @@ struct ContentView: View {
                     selectedDetent = .medium
                 }
             } else {
+                DispatchQueue.main.async {
+                    selectedDetent = .medium
+                }
                 locationProvider.disableTracking()
             }
             updateCameraForCurrentState()
@@ -105,13 +128,34 @@ struct ContentView: View {
             syncTripsOnLaunchIfNeeded()
         }
         .onReceive(liveTrainTimer) { value in
-            withAnimation(.easeInOut(duration: 0.8)) {
+            withAnimation(.linear(duration: 1)) {
                 liveTrainClock = value
             }
+        }
+        .onReceive(liveActivityRefreshTimer) { _ in
+            refreshRunningLiveActivities()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .liveDelayInfoUpdated)) { notification in
+            guard let tripID = notification.object as? String else { return }
+            withAnimation(.easeInOut(duration: 1.2)) {
+                liveTrainClock = Date()
+                trackingRefreshRevision += 1
+            }
+            refreshLiveActivity(for: tripID)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            refreshRunningLiveActivities()
         }
         .onChange(of: trips) { _, newValue in
             TripStorage.shared.saveTrips(newValue)
             updateCameraForCurrentState()
+        }
+        .onChange(of: trips) { oldValue, newValue in
+            let activeIDs = Set(newValue.map(\.id))
+            oldValue
+                .filter { !activeIDs.contains($0.id) }
+                .forEach { LiveActivityManager.shared.endActivity(for: $0.id) }
         }
         .onChange(of: pastTrips) { _, newValue in
             TripStorage.shared.savePastTrips(newValue)
@@ -155,29 +199,85 @@ struct ContentView: View {
 
         Task {
             for trip in launchTrips {
-                await syncTrip(trip)
+                await syncTrip(trip, shouldFetchMapInfo: false)
             }
         }
     }
 
     private func syncTripAfterAdd(_ trip: Trip) {
+        let result = LiveActivityManager.shared.startActivity(for: trip)
+        #if DEBUG
+        print("[ContentView] Live Activity auto-start: \(result.message)")
+        #endif
         Task {
-            await syncTrip(trip)
+            await syncTrip(trip, shouldFetchMapInfo: true)
         }
     }
 
-    private func syncTrip(_ trip: Trip) async {
+    private func refreshRunningLiveActivities() {
+        for trip in trips where LiveActivityManager.shared.isActivityRunning(for: trip.id) {
+            LiveActivityManager.shared.updateActivity(
+                for: trip,
+                delayInfo: LiveDelayStore.shared.info(for: trip.id)
+            )
+        }
+    }
+
+    private func refreshLiveActivity(for tripID: String) {
+        guard let trip = trips.first(where: { $0.id == tripID }) else { return }
+        guard LiveActivityManager.shared.isActivityRunning(for: tripID) else { return }
+        LiveActivityManager.shared.updateActivity(
+            for: trip,
+            delayInfo: LiveDelayStore.shared.info(for: tripID)
+        )
+    }
+
+    private func syncTrip(_ trip: Trip, shouldFetchMapInfo: Bool) async {
         guard let trainNumber = resolvedTrainNumber(for: trip) else { return }
         await InfoFerSessionManager.shared.refreshSession(for: trainNumber)
-        let info = await InfoFerScraper.shared.fetchDelay(
+        var info = await InfoFerScraper.shared.fetchDelay(
             for: trainNumber,
             travelDate: trip.travelDate
         )
+        let mapInfo = shouldFetchMapInfo
+            ? await fetchMapInfo(for: trainNumber, trip: trip)
+            : InfoFerMapInfo(routePolylines: [], liveCoordinate: nil, gpsPermanentlyUnavailable: false)
+        if let liveCoordinate = mapInfo.liveCoordinate {
+            info = info.updatingLiveCoordinate(liveCoordinate)
+        }
 
         await MainActor.run {
             LiveDelayStore.shared.save(info: info, for: trip.id)
-            applyLaunchSync(info: info, to: trip.id)
+            applyLaunchSync(info: info, mapInfo: mapInfo, to: trip.id)
+            let updatedTrip = trips.first(where: { $0.id == trip.id }) ?? trip
+            LiveActivityManager.shared.updateActivity(for: updatedTrip, delayInfo: info)
         }
+    }
+
+    private func fetchMapInfo(for trainNumber: String, trip: Trip) async -> InfoFerMapInfo {
+        guard let departureTime = scheduledDepartureTimeString(for: trip) else {
+            return InfoFerMapInfo(routePolylines: [], liveCoordinate: nil, gpsPermanentlyUnavailable: false)
+        }
+        return await InfoFerScraper.shared.fetchMapInfo(
+            for: trainNumber,
+            travelDate: trip.travelDate,
+            departureTime: departureTime
+        )
+    }
+
+    private func scheduledDepartureTimeString(for trip: Trip) -> String? {
+        serviceDepartureDate(for: trip).map { Self.mapDepartureTimeFormatter.string(from: $0) }
+    }
+
+    private func serviceDepartureDate(for trip: Trip) -> Date? {
+        guard let travelDate = trip.travelDate else { return nil }
+        let identifier = trip.gtfsTripId ?? trip.id
+        let segments = GTFSDataSource.shared.segments(for: identifier)
+        let firstSegment = segments.min {
+            ($0.departureSeconds ?? $0.arrivalSeconds ?? Int.max) < ($1.departureSeconds ?? $1.arrivalSeconds ?? Int.max)
+        }
+        guard let departureSeconds = firstSegment?.departureSeconds ?? firstSegment?.arrivalSeconds else { return nil }
+        return Calendar.current.startOfDay(for: travelDate).addingTimeInterval(TimeInterval(departureSeconds))
     }
 
     private func resolvedTrainNumber(for trip: Trip) -> String? {
@@ -194,12 +294,31 @@ struct ContentView: View {
         return nil
     }
 
-    private func applyLaunchSync(info: DelayInfo, to tripID: String) {
-        guard !info.stationDelays.isEmpty else { return }
+    private func applyLaunchSync(info: DelayInfo, mapInfo: InfoFerMapInfo, to tripID: String) {
         guard let index = trips.firstIndex(where: { $0.id == tripID }) else { return }
-        guard let updatedStops = stopsByApplying(info: info, to: trips[index]) else { return }
 
-        let updatedTrip = trips[index].updatingStops(updatedStops)
+        var updatedTrip = trips[index]
+        var hasChanges = false
+
+        if let updatedStops = stopsByApplying(info: info, to: updatedTrip) {
+            updatedTrip = updatedTrip.updatingStops(updatedStops)
+            hasChanges = true
+        }
+
+        if !mapInfo.routePolylines.isEmpty, updatedTrip.routePolylines != mapInfo.routePolylines {
+            updatedTrip = updatedTrip.updatingRoutePolylines(mapInfo.routePolylines)
+            hasChanges = true
+        }
+
+        if mapInfo.gpsPermanentlyUnavailable, !updatedTrip.infoFerGPSUnavailable {
+            updatedTrip = updatedTrip.updatingInfoFerGPSUnavailable(true)
+            hasChanges = true
+        } else if mapInfo.liveCoordinate != nil, updatedTrip.infoFerGPSUnavailable {
+            updatedTrip = updatedTrip.updatingInfoFerGPSUnavailable(false)
+            hasChanges = true
+        }
+
+        guard hasChanges else { return }
         trips[index] = updatedTrip
 
         if selectedTrip?.id == tripID {
@@ -247,6 +366,12 @@ struct ContentView: View {
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    private static let mapDepartureTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
 }
 
 extension ContentView {
@@ -315,17 +440,33 @@ extension ContentView {
         let trip = state.trip
         let orderedStops = state.orderedStops
         let stoppingStops = state.stoppingStops
-        let coordinates = orderedStops.map { $0.coordinate }
-        if coordinates.count > 1 {
-            MapPolyline(coordinates: coordinates)
-                .stroke(
-                    .gray.opacity(0.5),
-                    style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [6, 6])
-                )
+        let scrapedRouteSegments = routePolylineSegments(for: trip)
+        if !scrapedRouteSegments.isEmpty {
+            ForEach(Array(scrapedRouteSegments.enumerated()), id: \.offset) { _, segment in
+                MapPolyline(coordinates: segment)
+                    .stroke(
+                        .gray.opacity(0.5),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [6, 6])
+                    )
+            }
 
-            if let segment = segmentCoordinates(for: trip, orderedStops: orderedStops) {
+            if let segment = preciseUserSegmentCoordinates(for: trip) {
                 MapPolyline(coordinates: segment)
                     .stroke(.blue, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            }
+        } else {
+            let coordinates = orderedStops.map { $0.coordinate }
+            if coordinates.count > 1 {
+                MapPolyline(coordinates: coordinates)
+                    .stroke(
+                        .gray.opacity(0.5),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [6, 6])
+                    )
+
+                if let segment = segmentCoordinates(for: trip, orderedStops: orderedStops) {
+                    MapPolyline(coordinates: segment)
+                        .stroke(.blue, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                }
             }
         }
 
@@ -347,7 +488,7 @@ extension ContentView {
 
         if showLiveTrainMarker, let liveCoordinate = state.trackingResult?.coordinate {
             Annotation("", coordinate: liveCoordinate) {
-                LiveTrainMarkerView()
+                LiveTrainMarkerView(isGPSBased: state.trackingResult?.mode == .gps)
             }
         }
     }
@@ -361,6 +502,9 @@ extension ContentView {
     }
 
     private func routeCoordinates(for trip: Trip) -> [CLLocationCoordinate2D]? {
+        if let coordinates = flattenedRoutePolylineCoordinates(for: trip), coordinates.count > 1 {
+            return coordinates
+        }
         let stops = polylineStops(for: trip)
         if stops.count > 1 {
             return stops.map { $0.coordinate }
@@ -369,6 +513,9 @@ extension ContentView {
     }
 
     private func userSegmentCoordinates(for trip: Trip) -> [CLLocationCoordinate2D]? {
+        if let preciseSegment = preciseUserSegmentCoordinates(for: trip) {
+            return preciseSegment
+        }
         let stops = polylineStops(for: trip)
         let segmentStops = userSegmentStops(for: trip, stops: stops)
         if segmentStops.count > 1 {
@@ -441,7 +588,13 @@ extension ContentView {
 
         guard !timeline.isEmpty else { return nil }
 
-        guard let fallback = interpolatedCoordinate(entries: timeline, referenceDate: referenceDate) else {
+        let routeCoordinates = flattenedRoutePolylineCoordinates(for: trip)
+        let trackingRouteCoordinates = routeCoordinates ?? timelineRouteCoordinates(from: timeline)
+        guard let fallback = interpolatedCoordinate(
+            entries: timeline,
+            referenceDate: referenceDate,
+            routeCoordinates: routeCoordinates
+        ) else {
             return nil
         }
 
@@ -465,11 +618,19 @@ extension ContentView {
 
         guard let boardingDate = boardingDate(for: originStopId, in: timeline),
               let destinationArrival = arrivalDate(for: destinationStopId, in: timeline) else {
+            let showsTrainMarker = referenceDate >= serviceDeparture && referenceDate <= serviceArrival
+            let gpsCoordinate = showsTrainMarker ? gpsAnchoredLiveTrainCoordinate(
+                for: trip,
+                entries: timeline,
+                referenceDate: referenceDate,
+                routeCoordinates: trackingRouteCoordinates
+            ) : nil
+            let trainCoordinate = gpsCoordinate ?? fallback
             return LiveTrainCoordinateResult(
-                coordinate: fallback,
-                mode: .interpolation,
+                coordinate: trainCoordinate,
+                mode: gpsCoordinate == nil ? .interpolation : .gps,
                 showsUserLocation: false,
-                showsLiveTrainMarker: referenceDate >= serviceDeparture && referenceDate <= serviceArrival
+                showsLiveTrainMarker: showsTrainMarker
             )
         }
 
@@ -484,9 +645,16 @@ extension ContentView {
         }
 
         if referenceDate <= serviceArrival {
+            let gpsCoordinate = referenceDate >= serviceDeparture ? gpsAnchoredLiveTrainCoordinate(
+                for: trip,
+                entries: timeline,
+                referenceDate: referenceDate,
+                routeCoordinates: trackingRouteCoordinates
+            ) : nil
+            let trainCoordinate = gpsCoordinate ?? fallback
             return LiveTrainCoordinateResult(
-                coordinate: fallback,
-                mode: .interpolation,
+                coordinate: trainCoordinate,
+                mode: gpsCoordinate == nil ? .interpolation : .gps,
                 showsUserLocation: false,
                 showsLiveTrainMarker: true
             )
@@ -609,16 +777,26 @@ extension ContentView {
 
     private func interpolatedCoordinate(
         entries: [MapSegmentEntry],
-        referenceDate: Date
+        referenceDate: Date,
+        routeCoordinates: [CLLocationCoordinate2D]? = nil
     ) -> CLLocationCoordinate2D? {
         guard let first = entries.first, let last = entries.last else { return nil }
 
         if referenceDate <= first.startDate {
-            return first.startCoordinate
+            return routeCoordinates?.first ?? first.startCoordinate
         }
 
         if referenceDate >= last.endDate {
-            return last.endCoordinate
+            return routeCoordinates?.last ?? last.endCoordinate
+        }
+
+        if let routeCoordinates, routeCoordinates.count > 1 {
+            let totalDuration = last.endDate.timeIntervalSince(first.startDate)
+            if totalDuration > 0 {
+                let elapsed = referenceDate.timeIntervalSince(first.startDate)
+                let progress = max(0, min(elapsed / totalDuration, 1))
+                return coordinateAlongPolyline(routeCoordinates, progress: progress)
+            }
         }
 
         for entry in entries {
@@ -642,6 +820,142 @@ extension ContentView {
         return last.endCoordinate
     }
 
+    private func gpsAnchoredLiveTrainCoordinate(
+        for trip: Trip,
+        entries: [MapSegmentEntry],
+        referenceDate: Date,
+        routeCoordinates: [CLLocationCoordinate2D]?
+    ) -> CLLocationCoordinate2D? {
+        guard let liveCoordinate = LiveDelayStore.shared.info(for: trip.id)?.liveCoordinate else { return nil }
+        let gpsCoordinate = CLLocationCoordinate2D(
+            latitude: liveCoordinate.latitude,
+            longitude: liveCoordinate.longitude
+        )
+        guard
+            let fetchedAt = liveCoordinate.fetchedAt,
+            let first = entries.first,
+            let last = entries.last,
+            let routeCoordinates,
+            routeCoordinates.count > 1
+        else {
+            return gpsCoordinate
+        }
+
+        let totalDuration = last.endDate.timeIntervalSince(first.startDate)
+        guard totalDuration > 0 else { return gpsCoordinate }
+
+        let anchoredProgress = progressAlongPolyline(routeCoordinates, nearestTo: gpsCoordinate)
+        let elapsedProgress = referenceDate.timeIntervalSince(fetchedAt) / totalDuration
+        return coordinateAlongPolyline(
+            routeCoordinates,
+            progress: anchoredProgress + elapsedProgress
+        ) ?? gpsCoordinate
+    }
+
+    private func timelineRouteCoordinates(from entries: [MapSegmentEntry]) -> [CLLocationCoordinate2D]? {
+        guard let first = entries.first else { return nil }
+        var coordinates = [first.startCoordinate]
+        coordinates.append(contentsOf: entries.map(\.endCoordinate))
+        return coordinates.count > 1 ? coordinates : nil
+    }
+
+    private func progressAlongPolyline(
+        _ coordinates: [CLLocationCoordinate2D],
+        nearestTo coordinate: CLLocationCoordinate2D
+    ) -> Double {
+        guard coordinates.count > 1 else { return 0 }
+
+        let origin = coordinates[0]
+        let targetPoint = mapPoint(coordinate, relativeTo: origin)
+        var totalLength: CLLocationDistance = 0
+        var nearestDistance = Double.greatestFiniteMagnitude
+        var nearestLengthAlongRoute: CLLocationDistance = 0
+
+        for index in 1..<coordinates.count {
+            let start = mapPoint(coordinates[index - 1], relativeTo: origin)
+            let end = mapPoint(coordinates[index], relativeTo: origin)
+            let segment = CGPoint(x: end.x - start.x, y: end.y - start.y)
+            let segmentLength = hypot(segment.x, segment.y)
+            guard segmentLength > 0 else { continue }
+
+            let target = CGPoint(x: targetPoint.x - start.x, y: targetPoint.y - start.y)
+            let projection = max(0, min((target.x * segment.x + target.y * segment.y) / (segmentLength * segmentLength), 1))
+            let projectedPoint = CGPoint(
+                x: start.x + segment.x * projection,
+                y: start.y + segment.y * projection
+            )
+            let distanceToProjection = hypot(targetPoint.x - projectedPoint.x, targetPoint.y - projectedPoint.y)
+            if distanceToProjection < nearestDistance {
+                nearestDistance = distanceToProjection
+                nearestLengthAlongRoute = totalLength + segmentLength * projection
+            }
+
+            totalLength += segmentLength
+        }
+
+        guard totalLength > 0 else { return 0 }
+        return max(0, min(nearestLengthAlongRoute / totalLength, 1))
+    }
+
+    private func mapPoint(
+        _ coordinate: CLLocationCoordinate2D,
+        relativeTo origin: CLLocationCoordinate2D
+    ) -> CGPoint {
+        let originPoint = MKMapPoint(origin)
+        let point = MKMapPoint(coordinate)
+        return CGPoint(x: point.x - originPoint.x, y: point.y - originPoint.y)
+    }
+
+    private func coordinateAlongPolyline(
+        _ coordinates: [CLLocationCoordinate2D],
+        progress: Double
+    ) -> CLLocationCoordinate2D? {
+        guard let first = coordinates.first, let last = coordinates.last else { return nil }
+        guard coordinates.count > 1 else { return first }
+
+        let clamped = max(0, min(progress, 1))
+        if clamped <= 0 { return first }
+        if clamped >= 1 { return last }
+
+        var segmentLengths: [CLLocationDistance] = []
+        var totalLength: CLLocationDistance = 0
+
+        for index in 1..<coordinates.count {
+            let length = distanceBetween(coordinates[index - 1], coordinates[index])
+            segmentLengths.append(length)
+            totalLength += length
+        }
+
+        guard totalLength > 0 else { return first }
+
+        let targetLength = totalLength * clamped
+        var coveredLength: CLLocationDistance = 0
+
+        for index in segmentLengths.indices {
+            let segmentLength = segmentLengths[index]
+            let nextCoveredLength = coveredLength + segmentLength
+            if targetLength <= nextCoveredLength {
+                let segmentProgress = segmentLength > 0 ? (targetLength - coveredLength) / segmentLength : 0
+                return interpolateCoordinate(
+                    from: coordinates[index],
+                    to: coordinates[index + 1],
+                    progress: segmentProgress
+                )
+            }
+            coveredLength = nextCoveredLength
+        }
+
+        return last
+    }
+
+    private func distanceBetween(
+        _ lhs: CLLocationCoordinate2D,
+        _ rhs: CLLocationCoordinate2D
+    ) -> CLLocationDistance {
+        CLLocation(latitude: lhs.latitude, longitude: lhs.longitude)
+            .distance(from: CLLocation(latitude: rhs.latitude, longitude: rhs.longitude))
+    }
+
     private func interpolateCoordinate(
         from start: CLLocationCoordinate2D,
         to end: CLLocationCoordinate2D,
@@ -662,6 +976,48 @@ extension ContentView {
             return stop.coordinate
         }
         return trip.stops?.sorted(by: { $0.sequence < $1.sequence }).first?.coordinate
+    }
+
+    private func routePolylineSegments(for trip: Trip) -> [[CLLocationCoordinate2D]] {
+        trip.routePolylines?
+            .map(\.coordinates)
+            .filter { $0.count > 1 } ?? []
+    }
+
+    private func flattenedRoutePolylineCoordinates(for trip: Trip) -> [CLLocationCoordinate2D]? {
+        let segments = routePolylineSegments(for: trip)
+        guard !segments.isEmpty else { return nil }
+        return segments.flatMap { $0 }
+    }
+
+    private func preciseUserSegmentCoordinates(for trip: Trip) -> [CLLocationCoordinate2D]? {
+        guard let coordinates = flattenedRoutePolylineCoordinates(for: trip), coordinates.count > 1 else { return nil }
+        guard
+            let origin = coordinate(for: trip.originStopId, sequence: trip.originSequence, in: trip),
+            let destination = coordinate(for: trip.destinationStopId, sequence: trip.destinationSequence, in: trip)
+        else { return nil }
+
+        let originIndex = nearestCoordinateIndex(to: origin, in: coordinates)
+        let destinationIndex = nearestCoordinateIndex(to: destination, in: coordinates)
+        let lower = min(originIndex, destinationIndex)
+        let upper = max(originIndex, destinationIndex)
+        guard lower < upper else { return nil }
+        return Array(coordinates[lower...upper])
+    }
+
+    private func nearestCoordinateIndex(
+        to target: CLLocationCoordinate2D,
+        in coordinates: [CLLocationCoordinate2D]
+    ) -> Int {
+        coordinates.indices.min { lhs, rhs in
+            coordinateDistanceSquared(coordinates[lhs], target) < coordinateDistanceSquared(coordinates[rhs], target)
+        } ?? 0
+    }
+
+    private func coordinateDistanceSquared(_ lhs: CLLocationCoordinate2D, _ rhs: CLLocationCoordinate2D) -> Double {
+        let latitudeDelta = lhs.latitude - rhs.latitude
+        let longitudeDelta = lhs.longitude - rhs.longitude
+        return latitudeDelta * latitudeDelta + longitudeDelta * longitudeDelta
     }
 
     private func segmentCoordinates(for trip: Trip, orderedStops: [StoredStop]) -> [CLLocationCoordinate2D]? {
@@ -888,6 +1244,40 @@ struct Trip: Identifiable, Codable, Equatable {
     let trainTonnage: String?
     let trainIdentifier: String?
     let trainPower: TrainPowerType?
+    let routePolylines: [StoredRoutePolyline]?
+    let infoFerGPSUnavailable: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case subtitle
+        case agencyId
+        case detailDate
+        case detailRoute
+        case gtfsTripId
+        case travelDate
+        case originStopId
+        case originName
+        case destinationStopId
+        case destinationName
+        case originPlatform
+        case destinationPlatform
+        case delayMinutes
+        case detailDistance
+        case stops
+        case originSequence
+        case destinationSequence
+        case seatCar
+        case seatNumbers
+        case ticketQRCode
+        case trainType
+        case trainLength
+        case trainTonnage
+        case trainIdentifier
+        case trainPower
+        case routePolylines
+        case infoFerGPSUnavailable
+    }
 
     init(
         id: String = UUID().uuidString,
@@ -915,7 +1305,9 @@ struct Trip: Identifiable, Codable, Equatable {
         trainLength: String? = nil,
         trainTonnage: String? = nil,
         trainIdentifier: String? = nil,
-        trainPower: TrainPowerType? = nil
+        trainPower: TrainPowerType? = nil,
+        routePolylines: [StoredRoutePolyline]? = nil,
+        infoFerGPSUnavailable: Bool = false
     ) {
         self.init(
             id: id,
@@ -944,7 +1336,9 @@ struct Trip: Identifiable, Codable, Equatable {
             trainLength: trainLength,
             trainTonnage: trainTonnage,
             trainIdentifier: trainIdentifier,
-            trainPower: trainPower
+            trainPower: trainPower,
+            routePolylines: routePolylines,
+            infoFerGPSUnavailable: infoFerGPSUnavailable
         )
     }
 
@@ -975,7 +1369,9 @@ struct Trip: Identifiable, Codable, Equatable {
         trainLength: String? = nil,
         trainTonnage: String? = nil,
         trainIdentifier: String? = nil,
-        trainPower: TrainPowerType? = nil
+        trainPower: TrainPowerType? = nil,
+        routePolylines: [StoredRoutePolyline]? = nil,
+        infoFerGPSUnavailable: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -1004,6 +1400,74 @@ struct Trip: Identifiable, Codable, Equatable {
         self.trainTonnage = trainTonnage
         self.trainIdentifier = trainIdentifier
         self.trainPower = trainPower
+        self.routePolylines = routePolylines
+        self.infoFerGPSUnavailable = infoFerGPSUnavailable
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        title = try container.decode(String.self, forKey: .title)
+        subtitle = try container.decode(String.self, forKey: .subtitle)
+        agencyId = try container.decodeIfPresent(String.self, forKey: .agencyId)
+        detailDate = try container.decodeIfPresent(String.self, forKey: .detailDate)
+        detailRoute = try container.decodeIfPresent(String.self, forKey: .detailRoute)
+        gtfsTripId = try container.decodeIfPresent(String.self, forKey: .gtfsTripId)
+        travelDate = try container.decodeIfPresent(Date.self, forKey: .travelDate)
+        originStopId = try container.decodeIfPresent(String.self, forKey: .originStopId)
+        originName = try container.decodeIfPresent(String.self, forKey: .originName)
+        destinationStopId = try container.decodeIfPresent(String.self, forKey: .destinationStopId)
+        destinationName = try container.decodeIfPresent(String.self, forKey: .destinationName)
+        originPlatform = try container.decodeIfPresent(String.self, forKey: .originPlatform)
+        destinationPlatform = try container.decodeIfPresent(String.self, forKey: .destinationPlatform)
+        delayMinutes = try container.decodeIfPresent(Int.self, forKey: .delayMinutes)
+        detailDistance = try container.decodeIfPresent(String.self, forKey: .detailDistance)
+        stops = try container.decodeIfPresent([StoredStop].self, forKey: .stops)
+        originSequence = try container.decodeIfPresent(Int.self, forKey: .originSequence)
+        destinationSequence = try container.decodeIfPresent(Int.self, forKey: .destinationSequence)
+        seatCar = try container.decodeIfPresent(String.self, forKey: .seatCar)
+        seatNumbers = try container.decodeIfPresent([String].self, forKey: .seatNumbers)
+        ticketQRCode = try container.decodeIfPresent(String.self, forKey: .ticketQRCode)
+        trainType = try container.decodeIfPresent(TrainType.self, forKey: .trainType)
+        trainLength = try container.decodeIfPresent(String.self, forKey: .trainLength)
+        trainTonnage = try container.decodeIfPresent(String.self, forKey: .trainTonnage)
+        trainIdentifier = try container.decodeIfPresent(String.self, forKey: .trainIdentifier)
+        trainPower = try container.decodeIfPresent(TrainPowerType.self, forKey: .trainPower)
+        routePolylines = try container.decodeIfPresent([StoredRoutePolyline].self, forKey: .routePolylines)
+        infoFerGPSUnavailable = try container.decodeIfPresent(Bool.self, forKey: .infoFerGPSUnavailable) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(subtitle, forKey: .subtitle)
+        try container.encodeIfPresent(agencyId, forKey: .agencyId)
+        try container.encodeIfPresent(detailDate, forKey: .detailDate)
+        try container.encodeIfPresent(detailRoute, forKey: .detailRoute)
+        try container.encodeIfPresent(gtfsTripId, forKey: .gtfsTripId)
+        try container.encodeIfPresent(travelDate, forKey: .travelDate)
+        try container.encodeIfPresent(originStopId, forKey: .originStopId)
+        try container.encodeIfPresent(originName, forKey: .originName)
+        try container.encodeIfPresent(destinationStopId, forKey: .destinationStopId)
+        try container.encodeIfPresent(destinationName, forKey: .destinationName)
+        try container.encodeIfPresent(originPlatform, forKey: .originPlatform)
+        try container.encodeIfPresent(destinationPlatform, forKey: .destinationPlatform)
+        try container.encodeIfPresent(delayMinutes, forKey: .delayMinutes)
+        try container.encodeIfPresent(detailDistance, forKey: .detailDistance)
+        try container.encodeIfPresent(stops, forKey: .stops)
+        try container.encodeIfPresent(originSequence, forKey: .originSequence)
+        try container.encodeIfPresent(destinationSequence, forKey: .destinationSequence)
+        try container.encodeIfPresent(seatCar, forKey: .seatCar)
+        try container.encodeIfPresent(seatNumbers, forKey: .seatNumbers)
+        try container.encodeIfPresent(ticketQRCode, forKey: .ticketQRCode)
+        try container.encodeIfPresent(trainType, forKey: .trainType)
+        try container.encodeIfPresent(trainLength, forKey: .trainLength)
+        try container.encodeIfPresent(trainTonnage, forKey: .trainTonnage)
+        try container.encodeIfPresent(trainIdentifier, forKey: .trainIdentifier)
+        try container.encodeIfPresent(trainPower, forKey: .trainPower)
+        try container.encodeIfPresent(routePolylines, forKey: .routePolylines)
+        try container.encode(infoFerGPSUnavailable, forKey: .infoFerGPSUnavailable)
     }
 }
 
@@ -1039,6 +1503,29 @@ struct StoredStop: Identifiable, Codable, Equatable {
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+struct StoredRoutePoint: Codable, Equatable {
+    let latitude: Double
+    let longitude: Double
+
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+struct StoredRoutePolyline: Identifiable, Codable, Equatable {
+    let id: UUID
+    let points: [StoredRoutePoint]
+
+    init(id: UUID = UUID(), points: [StoredRoutePoint]) {
+        self.id = id
+        self.points = points
+    }
+
+    var coordinates: [CLLocationCoordinate2D] {
+        points.map(\.coordinate)
     }
 }
 
@@ -1091,7 +1578,9 @@ extension Trip {
             trainLength: trainLength,
             trainTonnage: trainTonnage,
             trainIdentifier: trainIdentifier,
-            trainPower: trainPower
+            trainPower: trainPower,
+            routePolylines: routePolylines,
+            infoFerGPSUnavailable: infoFerGPSUnavailable
         )
     }
 
@@ -1123,7 +1612,9 @@ extension Trip {
             trainLength: trainLength,
             trainTonnage: trainTonnage,
             trainIdentifier: trainIdentifier,
-            trainPower: trainPower
+            trainPower: trainPower,
+            routePolylines: routePolylines,
+            infoFerGPSUnavailable: infoFerGPSUnavailable
         )
     }
 
@@ -1155,7 +1646,9 @@ extension Trip {
             trainLength: trainLength,
             trainTonnage: trainTonnage,
             trainIdentifier: trainIdentifier,
-            trainPower: trainPower
+            trainPower: trainPower,
+            routePolylines: routePolylines,
+            infoFerGPSUnavailable: infoFerGPSUnavailable
         )
     }
 
@@ -1199,7 +1692,77 @@ extension Trip {
             trainLength: trainLength,
             trainTonnage: trainTonnage,
             trainIdentifier: trainIdentifier,
-            trainPower: trainPower
+            trainPower: trainPower,
+            routePolylines: routePolylines,
+            infoFerGPSUnavailable: infoFerGPSUnavailable
+        )
+    }
+
+    func updatingRoutePolylines(_ polylines: [StoredRoutePolyline]) -> Trip {
+        Trip(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            agencyId: agencyId,
+            detailDate: detailDate,
+            detailRoute: detailRoute,
+            gtfsTripId: gtfsTripId,
+            travelDate: travelDate,
+            originStopId: originStopId,
+            originName: originName,
+            destinationStopId: destinationStopId,
+            destinationName: destinationName,
+            originPlatform: originPlatform,
+            destinationPlatform: destinationPlatform,
+            delayMinutes: delayMinutes,
+            detailDistance: detailDistance,
+            stops: stops,
+            originSequence: originSequence,
+            destinationSequence: destinationSequence,
+            seatCar: seatCar,
+            seatNumbers: seatNumbers,
+            ticketQRCode: ticketQRCode,
+            trainType: trainType,
+            trainLength: trainLength,
+            trainTonnage: trainTonnage,
+            trainIdentifier: trainIdentifier,
+            trainPower: trainPower,
+            routePolylines: polylines,
+            infoFerGPSUnavailable: infoFerGPSUnavailable
+        )
+    }
+
+    func updatingInfoFerGPSUnavailable(_ unavailable: Bool) -> Trip {
+        Trip(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            agencyId: agencyId,
+            detailDate: detailDate,
+            detailRoute: detailRoute,
+            gtfsTripId: gtfsTripId,
+            travelDate: travelDate,
+            originStopId: originStopId,
+            originName: originName,
+            destinationStopId: destinationStopId,
+            destinationName: destinationName,
+            originPlatform: originPlatform,
+            destinationPlatform: destinationPlatform,
+            delayMinutes: delayMinutes,
+            detailDistance: detailDistance,
+            stops: stops,
+            originSequence: originSequence,
+            destinationSequence: destinationSequence,
+            seatCar: seatCar,
+            seatNumbers: seatNumbers,
+            ticketQRCode: ticketQRCode,
+            trainType: trainType,
+            trainLength: trainLength,
+            trainTonnage: trainTonnage,
+            trainIdentifier: trainIdentifier,
+            trainPower: trainPower,
+            routePolylines: routePolylines,
+            infoFerGPSUnavailable: unavailable
         )
     }
 }
@@ -1227,6 +1790,7 @@ private struct MapSegmentEntry {
 private enum LiveTrainTrackingMode {
     case interpolation
     case device
+    case gps
 }
 
 private struct LiveTrainCoordinateResult {
@@ -1236,11 +1800,57 @@ private struct LiveTrainCoordinateResult {
     let showsLiveTrainMarker: Bool
 }
 
+private struct MapToolbarButtons: View {
+    let isGlobeStyle: Bool
+    let showLocationButton: Bool
+    let onToggleStyle: () -> Void
+    let onCenterOnUser: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button(action: onToggleStyle) {
+                Image(systemName: isGlobeStyle ? "map.fill" : "globe.europe.africa.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color(.label))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isGlobeStyle ? "Switch to default map" : "Switch to globe map")
+
+            if showLocationButton {
+                Button(action: onCenterOnUser) {
+                    Image(systemName: "location.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Color(.label))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Center on my location")
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .frame(width: 44)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 8, x: 0, y: 3)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: showLocationButton)
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isGlobeStyle)
+    }
+}
+
 private struct LiveTrainMarkerView: View {
+    let isGPSBased: Bool
+
     var body: some View {
         ZStack {
             Circle()
-                .fill(Color.blue.opacity(0.9))
+                .fill((isGPSBased ? Color.green : Color.blue).opacity(0.9))
             Circle()
                 .stroke(Color.white, lineWidth: 2)
             Image(systemName: "tram.fill")

@@ -1,0 +1,26 @@
+{
+  "" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension-primary.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension-primary.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension-primary.dia",
+    "emit-module-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension-primary-emit-module.dia",
+    "pch" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidgetExtension-primary.swiftdeps"
+  },
+  "/Users/gabriel/dev/blitz/Shared/TrainLiveActivityAttributes.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/TrainLiveActivityAttributes.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/TrainLiveActivityAttributes.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/TrainLiveActivityAttributes.o"
+  },
+  "/Users/gabriel/dev/blitz/blitzWidget/blitzWidget.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidget.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidget.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/blitzWidget.o"
+  },
+  "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "index-unit-output-path" : "/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitzWidgetExtension.build/Objects-normal/arm64/GeneratedAssetSymbols.o"
+  }
+}

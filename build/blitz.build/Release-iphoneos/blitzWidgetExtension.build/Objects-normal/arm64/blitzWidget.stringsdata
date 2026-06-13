@@ -1,0 +1,80 @@
+{
+  "source": "/Users/gabriel/dev/blitz/blitzWidget/blitzWidget.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Station Departure in %@",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 172
+        }
+      },
+      {
+        "comment": "",
+        "key": "Plat. %@",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 182
+        }
+      },
+      {
+        "comment": "",
+        "key": "Time left: %@",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 241
+        }
+      },
+      {
+        "comment": "",
+        "key": "Arrived",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 289
+        }
+      },
+      {
+        "comment": "",
+        "key": "at",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 295
+        }
+      },
+      {
+        "comment": "",
+        "key": "BLITZ",
+        "location": {
+          "startingColumn": 14,
+          "startingLine": 306
+        }
+      },
+      {
+        "comment": "",
+        "key": "Delayed",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 390
+        }
+      },
+      {
+        "comment": "",
+        "key": "On Schedule",
+        "location": {
+          "startingColumn": 44,
+          "startingLine": 390
+        }
+      },
+      {
+        "comment": "",
+        "key": "P%@",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 422
+        }
+      }
+    ]
+  },
+  "version": 1
+}

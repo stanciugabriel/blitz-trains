@@ -1,0 +1,400 @@
+{
+  "source": "/Users/gabriel/dev/blitz/blitz/TripDetailSheet.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 74
+        }
+      },
+      {
+        "comment": "",
+        "key": "Details",
+        "location": {
+          "startingColumn": 46,
+          "startingLine": 82
+        }
+      },
+      {
+        "comment": "",
+        "key": "Speed",
+        "location": {
+          "startingColumn": 58,
+          "startingLine": 82
+        }
+      },
+      {
+        "comment": "",
+        "key": "Sync",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 97
+        }
+      },
+      {
+        "comment": "",
+        "key": "Stop Live",
+        "location": {
+          "startingColumn": 49,
+          "startingLine": 118
+        }
+      },
+      {
+        "comment": "",
+        "key": "Live",
+        "location": {
+          "startingColumn": 63,
+          "startingLine": 118
+        }
+      },
+      {
+        "comment": "",
+        "key": "Delays",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 130
+        }
+      },
+      {
+        "comment": "",
+        "key": "Schedule information unavailable for this trip.",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 207
+        }
+      },
+      {
+        "comment": "",
+        "key": "Calibrating speed sensors…",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 251
+        }
+      },
+      {
+        "comment": "",
+        "key": "Current Speed",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 267
+        }
+      },
+      {
+        "comment": "",
+        "key": "km/h",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 275
+        }
+      },
+      {
+        "comment": "",
+        "key": "Track Speed Limit",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 296
+        }
+      },
+      {
+        "comment": "",
+        "key": "km/h",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 303
+        }
+      },
+      {
+        "comment": "",
+        "key": "GPS Status",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 336
+        }
+      },
+      {
+        "comment": "",
+        "key": "•",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 628
+        }
+      },
+      {
+        "comment": "",
+        "key": "Overnight",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 633
+        }
+      },
+      {
+        "comment": "",
+        "key": "Good to Know",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 1079
+        }
+      },
+      {
+        "comment": "",
+        "key": "Arrival Weather",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 1306
+        }
+      },
+      {
+        "comment": "",
+        "key": "My History on This Route",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 1331
+        }
+      },
+      {
+        "comment": "",
+        "key": "Arrival Forecast",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 1412
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld%%",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 1434
+        }
+      },
+      {
+        "comment": "",
+        "key": "About the Train",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 1500
+        }
+      },
+      {
+        "comment": "",
+        "key": "Tap to edit seats, license & traction",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 1502
+        }
+      },
+      {
+        "comment": "",
+        "key": "Set traction",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 1779
+        }
+      },
+      {
+        "comment": "",
+        "key": "Station Delays",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 2170
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 2173
+        }
+      },
+      {
+        "comment": "",
+        "key": "Track Speed Limit",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 2185
+        }
+      },
+      {
+        "comment": "",
+        "key": "km/h",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 2194
+        }
+      },
+      {
+        "comment": "",
+        "key": "Station Delays",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 2378
+        }
+      },
+      {
+        "comment": "",
+        "key": "No station-level delay data yet.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 2382
+        }
+      },
+      {
+        "comment": "",
+        "key": "+1",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 2578
+        }
+      },
+      {
+        "comment": "",
+        "key": "•",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 2587
+        }
+      },
+      {
+        "comment": "",
+        "key": "Seat & Train Details",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 2671
+        }
+      },
+      {
+        "comment": "",
+        "key": "Coach",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 2641
+        }
+      },
+      {
+        "comment": "",
+        "key": "Seats",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 2647
+        }
+      },
+      {
+        "comment": "",
+        "key": "Train License",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 2653
+        }
+      },
+      {
+        "comment": "",
+        "key": "Traction",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 2659
+        }
+      },
+      {
+        "comment": "",
+        "key": "e.g. 12",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 2642
+        }
+      },
+      {
+        "comment": "",
+        "key": "e.g. 22A, 22B",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 2648
+        }
+      },
+      {
+        "comment": "",
+        "key": "e.g. 90 53 0481 001-2",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 2654
+        }
+      },
+      {
+        "comment": "",
+        "key": "Power",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 2660
+        }
+      },
+      {
+        "comment": "",
+        "key": "Not set",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 2661
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 2674
+        }
+      },
+      {
+        "comment": "",
+        "key": "Ticket",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 2731
+        }
+      },
+      {
+        "comment": "",
+        "key": "Point your camera at the QR code to save it for easy access.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 2713
+        }
+      },
+      {
+        "comment": "",
+        "key": "No QR code available.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 2724
+        }
+      },
+      {
+        "comment": "",
+        "key": "Scan Again",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 2719
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 2735
+        }
+      },
+      {
+        "comment": "",
+        "key": "Scanner unavailable on this device.",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 2805
+        }
+      }
+    ]
+  },
+  "version": 1
+}

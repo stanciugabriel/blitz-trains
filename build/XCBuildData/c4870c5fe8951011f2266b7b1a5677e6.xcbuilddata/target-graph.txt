@@ -1,0 +1,6 @@
+Target dependency graph (3 targets)
+Target 'blitzTests' in project 'blitz'
+➜ Explicit dependency on target 'blitz' in project 'blitz'
+Target 'blitz' in project 'blitz'
+➜ Explicit dependency on target 'blitzWidgetExtension' in project 'blitz'
+Target 'blitzWidgetExtension' in project 'blitz' (no dependencies)

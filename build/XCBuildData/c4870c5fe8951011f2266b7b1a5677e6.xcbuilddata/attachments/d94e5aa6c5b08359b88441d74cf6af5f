@@ -1,0 +1,169 @@
+{
+  "" : {
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary.dia",
+    "emit-module-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary-emit-module.dia",
+    "pch" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary.swiftdeps"
+  },
+  "/Users/gabriel/dev/blitz/Shared/TrainLiveActivityAttributes.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TrainLiveActivityAttributes.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TrainLiveActivityAttributes.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TrainLiveActivityAttributes.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TrainLiveActivityAttributes.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TrainLiveActivityAttributes.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TrainLiveActivityAttributes.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TrainLiveActivityAttributes.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TrainLiveActivityAttributes~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/AgencyPlaceholder.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/AgencyPlaceholder.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/AgencyPlaceholder.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/AgencyPlaceholder.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/AgencyPlaceholder.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/AgencyPlaceholder.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/AgencyPlaceholder.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/AgencyPlaceholder.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/AgencyPlaceholder~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/DeviceLocationProvider.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/DeviceLocationProvider.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/DeviceLocationProvider.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/DeviceLocationProvider.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/DeviceLocationProvider.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/DeviceLocationProvider.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/DeviceLocationProvider.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/DeviceLocationProvider.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/DeviceLocationProvider~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/GTFSDataSource.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GTFSDataSource.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GTFSDataSource.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GTFSDataSource.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GTFSDataSource.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GTFSDataSource.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GTFSDataSource.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GTFSDataSource.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GTFSDataSource~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/InfoFerScraper.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/InfoFerScraper.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/InfoFerScraper.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/InfoFerScraper.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/InfoFerScraper.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/InfoFerScraper.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/InfoFerScraper.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/InfoFerScraper.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/InfoFerScraper~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/LiveActivityManager.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveActivityManager.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveActivityManager.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveActivityManager.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveActivityManager.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveActivityManager.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveActivityManager.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveActivityManager.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveActivityManager~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/LiveDelayStore.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveDelayStore.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveDelayStore.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveDelayStore.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveDelayStore.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveDelayStore.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveDelayStore.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveDelayStore.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/LiveDelayStore~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/MainSheetContent.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/MainSheetContent.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/MainSheetContent.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/MainSheetContent.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/MainSheetContent.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/MainSheetContent.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/MainSheetContent.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/MainSheetContent.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/MainSheetContent~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/OperatorBranding.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/OperatorBranding.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/OperatorBranding.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/OperatorBranding.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/OperatorBranding.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/OperatorBranding.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/OperatorBranding.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/OperatorBranding.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/OperatorBranding~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/ScheduleDateUtils.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/ScheduleDateUtils.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/ScheduleDateUtils.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/ScheduleDateUtils.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/ScheduleDateUtils.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/ScheduleDateUtils.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/ScheduleDateUtils.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/ScheduleDateUtils.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/ScheduleDateUtils~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/StaticPlatformDataSource.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/StaticPlatformDataSource.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/StaticPlatformDataSource.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/StaticPlatformDataSource.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/StaticPlatformDataSource.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/StaticPlatformDataSource.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/StaticPlatformDataSource.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/StaticPlatformDataSource.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/StaticPlatformDataSource~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/TripDetailSheet.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripDetailSheet.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripDetailSheet.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripDetailSheet.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripDetailSheet.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripDetailSheet.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripDetailSheet.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripDetailSheet.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripDetailSheet~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/TripStorage.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripStorage.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripStorage.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripStorage.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripStorage.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripStorage.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripStorage.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripStorage.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripStorage~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/TripTimingResolver.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripTimingResolver.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripTimingResolver.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripTimingResolver.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripTimingResolver.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripTimingResolver.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripTimingResolver.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripTimingResolver.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/TripTimingResolver~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/blitz/blitzApp.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitzApp.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitzApp.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitzApp.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitzApp.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitzApp.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitzApp.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitzApp.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/blitzApp~partial.swiftmodule"
+  },
+  "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Debug-iphoneos/blitz.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}

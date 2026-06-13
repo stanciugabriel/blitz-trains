@@ -1,0 +1,12 @@
+{
+  "/Users/gabriel/dev/blitz/Shared/TrainLiveActivityAttributes.swift" : {
+    "abi-baseline-json" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz.abi.json",
+    "const-values" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary.swiftconstvalues",
+    "dependencies" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary.d",
+    "diagnostics" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz-primary.dia",
+    "objc-header" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz-Swift.h",
+    "swiftdoc" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz.swiftdoc",
+    "swiftmodule" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz.swiftmodule",
+    "swiftsourceinfo" : "/Users/gabriel/dev/blitz/build/blitz.build/Release-iphoneos/blitz.build/Objects-normal/arm64/blitz.swiftsourceinfo"
+  }
+}

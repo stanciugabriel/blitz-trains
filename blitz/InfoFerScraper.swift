@@ -10,17 +10,75 @@ struct StationDelay: Equatable, Codable {
     let platform: String?
 }
 
+struct InfoFerLiveCoordinate: Equatable, Codable {
+    let latitude: Double
+    let longitude: Double
+    let sourceText: String?
+    let fetchedAt: Date?
+
+    init(
+        latitude: Double,
+        longitude: Double,
+        sourceText: String?,
+        fetchedAt: Date? = Date()
+    ) {
+        self.latitude = latitude
+        self.longitude = longitude
+        self.sourceText = sourceText
+        self.fetchedAt = fetchedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case latitude
+        case longitude
+        case sourceText
+        case fetchedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        latitude = try container.decode(Double.self, forKey: .latitude)
+        longitude = try container.decode(Double.self, forKey: .longitude)
+        sourceText = try container.decodeIfPresent(String.self, forKey: .sourceText)
+        fetchedAt = try container.decodeIfPresent(Date.self, forKey: .fetchedAt)
+    }
+}
+
+struct InfoFerMapInfo: Equatable {
+    let routePolylines: [StoredRoutePolyline]
+    let liveCoordinate: InfoFerLiveCoordinate?
+    let gpsPermanentlyUnavailable: Bool
+}
+
 struct DelayInfo: Equatable, Codable {
     let delayMinutes: Int?
     let platform: String?
     let statusText: String?
     let stationDelays: [StationDelay]
+    let liveCoordinate: InfoFerLiveCoordinate?
 
-    init(delayMinutes: Int?, platform: String?, statusText: String? = nil, stationDelays: [StationDelay] = []) {
+    init(
+        delayMinutes: Int?,
+        platform: String?,
+        statusText: String? = nil,
+        stationDelays: [StationDelay] = [],
+        liveCoordinate: InfoFerLiveCoordinate? = nil
+    ) {
         self.delayMinutes = delayMinutes
         self.platform = platform
         self.statusText = statusText
         self.stationDelays = stationDelays
+        self.liveCoordinate = liveCoordinate
+    }
+
+    func updatingLiveCoordinate(_ coordinate: InfoFerLiveCoordinate?) -> DelayInfo {
+        DelayInfo(
+            delayMinutes: delayMinutes,
+            platform: platform,
+            statusText: statusText,
+            stationDelays: stationDelays,
+            liveCoordinate: coordinate
+        )
     }
 }
 
@@ -128,6 +186,55 @@ final class InfoFerScraper {
             return DelayInfo(delayMinutes: nil, platform: nil)
         }
     }
+
+    func fetchMapInfo(
+        for trainNumber: String,
+        travelDate: Date?,
+        departureTime: String
+    ) async -> InfoFerMapInfo {
+        guard let cookies = InfoFerSessionManager.shared.storedCookies() else {
+            print("[InfoFerScraper] ❌ Missing cookies for route map")
+            return InfoFerMapInfo(routePolylines: [], liveCoordinate: nil, gpsPermanentlyUnavailable: false)
+        }
+
+        do {
+            let formattedDate = InfoFerSessionManager.formatDate(travelDate ?? Date())
+            let mapHTML = try await requestMapHTML(
+                for: trainNumber,
+                dateString: formattedDate,
+                departureTime: departureTime,
+                cookies: cookies
+            )
+            let polylines = parseRoutePolylines(from: mapHTML)
+            let liveCoordinate = parseTrustedLiveCoordinate(from: mapHTML, travelDate: travelDate ?? Date())
+            let gpsPermanentlyUnavailable = containsEstimatedCFRPosition(in: mapHTML)
+            #if DEBUG
+            print("[InfoFerScraper] Map route found \(polylines.count) polyline segments; GPS=\(liveCoordinate != nil ? "yes" : "no")")
+            printLiveCoordinateDebugInfo(from: mapHTML, liveCoordinate: liveCoordinate, gpsPermanentlyUnavailable: gpsPermanentlyUnavailable)
+            #endif
+            return InfoFerMapInfo(
+                routePolylines: polylines,
+                liveCoordinate: liveCoordinate,
+                gpsPermanentlyUnavailable: gpsPermanentlyUnavailable
+            )
+        } catch {
+            print("[InfoFerScraper] ❌ Map scrape failed: \(error)")
+            return InfoFerMapInfo(routePolylines: [], liveCoordinate: nil, gpsPermanentlyUnavailable: false)
+        }
+    }
+
+    func fetchRoutePolylines(
+        for trainNumber: String,
+        travelDate: Date?,
+        departureTime: String
+    ) async -> [StoredRoutePolyline] {
+        await fetchMapInfo(
+            for: trainNumber,
+            travelDate: travelDate,
+            departureTime: departureTime
+        ).routePolylines
+    }
+
     // --- Networking ---
 
     private func requestShellHTML(for trainNumber: String, dateString: String, cookies: [HTTPCookie]) async throws -> String {
@@ -140,6 +247,37 @@ final class InfoFerScraper {
         request.addValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", forHTTPHeaderField: "User-Agent")
 
         let (data, _) = try await URLSession.shared.data(for: request)
+        guard let html = String(data: data, encoding: .utf8) else { throw URLError(.cannotDecodeRawData) }
+        return html
+    }
+
+    private func requestMapHTML(
+        for trainNumber: String,
+        dateString: String,
+        departureTime: String,
+        cookies: [HTTPCookie]
+    ) async throws -> String {
+        var components = URLComponents(string: "https://mersultrenurilor.infofer.ro/ro-RO/Trains/LoadTrainMapPartial")
+        components?.queryItems = [
+            URLQueryItem(name: "RunningNumber", value: trainNumber),
+            URLQueryItem(name: "DepartureDateTime", value: "\(dateString) \(departureTime)"),
+            URLQueryItem(name: "_", value: "\(Int(Date().timeIntervalSince1970 * 1000))")
+        ]
+        guard let url = components?.url else { throw URLError(.badURL) }
+
+        var request = URLRequest(url: url)
+        let headers = HTTPCookie.requestHeaderFields(with: cookies)
+        headers.forEach { request.addValue($0.value, forHTTPHeaderField: $0.key) }
+        request.addValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+        request.addValue("https://mersultrenurilor.infofer.ro/ro-RO/Tren/\(trainNumber)?__Invariant=TrainRunningNumber&Date=\(dateString)", forHTTPHeaderField: "Referer")
+        request.addValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", forHTTPHeaderField: "User-Agent")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 20
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+            throw URLError(.badServerResponse)
+        }
         guard let html = String(data: data, encoding: .utf8) else { throw URLError(.cannotDecodeRawData) }
         return html
     }
@@ -323,6 +461,160 @@ final class InfoFerScraper {
         guard let raw = firstMatch(in: decoded, pattern: pattern, groupIndex: 1) else { return nil }
         let sanitized = raw.components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
         return sanitized.isEmpty ? nil : sanitized
+    }
+
+    private func parseRoutePolylines(from html: String) -> [StoredRoutePolyline] {
+        let encodedSegments = allMatches(
+            in: html,
+            pattern: #"L\.PolylineUtil\.decode\("([^"]+)"\)"#
+        )
+
+        return encodedSegments.compactMap { rawSegment in
+            let decodedString = decodeJavaScriptString(rawSegment)
+            let points = decodePolyline(decodedString)
+            guard points.count > 1 else { return nil }
+            return StoredRoutePolyline(points: points)
+        }
+    }
+
+    func parseTrustedLiveCoordinate(from html: String, travelDate: Date) -> InfoFerLiveCoordinate? {
+        let visibleText = visibleText(from: html)
+        let normalizedText = visibleText
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+
+        guard !containsEstimatedCFRPosition(in: html) else { return nil }
+        guard normalizedText.contains("ultima pozitie gps la") || normalizedText.contains("raportat de personalul cfr la") else { return nil }
+
+        guard
+            let latitudeText = firstMapCoordinateValue(in: html, axis: "Latitude")?.value,
+            let longitudeText = firstMapCoordinateValue(in: html, axis: "Longitude")?.value,
+            let latitude = Double(latitudeText),
+            let longitude = Double(longitudeText)
+        else { return nil }
+
+        return InfoFerLiveCoordinate(
+            latitude: latitude,
+            longitude: longitude,
+            sourceText: visibleText.isEmpty ? nil : visibleText
+        )
+    }
+
+    func containsEstimatedCFRPosition(in html: String) -> Bool {
+        let visibleText = visibleText(from: html)
+        let normalizedText = visibleText
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+        return normalizedText.contains("pozitie estimata pe baza raportarii cfr")
+    }
+
+    private func printLiveCoordinateDebugInfo(
+        from html: String,
+        liveCoordinate: InfoFerLiveCoordinate?,
+        gpsPermanentlyUnavailable: Bool
+    ) {
+        let visibleText = visibleText(from: html)
+        let normalizedText = visibleText
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+        let message = firstLiveCoordinateMessage(in: visibleText) ?? "No GPS/CFR position message found in visible map text."
+        let latitude = firstMapCoordinateValue(in: html, axis: "Latitude")
+        let longitude = firstMapCoordinateValue(in: html, axis: "Longitude")
+        let hasTrustedGPSMessage = normalizedText.contains("ultima pozitie gps la")
+            || normalizedText.contains("raportat de personalul cfr la")
+
+        print("[InfoFerScraper] Map GPS message/block: \(message)")
+        print("[InfoFerScraper] Map trainGPS position: latitude=\(latitude?.value ?? "nil") (\(latitude?.name ?? "missing")), longitude=\(longitude?.value ?? "nil") (\(longitude?.name ?? "missing"))")
+        print("[InfoFerScraper] Map GPS decision: trustedMessage=\(hasTrustedGPSMessage), estimatedOnly=\(gpsPermanentlyUnavailable), acceptedCoordinate=\(liveCoordinate != nil)")
+    }
+
+    private func firstMapCoordinateValue(in html: String, axis: String) -> (name: String, value: String)? {
+        for prefix in ["lastGpsPosition", "theoreticalGpsPosition"] {
+            let name = "\(prefix)\(axis)"
+            if let value = firstMatch(
+                in: html,
+                pattern: #"\#(name)\s*=\s*([-+]?\d+(?:\.\d+)?);"#,
+                groupIndex: 1
+            ) {
+                return (name, value)
+            }
+        }
+
+        return nil
+    }
+
+    private func firstLiveCoordinateMessage(in visibleText: String) -> String? {
+        let pattern = #"(?i)(?:Ultima pozi(?:ț|t)ie GPS la|RAPORTAT de personalul CFR la|Pozi(?:ț|t)ie ESTIMAT(?:Ă|A) pe baza raport(?:ă|a)rii CFR).{0,300}"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let nsText = visibleText as NSString
+        let range = NSRange(location: 0, length: nsText.length)
+        guard let match = regex.firstMatch(in: visibleText, options: [], range: range) else { return nil }
+        return nsText.substring(with: match.range)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func visibleText(from html: String) -> String {
+        let textIncludingScriptTemplates = html
+            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return decodeHTMLEntities(textIncludingScriptTemplates)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func decodeJavaScriptString(_ value: String) -> String {
+        let escaped = value.replacingOccurrences(of: "\"", with: "\\\"")
+        let jsonString = "\"\(escaped)\""
+        if let data = jsonString.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode(String.self, from: data) {
+            return decoded
+        }
+
+        return value
+            .replacingOccurrences(of: "\\\\", with: "\\")
+            .replacingOccurrences(of: "\\\"", with: "\"")
+    }
+
+    private func decodePolyline(_ encoded: String, precision: Double = 1e5) -> [StoredRoutePoint] {
+        let scalars = Array(encoded.unicodeScalars)
+        var index = 0
+        var latitude = 0
+        var longitude = 0
+        var points: [StoredRoutePoint] = []
+
+        while index < scalars.count {
+            guard let deltaLatitude = decodePolylineComponent(scalars: scalars, index: &index) else { break }
+            guard let deltaLongitude = decodePolylineComponent(scalars: scalars, index: &index) else { break }
+
+            latitude += deltaLatitude
+            longitude += deltaLongitude
+            points.append(
+                StoredRoutePoint(
+                    latitude: Double(latitude) / precision,
+                    longitude: Double(longitude) / precision
+                )
+            )
+        }
+
+        return points
+    }
+
+    private func decodePolylineComponent(scalars: [String.UnicodeScalarView.Element], index: inout Int) -> Int? {
+        var shift = 0
+        var result = 0
+
+        while index < scalars.count {
+            let byte = Int(scalars[index].value) - 63
+            index += 1
+            result |= (byte & 0x1f) << shift
+            shift += 5
+
+            if byte < 0x20 {
+                return (result & 1) != 0 ? ~(result >> 1) : (result >> 1)
+            }
+        }
+
+        return nil
     }
 
     // --- Helpers ---

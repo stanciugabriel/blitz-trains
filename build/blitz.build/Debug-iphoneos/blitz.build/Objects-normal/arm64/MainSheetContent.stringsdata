@@ -1,0 +1,240 @@
+{
+  "source": "/Users/gabriel/dev/blitz/blitz/MainSheetContent.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Delete Trip?",
+        "location": {
+          "startingColumn": 16,
+          "startingLine": 144
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel",
+        "location": {
+          "startingColumn": 41,
+          "startingLine": 571
+        }
+      },
+      {
+        "comment": "",
+        "key": "Back",
+        "location": {
+          "startingColumn": 52,
+          "startingLine": 571
+        }
+      },
+      {
+        "comment": "",
+        "key": "Delete",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 145
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 148
+        }
+      },
+      {
+        "comment": "",
+        "key": "This trip will be removed from My Trips.",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 152
+        }
+      },
+      {
+        "comment": "",
+        "key": "Delete",
+        "location": {
+          "startingColumn": 39,
+          "startingLine": 284
+        }
+      },
+      {
+        "comment": "",
+        "key": "Choose travel date",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 328
+        }
+      },
+      {
+        "comment": "",
+        "key": "Travel Date",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 331
+        }
+      },
+      {
+        "comment": "",
+        "key": "Next: Choose your origin station",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 354
+        }
+      },
+      {
+        "comment": "",
+        "key": "Continue to Origin",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 360
+        }
+      },
+      {
+        "comment": "",
+        "key": "Stop #%lld",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 398
+        }
+      },
+      {
+        "comment": "",
+        "key": "Adding random trip…",
+        "location": {
+          "startingColumn": 47,
+          "startingLine": 418
+        }
+      },
+      {
+        "comment": "",
+        "key": "Add a random active trip",
+        "location": {
+          "startingColumn": 73,
+          "startingLine": 418
+        }
+      },
+      {
+        "comment": "",
+        "key": "SCHEDULED",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 1406
+        }
+      },
+      {
+        "comment": "",
+        "key": "%@ at %@",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 1782
+        }
+      },
+      {
+        "comment": "",
+        "key": "Connection",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 1814
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 1817
+        }
+      },
+      {
+        "comment": "",
+        "key": "Stay at %@",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 1832
+        }
+      },
+      {
+        "comment": "",
+        "key": "Timeline",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 1841
+        }
+      },
+      {
+        "comment": "",
+        "key": "Connection tips",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 1860
+        }
+      },
+      {
+        "comment": "",
+        "key": "Past Rides",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 2036
+        }
+      },
+      {
+        "comment": "",
+        "key": "Delete",
+        "location": {
+          "startingColumn": 43,
+          "startingLine": 2026
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 2039
+        }
+      },
+      {
+        "comment": "",
+        "key": "Rail Log",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 2139
+        }
+      },
+      {
+        "comment": "",
+        "key": "All past rides combined",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 2141
+        }
+      },
+      {
+        "comment": "",
+        "key": "Delay Pattern",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 2175
+        }
+      },
+      {
+        "comment": "",
+        "key": "Arrival outcomes across past rides",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 2177
+        }
+      },
+      {
+        "comment": "",
+        "key": "Search to add trains",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 2299
+        }
+      }
+    ]
+  },
+  "version": 1
+}

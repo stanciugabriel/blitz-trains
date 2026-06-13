@@ -3,6 +3,16 @@
     {
       "filename" : "cfr.png",
       "idiom" : "universal"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ],
+      "filename" : "cfr 1.png",
+      "idiom" : "universal"
     }
   ],
   "info" : {
