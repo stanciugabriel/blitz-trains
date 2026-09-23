@@ -1,14 +1,44 @@
 import SwiftUI
 import MapKit
 import Combine
+import BackgroundTasks
+
+final class BlitzAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: automaticLiveActivityTaskIdentifier, using: nil) { task in
+            guard let task = task as? BGAppRefreshTask else { return }
+            task.expirationHandler = { }
+            Task { @MainActor in
+                LiveActivityManager.shared.startScheduledActivities()
+                LiveActivityManager.shared.scheduleNextAutomaticStart()
+                task.setTaskCompleted(success: true)
+            }
+        }
+        LiveActivityManager.shared.scheduleNextAutomaticStart()
+        return true
+    }
+}
 
 @main
 struct BlitzApp: App {
+    @UIApplicationDelegateAdaptor(BlitzAppDelegate.self) private var appDelegate
+
     var body: some Scene {
         WindowGroup {
             ContentView()
         }
     }
+}
+
+struct MissedTrainPrompt: Identifiable {
+    let id: String
+    let trainTitle: String
+    let originStopID: String
+    let destinationStopID: String?
+    let trainID: String?
 }
 
 struct ContentView: View {
@@ -30,29 +60,54 @@ struct ContentView: View {
     @State private var liveTrainClock = Date()
     @State private var trackingRefreshRevision = 0
     @State private var hasSyncedTripsOnLaunch = false
+    @State private var missedTrainPrompt: MissedTrainPrompt?
+    @State private var dismissedMissedTrainPromptIDs: Set<String> = []
+    @State private var missedTrainOriginal: Trip?
+    @State private var missedTrainAlternatives: [Trip] = []
+    @State private var isShowingMissedTrainAlternatives = false
+    @State private var missedTrainDiagnosticText: String?
     @State private var usesGlobeMapStyle = false
+    @State private var isSpeedCapsuleRevealed = false
+    @State private var speedCapsuleHideTask: Task<Void, Never>?
+    @State private var speedLimitSegments: [GTFSSegment] = []
     @StateObject private var locationProvider = DeviceLocationProvider()
-    private let liveTrainTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    @StateObject private var locationPhaseDetector = TripLocationPhaseDetector()
+    // The detail sheet owns its own one-second countdown timeline. The map
+    // only needs a lower-frequency clock for interpolation and missed-train
+    // checks, which avoids rebuilding the full Map every second.
+    private let liveTrainTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
     private let liveActivityRefreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
-    var body: some View {
-        let detailState: DetailMapState? = {
-            guard let trip = selectedTrip, !isAddTripMode else { return nil }
-            return detailMapState(for: trip)
-        }()
-        let shouldShowUserLocation = shouldDisplayUserLocationDot(for: detailState)
-        let shouldShowLiveTrainMarker = shouldDisplayLiveTrainMarker(
-            for: detailState,
+    private var currentDetailState: DetailMapState? {
+        guard let trip = selectedTrip, !isAddTripMode else { return nil }
+        return detailMapState(for: trip)
+    }
+
+    private var shouldShowUserLocation: Bool {
+        shouldDisplayUserLocationDot(for: currentDetailState)
+    }
+
+    private var shouldShowLiveTrainMarker: Bool {
+        shouldDisplayLiveTrainMarker(
+            for: currentDetailState,
             userLocationVisible: shouldShowUserLocation
         )
+    }
 
+    private var mapView: some View {
+        let detailState = currentDetailState
+        let showUserLocation = shouldDisplayUserLocationDot(for: detailState)
+        let showTrainMarker = shouldDisplayLiveTrainMarker(
+            for: detailState,
+            userLocationVisible: showUserLocation
+        )
 
-        Map(position: $mapPosition) {
-            if shouldShowUserLocation {
+        return Map(position: $mapPosition) {
+            if showUserLocation {
                 UserAnnotation()
             }
-            if let state = detailState {
-                detailMapContent(state: state, showLiveTrainMarker: shouldShowLiveTrainMarker)
+            if let detailState {
+                detailMapContent(state: detailState, showLiveTrainMarker: showTrainMarker)
             } else {
                 dashboardMapContent()
             }
@@ -64,7 +119,7 @@ struct ContentView: View {
         .overlay(alignment: .topTrailing) {
             MapToolbarButtons(
                 isGlobeStyle: usesGlobeMapStyle,
-                showLocationButton: shouldShowUserLocation,
+                showLocationButton: showUserLocation,
                 onToggleStyle: {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                         usesGlobeMapStyle.toggle()
@@ -79,11 +134,52 @@ struct ContentView: View {
             .padding(.top, 52)
             .padding(.trailing, 16)
         }
+        .overlay(alignment: .top) {
+            if let trip = activeMapTrip {
+                mapSpeedCapsule(for: trip)
+                    .padding(.top, 52)
+                    .padding(.horizontal, 76)
+            }
+        }
+#if DEBUG
+        .overlay(alignment: .topLeading) {
+            if TripLocationDetectionPreferences.missedTrainDebugUIEnabled {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let diagnostic = missedTrainDiagnosticText {
+                        Text(diagnostic)
+                    }
+                    if TripLocationDetectionPreferences.missedTrainSimulationEnabled,
+                       let trip = activeMapTrip {
+                        Button("Simulate missed train") {
+                            simulateMissedTrain(for: trip)
+                        }
+                        .font(.caption2.weight(.semibold))
+                    }
+                }
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 1) }
+                .padding(.top, 104)
+                .padding(.leading, 16)
+            }
+        }
+#endif
         .safeAreaInset(edge: .top, alignment: .center) {
             Color.clear
                 .frame(height: 20)
         }
         .ignoresSafeArea()
+    }
+
+    var body: some View {
+        eventHandlersView
+    }
+
+    private var mapWithSheet: some View {
+        mapView
         .sheet(isPresented: $isSheetPresented) {
             SheetContent(
                 trips: $trips,
@@ -91,7 +187,14 @@ struct ContentView: View {
                 isAddTripMode: addTripModeBinding,
                 trainSearchQuery: $trainSearchQuery,
                 pastTrips: $pastTrips,
-                onTripAdded: syncTripAfterAdd
+                missedTrainPrompt: $missedTrainPrompt,
+                isShowingMissedTrainAlternatives: $isShowingMissedTrainAlternatives,
+                missedTrainAlternatives: missedTrainAlternatives,
+                locationPhaseDetector: locationPhaseDetector,
+                onTripAdded: syncTripAfterAdd,
+                onMissedTrainFindAlternatives: findMissedTrainAlternatives,
+                onMissedTrainKeepTracking: dismissMissedTrainPrompt,
+                onSelectMissedTrainAlternative: selectAlternative
             )
             .presentationDetents(detents, selection: $selectedDetent)
             .presentationBackground(Color(.systemBackground))
@@ -99,6 +202,10 @@ struct ContentView: View {
             .presentationDragIndicator(.hidden)
             .interactiveDismissDisabled(true)
         }
+    }
+
+    private var stateHandlersView: some View {
+        mapWithSheet
         .onChange(of: isAddTripMode) { _, newValue in
             if !newValue {
                 DispatchQueue.main.async {
@@ -107,10 +214,17 @@ struct ContentView: View {
             }
             if newValue {
                 locationProvider.disableTracking()
+            } else {
+                updateLocationPhaseDetection(for: selectedTrip)
+                updateTrackingState(using: currentDetailState?.trackingResult)
             }
             updateCameraForCurrentState()
         }
         .onChange(of: selectedTrip) { _, newValue in
+            isSpeedCapsuleRevealed = false
+            speedCapsuleHideTask?.cancel()
+            speedLimitSegments = []
+            preloadRouteData(for: newValue)
             if newValue != nil {
                 DispatchQueue.main.async {
                     selectedDetent = .medium
@@ -121,16 +235,44 @@ struct ContentView: View {
                 }
                 locationProvider.disableTracking()
             }
+            updateLocationPhaseDetection(for: newValue)
+            updateTrackingState(using: currentDetailState?.trackingResult)
             updateCameraForCurrentState()
         }
+    }
+
+    private var lifecycleHandlersView: some View {
+        stateHandlersView
+        .onChange(of: locationProvider.lastLocation?.timestamp) { _, _ in
+            updateLocationPhaseDetection(for: selectedTrip)
+            evaluateMissedTrainSuggestion(for: selectedTrip)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .tripLocationDetectionPreferenceChanged)) { _ in
+            updateLocationPhaseDetection(for: selectedTrip)
+            updateTrackingState(using: nil)
+        }
         .onAppear {
+            locationPhaseDetector.removeExpired()
+            MissedTrainPromptStore.prune()
             updateCameraForCurrentState(animated: false)
+            preloadRouteData(for: selectedTrip)
+            updateLocationPhaseDetection(for: selectedTrip)
+            evaluateMissedTrainSuggestion(for: selectedTrip)
+            // A SwiftUI task may not rerun when the app returns from suspension
+            // with the same selected trip, so explicitly restart reconciliation.
+            updateTrackingState(using: currentDetailState?.trackingResult)
             syncTripsOnLaunchIfNeeded()
         }
+    }
+
+    private var timerHandlersView: some View {
+        lifecycleHandlersView
         .onReceive(liveTrainTimer) { value in
+            guard selectedTrip != nil else { return }
             withAnimation(.linear(duration: 1)) {
                 liveTrainClock = value
             }
+            evaluateMissedTrainSuggestion(for: selectedTrip)
         }
         .onReceive(liveActivityRefreshTimer) { _ in
             refreshRunningLiveActivities()
@@ -145,14 +287,28 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
+            updateLocationPhaseDetection(for: selectedTrip)
+            evaluateMissedTrainSuggestion(for: selectedTrip)
+            // Reconcile the persisted last fix and resume future location fixes
+            // even when the selected trip itself did not change.
+            updateTrackingState(using: currentDetailState?.trackingResult)
+            LiveActivityManager.shared.startScheduledActivities()
+            LiveActivityManager.shared.scheduleNextAutomaticStart()
             refreshRunningLiveActivities()
         }
+    }
+
+    private var eventHandlersView: some View {
+        timerHandlersView
         .onChange(of: trips) { _, newValue in
             TripStorage.shared.saveTrips(newValue)
             updateCameraForCurrentState()
         }
         .onChange(of: trips) { oldValue, newValue in
             let activeIDs = Set(newValue.map(\.id))
+            let removedIDs = Set(oldValue.map(\.id)).subtracting(activeIDs)
+            locationPhaseDetector.remove(tripIDs: removedIDs)
+            TripDelayFusionStore.shared.remove(tripIDs: removedIDs)
             oldValue
                 .filter { !activeIDs.contains($0.id) }
                 .forEach { LiveActivityManager.shared.endActivity(for: $0.id) }
@@ -161,13 +317,123 @@ struct ContentView: View {
             TripStorage.shared.savePastTrips(newValue)
         }
         // Run tracking side effect when the selected trip or user-location visibility changes.
-        .task(id: trackingTaskKey(for: detailState)) {
-            updateTrackingState(using: detailState?.trackingResult)
+        .task(id: trackingTaskKey(for: currentDetailState)) {
+            updateTrackingState(using: currentDetailState?.trackingResult)
         }
     }
 
     private var detents: Set<PresentationDetent> {
         isAddTripMode ? [.large] : [.fraction(0.3), .medium, .large]
+    }
+
+    private var activeMapTrip: Trip? {
+        guard let selectedTrip else { return nil }
+        return trips.first(where: { $0.id == selectedTrip.id })
+    }
+
+    private var showsSpeedCapsuleDetails: Bool {
+        TripLocationDetectionPreferences.continuousSpeedCapsuleEnabled || isSpeedCapsuleRevealed
+    }
+
+    private func mapSpeedCapsule(for trip: Trip) -> some View {
+        let speedLimit = mapSpeedLimitValue(for: trip)
+        return Button(action: revealSpeedCapsule) {
+            HStack(spacing: 8) {
+                Image(systemName: "speedometer")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.orange)
+
+                if showsSpeedCapsuleDetails {
+                    if hasCurrentSpeedFix {
+                        Text("\(mapSpeedDisplayValue) km/h")
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .contentTransition(.numericText())
+                            .animation(.snappy(duration: 0.25), value: mapSpeedDisplayValue)
+                    } else {
+                        HStack(spacing: 5) {
+                            ProgressView()
+                                .controlSize(.mini)
+                            Text("GPS…")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                    Text("•")
+                        .foregroundStyle(.secondary)
+                        Text("Limit \(speedLimit) km/h")
+                        .font(.subheadline.weight(.medium).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .animation(.snappy(duration: 0.25), value: speedLimit)
+                } else {
+                    Text("Speed")
+                        .font(.subheadline.weight(.semibold))
+                    Image(systemName: "hand.tap")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay {
+                Capsule().stroke(Color.white.opacity(0.24), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(showsSpeedCapsuleDetails ? "Current speed and speed limit" : "Show current speed and speed limit")
+        .accessibilityValue(showsSpeedCapsuleDetails ? (hasCurrentSpeedFix ? "\(mapSpeedDisplayValue) kilometres per hour, limit \(speedLimit)" : "Acquiring GPS speed, limit \(speedLimit)") : "Hidden to save battery")
+        .task(id: trip.id) {
+            let identifier = trip.gtfsTripId ?? trip.id
+            let loaded = await Task.detached(priority: .utility) {
+                GTFSDataSource.shared.segments(for: identifier)
+            }.value
+            guard activeMapTrip?.id == trip.id else { return }
+            speedLimitSegments = loaded
+        }
+    }
+
+    private var mapSpeedDisplayValue: String {
+        guard let speed = locationProvider.currentSpeed, speed >= 0 else { return "--" }
+        return String(format: "%.0f", speed * 3.6)
+    }
+
+    private var hasCurrentSpeedFix: Bool {
+        guard let speed = locationProvider.currentSpeed else { return false }
+        return speed >= 0 && speed.isFinite
+    }
+
+    private func mapSpeedLimitValue(for trip: Trip) -> String {
+        let segments = speedLimitSegments
+        guard !segments.isEmpty else { return "--" }
+        guard let travelDate = trip.travelDate else {
+            return segments.first(where: { $0.maxSpeed > 0 }).map { String($0.maxSpeed) } ?? "--"
+        }
+        let dayStart = Calendar.current.startOfDay(for: travelDate)
+        let active = segments.first { segment in
+            guard let start = segment.departureSeconds ?? segment.arrivalSeconds,
+                  let end = segment.arrivalSeconds ?? segment.departureSeconds else { return false }
+            let startDate = dayStart.addingTimeInterval(TimeInterval(start))
+            let normalizedEnd = end < start ? end + Int(ScheduleDateUtils.dayInterval) : end
+            let endDate = dayStart.addingTimeInterval(TimeInterval(normalizedEnd))
+            return liveTrainClock >= startDate && liveTrainClock <= endDate
+        }
+        let fallback = active ?? segments.first(where: { $0.maxSpeed > 0 })
+        guard let speed = fallback?.maxSpeed, speed > 0 else { return "--" }
+        return String(speed)
+    }
+
+    private func revealSpeedCapsule() {
+        guard !TripLocationDetectionPreferences.continuousSpeedCapsuleEnabled else { return }
+        speedCapsuleHideTask?.cancel()
+        isSpeedCapsuleRevealed = true
+        locationProvider.enableSpeedTracking()
+        speedCapsuleHideTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(120))
+            guard !Task.isCancelled else { return }
+            isSpeedCapsuleRevealed = false
+            locationProvider.stopSpeedTracking()
+        }
     }
 
     private var addTripModeBinding: Binding<Bool> {
@@ -187,7 +453,16 @@ struct ContentView: View {
     private func trackingTaskKey(for state: DetailMapState?) -> String {
         let tripID = state?.trip.id ?? "dashboard"
         let showsUser = state?.trackingResult?.showsUserLocation == true
-        return "\(tripID)-\(showsUser)"
+        let detectedPhase = state.map { locationPhaseDetector.phase(for: $0.trip).rawValue } ?? "none"
+        return "\(tripID)-\(showsUser)-\(detectedPhase)"
+    }
+
+    private func preloadRouteData(for trip: Trip?) {
+        guard let trip else { return }
+        let identifier = trip.gtfsTripId ?? trip.id
+        Task.detached(priority: .utility) {
+            GTFSDataSource.shared.preloadRouteData(for: identifier)
+        }
     }
 
     private func syncTripsOnLaunchIfNeeded() {
@@ -205,9 +480,9 @@ struct ContentView: View {
     }
 
     private func syncTripAfterAdd(_ trip: Trip) {
-        let result = LiveActivityManager.shared.startActivity(for: trip)
+        let result = LiveActivityManager.shared.startOrSchedule(for: trip)
         #if DEBUG
-        print("[ContentView] Live Activity auto-start: \(result.message)")
+        print("[ContentView] Live Activity auto-start: \(result?.message ?? "scheduled one hour before departure")")
         #endif
         Task {
             await syncTrip(trip, shouldFetchMapInfo: true)
@@ -233,145 +508,19 @@ struct ContentView: View {
     }
 
     private func syncTrip(_ trip: Trip, shouldFetchMapInfo: Bool) async {
-        guard let trainNumber = resolvedTrainNumber(for: trip) else { return }
-        await InfoFerSessionManager.shared.refreshSession(for: trainNumber)
-        var info = await InfoFerScraper.shared.fetchDelay(
-            for: trainNumber,
-            travelDate: trip.travelDate
-        )
-        let mapInfo = shouldFetchMapInfo
-            ? await fetchMapInfo(for: trainNumber, trip: trip)
-            : InfoFerMapInfo(routePolylines: [], liveCoordinate: nil, gpsPermanentlyUnavailable: false)
-        if let liveCoordinate = mapInfo.liveCoordinate {
-            info = info.updatingLiveCoordinate(liveCoordinate)
-        }
+        guard let result = await TripSyncService.shared.sync(
+            trip: trip,
+            shouldFetchMapInfo: shouldFetchMapInfo
+        ) else { return }
 
-        await MainActor.run {
-            LiveDelayStore.shared.save(info: info, for: trip.id)
-            applyLaunchSync(info: info, mapInfo: mapInfo, to: trip.id)
-            let updatedTrip = trips.first(where: { $0.id == trip.id }) ?? trip
-            LiveActivityManager.shared.updateActivity(for: updatedTrip, delayInfo: info)
+        if let index = trips.firstIndex(where: { $0.id == trip.id }) {
+            trips[index] = result.trip
+        }
+        if selectedTrip?.id == trip.id {
+            selectedTrip = result.trip
         }
     }
 
-    private func fetchMapInfo(for trainNumber: String, trip: Trip) async -> InfoFerMapInfo {
-        guard let departureTime = scheduledDepartureTimeString(for: trip) else {
-            return InfoFerMapInfo(routePolylines: [], liveCoordinate: nil, gpsPermanentlyUnavailable: false)
-        }
-        return await InfoFerScraper.shared.fetchMapInfo(
-            for: trainNumber,
-            travelDate: trip.travelDate,
-            departureTime: departureTime
-        )
-    }
-
-    private func scheduledDepartureTimeString(for trip: Trip) -> String? {
-        serviceDepartureDate(for: trip).map { Self.mapDepartureTimeFormatter.string(from: $0) }
-    }
-
-    private func serviceDepartureDate(for trip: Trip) -> Date? {
-        guard let travelDate = trip.travelDate else { return nil }
-        let identifier = trip.gtfsTripId ?? trip.id
-        let segments = GTFSDataSource.shared.segments(for: identifier)
-        let firstSegment = segments.min {
-            ($0.departureSeconds ?? $0.arrivalSeconds ?? Int.max) < ($1.departureSeconds ?? $1.arrivalSeconds ?? Int.max)
-        }
-        guard let departureSeconds = firstSegment?.departureSeconds ?? firstSegment?.arrivalSeconds else { return nil }
-        return Calendar.current.startOfDay(for: travelDate).addingTimeInterval(TimeInterval(departureSeconds))
-    }
-
-    private func resolvedTrainNumber(for trip: Trip) -> String? {
-        let titleComponents = trip.title.split(separator: " ")
-        if let last = titleComponents.last {
-            let digits = last.filter { $0.isNumber }
-            if !digits.isEmpty { return String(digits) }
-        }
-
-        if let code = trip.gtfsTripId, !code.isEmpty {
-            return code
-        }
-
-        return nil
-    }
-
-    private func applyLaunchSync(info: DelayInfo, mapInfo: InfoFerMapInfo, to tripID: String) {
-        guard let index = trips.firstIndex(where: { $0.id == tripID }) else { return }
-
-        var updatedTrip = trips[index]
-        var hasChanges = false
-
-        if let updatedStops = stopsByApplying(info: info, to: updatedTrip) {
-            updatedTrip = updatedTrip.updatingStops(updatedStops)
-            hasChanges = true
-        }
-
-        if !mapInfo.routePolylines.isEmpty, updatedTrip.routePolylines != mapInfo.routePolylines {
-            updatedTrip = updatedTrip.updatingRoutePolylines(mapInfo.routePolylines)
-            hasChanges = true
-        }
-
-        if mapInfo.gpsPermanentlyUnavailable, !updatedTrip.infoFerGPSUnavailable {
-            updatedTrip = updatedTrip.updatingInfoFerGPSUnavailable(true)
-            hasChanges = true
-        } else if mapInfo.liveCoordinate != nil, updatedTrip.infoFerGPSUnavailable {
-            updatedTrip = updatedTrip.updatingInfoFerGPSUnavailable(false)
-            hasChanges = true
-        }
-
-        guard hasChanges else { return }
-        trips[index] = updatedTrip
-
-        if selectedTrip?.id == tripID {
-            selectedTrip = updatedTrip
-        }
-    }
-
-    private func stopsByApplying(info: DelayInfo, to trip: Trip) -> [StoredStop]? {
-        guard let storedStops = trip.stops, !storedStops.isEmpty else { return nil }
-
-        var lookup: [String: StationDelay] = [:]
-        for detail in info.stationDelays {
-            lookup[normalizedStationName(detail.stationName)] = detail
-        }
-
-        var updatedStops = storedStops
-        var hasChanges = false
-
-        for index in updatedStops.indices {
-            let key = normalizedStationName(updatedStops[index].name)
-            guard let detail = lookup[key] else { continue }
-
-            if updatedStops[index].arrivalDelayMinutes != detail.arrivalDelayMinutes {
-                updatedStops[index].arrivalDelayMinutes = detail.arrivalDelayMinutes
-                hasChanges = true
-            }
-
-            if updatedStops[index].departureDelayMinutes != detail.departureDelayMinutes {
-                updatedStops[index].departureDelayMinutes = detail.departureDelayMinutes
-                hasChanges = true
-            }
-
-            if updatedStops[index].platform != detail.platform {
-                updatedStops[index].platform = detail.platform
-                hasChanges = true
-            }
-        }
-
-        return hasChanges ? updatedStops : nil
-    }
-
-    private func normalizedStationName(_ value: String) -> String {
-        value
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static let mapDepartureTimeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter
-    }()
 }
 
 extension ContentView {
@@ -396,14 +545,26 @@ extension ContentView {
     }
 
     private func detailMapState(for trip: Trip) -> DetailMapState {
+#if DEBUG
+        let startedAt = Date()
+        defer {
+            let elapsed = Date().timeIntervalSince(startedAt)
+            if elapsed >= 0.05 {
+                print("[ContentView] slow map state for \(trip.id): \(Int(elapsed * 1000))ms")
+            }
+        }
+#endif
         let orderedStops = polylineStops(for: trip)
         let stoppingStops = stationStops(for: trip)
+        let deviceCoordinate = locationProvider.lastLocation.flatMap { location in
+            abs(location.timestamp.timeIntervalSinceNow) <= 15 * 60 ? location.coordinate : nil
+        }
         let trackingResult = liveTrainCoordinate(
             for: trip,
             orderedStops: orderedStops,
             stoppingStops: stoppingStops,
             referenceDate: liveTrainClock,
-            deviceCoordinate: locationProvider.coordinate
+            deviceCoordinate: deviceCoordinate
         )
 
         return DetailMapState(
@@ -415,8 +576,30 @@ extension ContentView {
     }
 
     private func updateTrackingState(using result: LiveTrainCoordinateResult?) {
+        if TripLocationDetectionPreferences.isEnabled,
+           let trip = selectedTrip,
+           !isAddTripMode,
+           !isSelectedTripPast {
+            let phase = locationPhaseDetector.phase(for: trip)
+            if phase == .arrived || phase == .exitedEarly {
+                locationProvider.disableTracking()
+            } else {
+                locationProvider.enableTracking()
+                if TripLocationDetectionPreferences.continuousSpeedCapsuleEnabled {
+                    locationProvider.enableSpeedTracking()
+                } else {
+                    locationProvider.stopSpeedTracking()
+                }
+            }
+            return
+        }
         if result?.showsUserLocation == true {
             locationProvider.enableTracking()
+            if TripLocationDetectionPreferences.continuousSpeedCapsuleEnabled {
+                locationProvider.enableSpeedTracking()
+            } else {
+                locationProvider.stopSpeedTracking()
+            }
         } else {
             locationProvider.disableTracking()
         }
@@ -580,10 +763,17 @@ extension ContentView {
         }
         guard !stopLookup.isEmpty else { return nil }
 
-        let timeline = buildSegmentEntries(
+        let timeline = cachedSegmentEntries(
             segments: segments,
             trip: trip,
             stopLookup: stopLookup
+        )
+
+        let resolvedTiming = TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: LiveDelayStore.shared.info(for: trip.id),
+            referenceDate: referenceDate,
+            includeProgressDetails: false
         )
 
         guard !timeline.isEmpty else { return nil }
@@ -617,7 +807,16 @@ extension ContentView {
         }
 
         guard let boardingDate = boardingDate(for: originStopId, in: timeline),
-              let destinationArrival = arrivalDate(for: destinationStopId, in: timeline) else {
+              let destinationArrival = resolvedTiming.adjustedArrival
+                ?? arrivalDate(for: destinationStopId, in: timeline) else {
+            if TripLocationDetectionPreferences.isEnabled, let deviceCoordinate {
+                return LiveTrainCoordinateResult(
+                    coordinate: deviceCoordinate,
+                    mode: .device,
+                    showsUserLocation: true,
+                    showsLiveTrainMarker: false
+                )
+            }
             let showsTrainMarker = referenceDate >= serviceDeparture && referenceDate <= serviceArrival
             let gpsCoordinate = showsTrainMarker ? gpsAnchoredLiveTrainCoordinate(
                 for: trip,
@@ -632,6 +831,79 @@ extension ContentView {
                 showsUserLocation: false,
                 showsLiveTrainMarker: showsTrainMarker
             )
+        }
+
+        if TripLocationDetectionPreferences.isEnabled {
+            switch locationPhaseDetector.phase(for: trip) {
+            case .boarded:
+                return LiveTrainCoordinateResult(
+                    coordinate: deviceCoordinate ?? fallback,
+                    mode: .device,
+                    showsUserLocation: deviceCoordinate != nil,
+                    showsLiveTrainMarker: deviceCoordinate == nil
+                )
+            case .arrived:
+                return LiveTrainCoordinateResult(
+                    coordinate: coordinate(for: destinationStopId, sequence: trip.destinationSequence, in: trip) ?? fallback,
+                    mode: .interpolation,
+                    showsUserLocation: false,
+                    showsLiveTrainMarker: false
+                )
+            case .exitedEarly:
+                return LiveTrainCoordinateResult(
+                    coordinate: deviceCoordinate ?? fallback,
+                    mode: .device,
+                    showsUserLocation: deviceCoordinate != nil,
+                    showsLiveTrainMarker: false
+                )
+            case .unknown, .atOrigin:
+                // Until the train reaches the selected origin, show its
+                // predicted position. This keeps the train visible while the
+                // rider is still travelling to the station and avoids using
+                // the rider's phone location as a proxy for the train.
+                if referenceDate < boardingDate {
+                    let gpsCoordinate = referenceDate >= serviceDeparture ? gpsAnchoredLiveTrainCoordinate(
+                        for: trip,
+                        entries: timeline,
+                        referenceDate: referenceDate,
+                        routeCoordinates: trackingRouteCoordinates
+                    ) : nil
+                    return LiveTrainCoordinateResult(
+                        coordinate: gpsCoordinate ?? fallback,
+                        mode: gpsCoordinate == nil ? .interpolation : .gps,
+                        showsUserLocation: false,
+                        showsLiveTrainMarker: true
+                    )
+                }
+
+                // Once the train has reached the user's origin, the phone
+                // position is the rider signal and remains distinct from the
+                // train marker.
+                if let deviceCoordinate {
+                    return LiveTrainCoordinateResult(
+                        coordinate: deviceCoordinate,
+                        mode: .device,
+                        showsUserLocation: true,
+                        showsLiveTrainMarker: false
+                    )
+                }
+
+                // If there is no device fix yet, retain the train marker as
+                // secondary context until the next location callback.
+
+                let gpsCoordinate = referenceDate >= serviceDeparture ? gpsAnchoredLiveTrainCoordinate(
+                    for: trip,
+                    entries: timeline,
+                    referenceDate: referenceDate,
+                    routeCoordinates: trackingRouteCoordinates
+                ) : nil
+                return LiveTrainCoordinateResult(
+                    coordinate: gpsCoordinate ?? fallback,
+                    mode: gpsCoordinate == nil ? .interpolation : .gps,
+                    showsUserLocation: false,
+                    showsLiveTrainMarker: referenceDate <= serviceArrival
+                )
+            }
         }
 
         if referenceDate >= boardingDate && referenceDate < destinationArrival {
@@ -666,6 +938,245 @@ extension ContentView {
             showsUserLocation: false,
             showsLiveTrainMarker: false
         )
+    }
+
+    private func updateLocationPhaseDetection(for trip: Trip?) {
+        guard TripLocationDetectionPreferences.isEnabled,
+              !isAddTripMode,
+              let trip,
+              let location = locationProvider.lastLocation else { return }
+
+        let route = flattenedRoutePolylineCoordinates(for: trip)
+            ?? polylineStops(for: trip).map(\.coordinate)
+        let trustedTrainCoordinate = LiveDelayStore.shared.info(for: trip.id)?.liveCoordinate.map {
+            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+        }
+        locationPhaseDetector.update(
+            trip: trip,
+            location: location,
+            route: route,
+            trustedTrainCoordinate: trustedTrainCoordinate
+        )
+        let infoFer = LiveDelayStore.shared.info(for: trip.id)
+        let timing = TripTimingResolver().resolve(trip: trip, delayInfo: infoFer, referenceDate: location.timestamp)
+        TripDelayFusionStore.shared.update(
+            trip: trip,
+            progress: locationPhaseDetector.progress(for: trip),
+            timing: timing,
+            infoFer: infoFer,
+            now: location.timestamp
+        )
+    }
+
+    private func evaluateMissedTrainSuggestion(for trip: Trip?) {
+        updateMissedTrainDiagnostic(for: trip)
+        guard TripLocationDetectionPreferences.isEnabled,
+              TripLocationDetectionPreferences.missedTrainSuggestionsEnabled,
+              !isAddTripMode,
+              let trip,
+              trips.contains(where: { $0.id == trip.id }),
+              missedTrainPrompt == nil,
+              !dismissedMissedTrainPromptIDs.contains(trip.id),
+              !MissedTrainPromptStore.isDismissed(tripID: trip.id, travelDate: trip.travelDate),
+              let location = locationProvider.lastLocation,
+              abs(location.timestamp.timeIntervalSinceNow) <= 15 * 60 else { return }
+
+        let phase = locationPhaseDetector.phase(for: trip)
+        guard phase == .unknown || phase == .atOrigin else { return }
+
+        let timing = TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: LiveDelayStore.shared.info(for: trip.id),
+            referenceDate: liveTrainClock
+        )
+        guard let departure = timing.adjustedDeparture,
+              liveTrainClock >= departure else { return }
+
+        // Schedule time alone is not proof that the rider left. If the rider
+        // is still at the origin, wait for evidence that the train actually
+        // left. Phone GPS is authoritative for the rider; trusted InfoFer GPS
+        // is secondary evidence about the train itself and must never be used
+        // as a proxy for the rider's location.
+        if isFreshlyAtOrigin(trip), !hasConfirmedTrainDeparture(for: trip) {
+#if DEBUG
+            missedTrainDiagnosticText = "Missed train: train still appears to be at origin"
+#endif
+            return
+        }
+
+        // A rider away from the origin can be prompted as soon as the
+        // adjusted departure has passed, even if InfoFer has not refreshed.
+        missedTrainPrompt = MissedTrainPrompt(
+            id: trip.id,
+            trainTitle: trip.title,
+            originStopID: trip.originStopId ?? "",
+            destinationStopID: trip.destinationStopId,
+            trainID: trip.gtfsTripId
+        )
+        missedTrainOriginal = trip
+    }
+
+    private func isFreshlyAtOrigin(_ trip: Trip) -> Bool {
+        guard let location = locationProvider.lastLocation,
+              location.horizontalAccuracy >= 0,
+              location.horizontalAccuracy <= 150,
+              abs(location.timestamp.timeIntervalSinceNow) <= 15 * 60,
+              let origin = coordinate(for: trip.originStopId, sequence: trip.originSequence, in: trip) else {
+            return false
+        }
+        let radius = max(250, location.horizontalAccuracy * 1.5)
+        return location.distance(from: CLLocation(latitude: origin.latitude, longitude: origin.longitude)) <= radius
+    }
+
+    private func hasConfirmedTrainDeparture(for trip: Trip) -> Bool {
+        if locationPhaseDetector.phase(for: trip) == .boarded {
+            return true
+        }
+
+        guard let info = LiveDelayStore.shared.info(for: trip.id),
+              let liveCoordinate = info.liveCoordinate,
+              let fetchedAt = info.fetchedAt,
+              Date().timeIntervalSince(fetchedAt) <= 15 * 60,
+              let origin = coordinate(for: trip.originStopId, sequence: trip.originSequence, in: trip) else {
+            return false
+        }
+
+        let trainDistance = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
+            .distance(from: CLLocation(latitude: liveCoordinate.latitude, longitude: liveCoordinate.longitude))
+        return trainDistance > 750
+    }
+
+    private func findMissedTrainAlternatives(for prompt: MissedTrainPrompt) {
+        dismissedMissedTrainPromptIDs.insert(prompt.id)
+        if let trip = trips.first(where: { $0.id == prompt.id }) {
+            MissedTrainPromptStore.dismiss(tripID: trip.id, travelDate: trip.travelDate)
+        }
+        missedTrainPrompt = nil
+        // Let the confirmation alert finish dismissing before presenting the
+        // alternatives sheet. Presenting both in the same update cycle causes
+        // SwiftUI to discard the second presentation request.
+        missedTrainAlternatives = dataSource.departures(
+            from: prompt.originStopID,
+            after: liveTrainClock,
+            excluding: prompt.trainID,
+            destinationStationID: prompt.destinationStopID
+        )
+        selectedDetent = .large
+        DispatchQueue.main.async {
+            isShowingMissedTrainAlternatives = true
+        }
+    }
+
+    private func dismissMissedTrainPrompt(_ prompt: MissedTrainPrompt) {
+        dismissedMissedTrainPromptIDs.insert(prompt.id)
+        if let trip = trips.first(where: { $0.id == prompt.id }) {
+            MissedTrainPromptStore.dismiss(tripID: trip.id, travelDate: trip.travelDate)
+        }
+        missedTrainPrompt = nil
+    }
+
+    private func updateMissedTrainDiagnostic(for trip: Trip?) {
+#if DEBUG
+        guard TripLocationDetectionPreferences.isEnabled,
+              TripLocationDetectionPreferences.missedTrainSuggestionsEnabled else {
+            missedTrainDiagnosticText = "Missed train: enable detection + suggestions"
+            return
+        }
+        guard let trip else {
+            missedTrainDiagnosticText = "Missed train: no selected trip"
+            return
+        }
+        if dismissedMissedTrainPromptIDs.contains(trip.id)
+            || MissedTrainPromptStore.isDismissed(tripID: trip.id, travelDate: trip.travelDate) {
+            missedTrainDiagnosticText = "Missed train: prompt dismissed for this trip"
+            return
+        }
+        guard let location = locationProvider.lastLocation else {
+            missedTrainDiagnosticText = "Missed train: waiting for GPS fix"
+            return
+        }
+        let age = abs(location.timestamp.timeIntervalSinceNow)
+        guard age <= 15 * 60 else {
+            missedTrainDiagnosticText = "Missed train: GPS is \(Int(age / 60))m old"
+            return
+        }
+        let phase = locationPhaseDetector.phase(for: trip)
+        guard phase == .unknown || phase == .atOrigin else {
+            missedTrainDiagnosticText = "Missed train: phase is \(phase.rawValue)"
+            return
+        }
+        let timing = TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: LiveDelayStore.shared.info(for: trip.id),
+            referenceDate: liveTrainClock
+        )
+        guard let departure = timing.adjustedDeparture else {
+            missedTrainDiagnosticText = "Missed train: departure unavailable"
+            return
+        }
+        guard liveTrainClock >= departure else {
+            missedTrainDiagnosticText = "Missed train: waiting for departure"
+            return
+        }
+        if isFreshlyAtOrigin(trip), !hasConfirmedTrainDeparture(for: trip) {
+            missedTrainDiagnosticText = "Missed train: train still appears to be at origin"
+            return
+        }
+        missedTrainDiagnosticText = "Missed train: ready to prompt"
+#endif
+    }
+
+    private func simulateMissedTrain(for trip: Trip) {
+#if DEBUG
+        dismissedMissedTrainPromptIDs.remove(trip.id)
+        MissedTrainPromptStore.clear(tripID: trip.id, travelDate: trip.travelDate)
+        missedTrainOriginal = trip
+        missedTrainPrompt = MissedTrainPrompt(
+            id: trip.id,
+            trainTitle: trip.title,
+            originStopID: trip.originStopId ?? "",
+            destinationStopID: trip.destinationStopId,
+            trainID: trip.gtfsTripId
+        )
+#endif
+    }
+
+    private var dataSource: GTFSDataSource { GTFSDataSource.shared }
+
+    private func selectAlternative(_ alternative: Trip) {
+        guard let original = missedTrainOriginal,
+              let originID = original.originStopId else { return }
+
+        let stops = alternative.stops ?? []
+        let destination = original.destinationStopId.flatMap { id in stops.first(where: { $0.id == id }) }
+            ?? stops.last
+        let origin = stops.first(where: { $0.id == originID })
+        let route = "\(origin?.name ?? original.originName ?? "Origin") → \(destination?.name ?? original.destinationName ?? "Destination")"
+        let selected = Trip(
+            id: UUID().uuidString,
+            title: alternative.title,
+            subtitle: route,
+            agencyId: alternative.agencyId,
+            detailRoute: route,
+            gtfsTripId: alternative.gtfsTripId,
+            travelDate: alternative.travelDate,
+            originStopId: origin?.id ?? originID,
+            originName: origin?.name ?? original.originName,
+            destinationStopId: destination?.id,
+            destinationName: destination?.name ?? original.destinationName,
+            stops: stops,
+            originSequence: origin?.sequence,
+            destinationSequence: destination?.sequence,
+            trainType: alternative.trainType,
+            trainLength: alternative.trainLength,
+            trainTonnage: alternative.trainTonnage
+        )
+        trips.append(selected)
+        selectedTrip = selected
+        isShowingMissedTrainAlternatives = false
+        missedTrainPrompt = nil
+        missedTrainOriginal = nil
+        LiveActivityManager.shared.startOrSchedule(for: selected)
     }
 
     private func boardingDate(for stopId: String, in timeline: [MapSegmentEntry]) -> Date? {
@@ -720,10 +1231,16 @@ extension ContentView {
         trip: Trip,
         stopLookup: [String: StoredStop]
     ) -> [MapSegmentEntry] {
-        let referenceDate = trip.travelDate ?? Date()
+        let resolvedTiming = TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: LiveDelayStore.shared.info(for: trip.id),
+            referenceDate: Date(),
+            includeProgressDetails: false
+        )
+        let referenceDate = resolvedTiming.scheduledDeparture ?? trip.travelDate ?? Date()
         let baseDate = Calendar.current.startOfDay(for: referenceDate)
 
-        let delaySeconds = TimeInterval((LiveDelayStore.shared.info(for: trip.id)?.delayMinutes ?? trip.delayMinutes ?? 0) * 60)
+        let delaySeconds = TimeInterval((resolvedTiming.headerDelayMinutes ?? 0) * 60)
 
         var lastReference: Date?
         var entries: [MapSegmentEntry] = []
@@ -772,6 +1289,26 @@ extension ContentView {
             )
         }
 
+        return entries
+    }
+
+    private func cachedSegmentEntries(
+        segments: [GTFSSegment],
+        trip: Trip,
+        stopLookup: [String: StoredStop]
+    ) -> [MapSegmentEntry] {
+        let delayInfo = LiveDelayStore.shared.info(for: trip.id)
+        let key = MapSegmentTimelineCache.key(for: trip, delayInfo: delayInfo)
+        if let cached = MapSegmentTimelineCache.entries[key] {
+            return cached
+        }
+
+        let entries = buildSegmentEntries(
+            segments: segments,
+            trip: trip,
+            stopLookup: stopLookup
+        )
+        MapSegmentTimelineCache.store(entries, for: key)
         return entries
     }
 
@@ -1506,6 +2043,36 @@ struct StoredStop: Identifiable, Codable, Equatable {
     }
 }
 
+/// Returns only the stops between the user's boarding and destination stations.
+/// Older saved trips may have a stored distance for the whole train route, so
+/// callers should prefer this slice whenever stored stops are available.
+func stopsForRide(
+    _ stops: [StoredStop]?,
+    originStopID: String?,
+    destinationStopID: String?,
+    originSequence: Int?,
+    destinationSequence: Int?
+) -> [StoredStop] {
+    let orderedStops = (stops ?? []).sorted { $0.sequence < $1.sequence }
+    guard !orderedStops.isEmpty else { return [] }
+
+    let originIndex = orderedStops.firstIndex {
+        if let originStopID { return $0.id == originStopID }
+        if let originSequence { return $0.sequence == originSequence }
+        return false
+    }
+    let destinationIndex = orderedStops.firstIndex {
+        if let destinationStopID { return $0.id == destinationStopID }
+        if let destinationSequence { return $0.sequence == destinationSequence }
+        return false
+    }
+
+    guard let originIndex, let destinationIndex, originIndex <= destinationIndex else {
+        return orderedStops
+    }
+    return Array(orderedStops[originIndex...destinationIndex])
+}
+
 struct StoredRoutePoint: Codable, Equatable {
     let latitude: Double
     let longitude: Double
@@ -1538,6 +2105,113 @@ extension StoredStop {
             longitude: gtfsStop.longitude,
             sequence: gtfsStop.sequence
         )
+    }
+}
+
+extension Trip {
+    var resolvedTrainNumber: String? {
+        let titleComponents = title.split(separator: " ")
+        if let last = titleComponents.last {
+            let digits = last.filter(\.isNumber)
+            if !digits.isEmpty {
+                return String(digits)
+            }
+        }
+
+        if let code = gtfsTripId, !code.isEmpty {
+            return code
+        }
+
+        return nil
+    }
+
+    var webcamBoardSideHint: CFRWebcamBoardSide {
+        let destinationText = [destinationName, subtitle, detailRoute]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+
+        if destinationText.contains("bucharest") || destinationText.contains("bucuresti") {
+            return .arrivals
+        }
+
+        return .departures
+    }
+
+    func updatingPlatform(_ platform: String?, for side: CFRWebcamBoardSide) -> Trip {
+        switch side {
+        case .arrivals:
+            return Trip(
+                id: id,
+                title: title,
+                subtitle: subtitle,
+                agencyId: agencyId,
+                detailDate: detailDate,
+                detailRoute: detailRoute,
+                gtfsTripId: gtfsTripId,
+                travelDate: travelDate,
+                originStopId: originStopId,
+                originName: originName,
+                destinationStopId: destinationStopId,
+                destinationName: destinationName,
+                originPlatform: originPlatform,
+                destinationPlatform: sanitizedPlatform(platform),
+                delayMinutes: delayMinutes,
+                detailDistance: detailDistance,
+                stops: stops,
+                originSequence: originSequence,
+                destinationSequence: destinationSequence,
+                seatCar: seatCar,
+                seatNumbers: seatNumbers,
+                ticketQRCode: ticketQRCode,
+                trainType: trainType,
+                trainLength: trainLength,
+                trainTonnage: trainTonnage,
+                trainIdentifier: trainIdentifier,
+                trainPower: trainPower,
+                routePolylines: routePolylines,
+                infoFerGPSUnavailable: infoFerGPSUnavailable
+            )
+        case .departures:
+            return Trip(
+                id: id,
+                title: title,
+                subtitle: subtitle,
+                agencyId: agencyId,
+                detailDate: detailDate,
+                detailRoute: detailRoute,
+                gtfsTripId: gtfsTripId,
+                travelDate: travelDate,
+                originStopId: originStopId,
+                originName: originName,
+                destinationStopId: destinationStopId,
+                destinationName: destinationName,
+                originPlatform: sanitizedPlatform(platform),
+                destinationPlatform: destinationPlatform,
+                delayMinutes: delayMinutes,
+                detailDistance: detailDistance,
+                stops: stops,
+                originSequence: originSequence,
+                destinationSequence: destinationSequence,
+                seatCar: seatCar,
+                seatNumbers: seatNumbers,
+                ticketQRCode: ticketQRCode,
+                trainType: trainType,
+                trainLength: trainLength,
+                trainTonnage: trainTonnage,
+                trainIdentifier: trainIdentifier,
+                trainPower: trainPower,
+                routePolylines: routePolylines,
+                infoFerGPSUnavailable: infoFerGPSUnavailable
+            )
+        }
+    }
+
+    private func sanitizedPlatform(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmed, !trimmed.isEmpty, trimmed != "-" else { return nil }
+        return trimmed
     }
 }
 
@@ -1787,6 +2461,26 @@ private struct MapSegmentEntry {
     let endDate: Date
 }
 
+/// Dated segment entries are stable between delay changes, so map clock ticks
+/// can interpolate against the existing timeline without rebuilding it.
+private enum MapSegmentTimelineCache {
+    private static let maximumEntries = 64
+    private(set) static var entries: [String: [MapSegmentEntry]] = [:]
+
+    static func key(for trip: Trip, delayInfo: DelayInfo?) -> String {
+        let travelDate = trip.travelDate?.timeIntervalSince1970 ?? 0
+        let headerDelay = delayInfo?.delayMinutes ?? trip.delayMinutes ?? 0
+        return "\(trip.id)|\(travelDate)|\(headerDelay)"
+    }
+
+    static func store(_ entries: [MapSegmentEntry], for key: String) {
+        self.entries[key] = entries
+        if self.entries.count > maximumEntries {
+            self.entries.removeValue(forKey: self.entries.keys.first!)
+        }
+    }
+}
+
 private enum LiveTrainTrackingMode {
     case interpolation
     case device
@@ -1859,5 +2553,59 @@ private struct LiveTrainMarkerView: View {
         }
         .frame(width: 28, height: 28)
         .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
+    }
+}
+
+struct MissedTrainAlternativesView: View {
+    let alternatives: [Trip]
+    let onSelect: (Trip) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if alternatives.isEmpty {
+                    ContentUnavailableView(
+                        "No alternatives found",
+                        systemImage: "tram.fill",
+                        description: Text("Try searching again later for departures from the same station.")
+                    )
+                } else {
+                    List(alternatives) { trip in
+                        Button {
+                            onSelect(trip)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack {
+                                    Text(trip.title)
+                                        .font(.headline)
+                                    Spacer()
+                                    if let departure = trip.travelDate {
+                                        Text(departure, style: .time)
+                                            .font(.headline.monospacedDigit())
+                                    }
+                                }
+                                Text(trip.subtitle)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Text("Bundled schedule • live delay unavailable")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                            .padding(.vertical, 5)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .navigationTitle("Other departures")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel", action: onCancel)
+                }
+            }
+        }
     }
 }

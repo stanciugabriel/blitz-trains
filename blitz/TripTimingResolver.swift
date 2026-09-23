@@ -2,9 +2,21 @@ import Foundation
 
 protocol TripScheduleProviding {
     func stopSchedule(for tripId: String, stopId: String) -> GTFSDataSource.GTFSStopSchedule?
+
+    func stopSchedules(for tripId: String, stopIds: [String]) -> [String: GTFSDataSource.GTFSStopSchedule]
 }
 
 extension GTFSDataSource: TripScheduleProviding {}
+
+extension TripScheduleProviding {
+    func stopSchedules(for tripId: String, stopIds: [String]) -> [String: GTFSDataSource.GTFSStopSchedule] {
+        stopIds.reduce(into: [:]) { result, stopID in
+            if let schedule = stopSchedule(for: tripId, stopId: stopID) {
+                result[stopID] = schedule
+            }
+        }
+    }
+}
 
 enum TripPhase: Equatable {
     case preDeparture
@@ -31,6 +43,27 @@ struct ResolvedTripTiming: Equatable {
     let nextStopName: String?
     let nextStopArrival: Date?
     let stationsRemaining: Int
+
+    var duration: TimeInterval? {
+        guard let scheduledDeparture, let scheduledArrival else { return nil }
+        return scheduledArrival.timeIntervalSince(scheduledDeparture)
+    }
+
+    static let empty = ResolvedTripTiming(
+        scheduledDeparture: nil,
+        scheduledArrival: nil,
+        adjustedDeparture: nil,
+        adjustedArrival: nil,
+        originDelayMinutes: 0,
+        destinationDelayMinutes: 0,
+        headerDelayMinutes: nil,
+        phase: .preDeparture,
+        originPlatform: nil,
+        destinationPlatform: nil,
+        nextStopName: nil,
+        nextStopArrival: nil,
+        stationsRemaining: 0
+    )
 
     var departureStatusText: String {
         TripTimingResolver.statusText(for: originDelayMinutes)
@@ -59,7 +92,8 @@ struct TripTimingResolver {
     func resolve(
         trip: Trip,
         delayInfo: DelayInfo?,
-        referenceDate: Date = Date()
+        referenceDate: Date = Date(),
+        includeProgressDetails: Bool = true
     ) -> ResolvedTripTiming {
         guard let travelDate = trip.travelDate else {
             return emptyTiming(trip: trip, delayInfo: delayInfo)
@@ -108,14 +142,16 @@ struct TripTimingResolver {
             departure: adjustedDeparture,
             arrival: adjustedArrival
         )
-        let nextStop = nextStop(
-            for: trip,
-            stops: stops,
-            baseDate: baseDate,
-            referenceDate: referenceDate,
-            activeDelay: activeDelay,
-            delayInfo: delayInfo
-        )
+        let nextStop = includeProgressDetails
+            ? nextStop(
+                for: trip,
+                stops: stops,
+                baseDate: baseDate,
+                referenceDate: referenceDate,
+                activeDelay: activeDelay,
+                delayInfo: delayInfo
+            )
+            : (name: nil, arrivalTime: nil, stationsRemaining: 0)
 
         return ResolvedTripTiming(
             scheduledDeparture: scheduledDeparture,
@@ -256,11 +292,15 @@ struct TripTimingResolver {
         guard !segmentStops.isEmpty else { return (trip.destinationName, nil, 0) }
 
         let tripIdentifier = trip.gtfsTripId ?? trip.id
+        let schedules = scheduleProvider.stopSchedules(
+            for: tripIdentifier,
+            stopIds: segmentStops.map(\.id)
+        )
         var remaining: [(name: String?, arrivalTime: Date?)] = []
         var previousDate: Date?
 
         for stop in segmentStops {
-            guard let schedule = scheduleProvider.stopSchedule(for: tripIdentifier, stopId: stop.id) else { continue }
+            guard let schedule = schedules[stop.id] else { continue }
             let rawArrival = schedule.arrivalDate(on: baseDate) ?? schedule.departureDate(on: baseDate)
             let delay = terminalDelay(
                 for: .arrival,

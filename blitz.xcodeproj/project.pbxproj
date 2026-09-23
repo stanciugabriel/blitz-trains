@@ -70,6 +70,13 @@
 			);
 			target = C0609D9F2FCE050E00786820 /* blitzWidgetExtension */;
 		};
+		C0A41F583008A68A00B2A384 /* Exceptions for "blitz" folder in "blitz" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C0C852192EDC81730025047D /* blitz */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -83,6 +90,9 @@
 		};
 		C0C8521C2EDC81730025047D /* blitz */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0A41F583008A68A00B2A384 /* Exceptions for "blitz" folder in "blitz" target */,
+			);
 			path = blitz;
 			sourceTree = "<group>";
 		};
@@ -593,13 +603,17 @@
 				DEVELOPMENT_TEAM = 8SHQGK682T;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = blitz/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Blitz Trains";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.travel";
 				INFOPLIST_KEY_NSCameraUsageDescription = "The camera is used to scan the ticket's QR Code";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Raily uses your location during active train trips to detect boarding, station stops, and arrival, even when the app is in the background.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "The location is used to pinpoint you on the map while using the app";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = location;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
@@ -635,13 +649,17 @@
 				DEVELOPMENT_TEAM = 8SHQGK682T;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = blitz/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Blitz Trains";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.travel";
 				INFOPLIST_KEY_NSCameraUsageDescription = "The camera is used to scan the ticket's QR Code";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Raily uses your location during active train trips to detect boarding, station stops, and arrival, even when the app is in the background.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "The location is used to pinpoint you on the map while using the app";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = location;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";

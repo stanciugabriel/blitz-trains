@@ -1,13 +1,71 @@
 import ActivityKit
 import Foundation
+import BackgroundTasks
+
+let automaticLiveActivityTaskIdentifier = "ro.openlabs.blitz.live-activity-start"
 
 final class LiveActivityManager {
     static let shared = LiveActivityManager()
 
-    private let dataSource = GTFSDataSource.shared
     private let timingResolver = TripTimingResolver()
 
     private init() {}
+
+    /// Starts an activity only when it is within the one-hour activation
+    /// window. Future trips are picked up by the registered BGAppRefreshTask.
+    @discardableResult
+    func startOrSchedule(for trip: Trip, delayInfo: DelayInfo? = nil, now: Date = Date()) -> StartResult? {
+        guard trip.travelDate != nil else {
+            return startActivity(for: trip, delayInfo: delayInfo)
+        }
+        let timing = timingResolver.resolve(trip: trip, delayInfo: delayInfo ?? LiveDelayStore.shared.info(for: trip.id), referenceDate: now)
+        guard let departure = timing.adjustedDeparture ?? timing.scheduledDeparture else {
+            return startActivity(for: trip, delayInfo: delayInfo)
+        }
+        if departure.timeIntervalSince(now) <= 60 * 60 {
+            return startActivity(for: trip, delayInfo: delayInfo)
+        }
+        scheduleNextAutomaticStart(for: [trip], now: now)
+        return nil
+    }
+
+    func scheduleNextAutomaticStart(for trips: [Trip] = TripStorage.shared.loadTrips(), now: Date = Date()) {
+        let candidates = trips.compactMap { trip -> Date? in
+            let timing = timingResolver.resolve(
+                trip: trip,
+                delayInfo: LiveDelayStore.shared.info(for: trip.id),
+                referenceDate: now
+            )
+            guard let departure = timing.adjustedDeparture ?? timing.scheduledDeparture,
+                  departure > now.addingTimeInterval(60 * 60) else { return nil }
+            return departure.addingTimeInterval(-60 * 60)
+        }
+        guard let earliest = candidates.min() else { return }
+
+        let request = BGAppRefreshTaskRequest(identifier: automaticLiveActivityTaskIdentifier)
+        request.earliestBeginDate = earliest
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            #if DEBUG
+            print("[LiveActivityManager] Could not schedule automatic Live Activity start: \(error)")
+            #endif
+        }
+    }
+
+    func startScheduledActivities(now: Date = Date()) {
+        for trip in TripStorage.shared.loadTrips() {
+            let timing = timingResolver.resolve(
+                trip: trip,
+                delayInfo: LiveDelayStore.shared.info(for: trip.id),
+                referenceDate: now
+            )
+            guard let departure = timing.adjustedDeparture ?? timing.scheduledDeparture,
+                  departure <= now.addingTimeInterval(60 * 60),
+                  !isActivityRunning(for: trip.id) else { continue }
+            _ = startActivity(for: trip, delayInfo: LiveDelayStore.shared.info(for: trip.id))
+        }
+    }
 
     enum StartResult: Equatable {
         case started
@@ -111,6 +169,12 @@ final class LiveActivityManager {
         }
     }
 
+    func endAllActivities() {
+        for activity in Activity<TrainLiveActivityAttributes>.activities {
+            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
     private func activity(for tripID: String) -> Activity<TrainLiveActivityAttributes>? {
         Activity<TrainLiveActivityAttributes>.activities.first { $0.attributes.tripID == tripID }
     }
@@ -162,222 +226,6 @@ final class LiveActivityManager {
         case .completed:
             return state.dataTimestamp.addingTimeInterval(60 * 60)
         }
-    }
-
-    private func timeline(
-        for trip: Trip,
-        delayInfo: DelayInfo?,
-        activeDelay: Int
-    ) -> (
-        boardingArrival: Date?,
-        boardingDeparture: Date?,
-        destinationArrival: Date?,
-        nextStopName: String?,
-        nextStopArrivalTime: Date?,
-        stationsRemaining: Int
-    ) {
-        guard let travelDate = trip.travelDate else {
-            return (nil, nil, nil, nil, nil, 0)
-        }
-
-        let tripIdentifier = trip.gtfsTripId ?? trip.id
-        let stops = trip.stops?.sorted { $0.sequence < $1.sequence } ?? []
-        let originStop = resolvedStop(id: trip.originStopId, sequence: trip.originSequence, in: stops)
-        let destinationStop = resolvedStop(id: trip.destinationStopId, sequence: trip.destinationSequence, in: stops)
-        let originId = trip.originStopId ?? originStop?.id
-        let destinationId = trip.destinationStopId ?? destinationStop?.id
-
-        let originSchedule = originId.flatMap { dataSource.stopSchedule(for: tripIdentifier, stopId: $0) }
-        let destinationSchedule = destinationId.flatMap { dataSource.stopSchedule(for: tripIdentifier, stopId: $0) }
-        let baseDate = serviceBaseDate(
-            for: travelDate,
-            originSchedule: originSchedule,
-            destinationSchedule: destinationSchedule
-        )
-
-        let boardingArrivalDelay = terminalDelay(
-            for: .arrival,
-            stop: originStop,
-            stopName: trip.originName,
-            delayInfo: delayInfo,
-            fallback: activeDelay
-        )
-        let boardingDepartureDelay = terminalDelay(
-            for: .departure,
-            stop: originStop,
-            stopName: trip.originName,
-            delayInfo: delayInfo,
-            fallback: activeDelay
-        )
-        let destinationDelay = terminalDelay(
-            for: .arrival,
-            stop: destinationStop,
-            stopName: trip.destinationName,
-            delayInfo: delayInfo,
-            fallback: activeDelay
-        )
-
-        let rawBoardingArrival = originSchedule?.arrivalDate(on: baseDate)
-        let rawBoardingDeparture = originSchedule?.departureDate(on: baseDate) ?? rawBoardingArrival
-        let rawDestinationArrival = destinationSchedule?.arrivalDate(on: baseDate) ?? destinationSchedule?.departureDate(on: baseDate)
-
-        let boardingArrival = adjustedDate(rawBoardingArrival, relativeTo: nil, delay: boardingArrivalDelay)
-        let boardingDeparture = adjustedDate(rawBoardingDeparture, relativeTo: nil, delay: boardingDepartureDelay)
-        let destinationArrival = adjustedDate(rawDestinationArrival, relativeTo: boardingDeparture, delay: destinationDelay)
-        let nextStop = nextStop(for: trip, baseDate: baseDate, reference: Date(), delayInfo: delayInfo, activeDelay: activeDelay)
-
-        return (
-            boardingArrival,
-            boardingDeparture,
-            destinationArrival,
-            nextStop.name,
-            nextStop.arrivalTime,
-            nextStop.stationsRemaining
-        )
-    }
-
-    private func serviceBaseDate(
-        for travelDate: Date,
-        originSchedule: GTFSDataSource.GTFSStopSchedule?,
-        destinationSchedule: GTFSDataSource.GTFSStopSchedule?
-    ) -> Date {
-        let calendar = Calendar.current
-        let storedBase = calendar.startOfDay(for: travelDate)
-        let now = Date()
-        let candidateBases = [-1, 0, 1].compactMap {
-            calendar.date(byAdding: .day, value: $0, to: storedBase)
-        }
-
-        let candidates = candidateBases.compactMap { base -> (base: Date, departure: Date, arrival: Date?)? in
-            guard let departure = originSchedule?.departureDate(on: base) ?? originSchedule?.arrivalDate(on: base) else {
-                return nil
-            }
-            let rawArrival = destinationSchedule?.arrivalDate(on: base) ?? destinationSchedule?.departureDate(on: base)
-            let arrival = ScheduleDateUtils.normalizedArrival(rawArrival, relativeTo: departure)
-            return (base, departure, arrival)
-        }
-
-        if let activeService = candidates
-            .filter({
-                guard let arrival = $0.arrival else { return false }
-                return now >= $0.departure.addingTimeInterval(-5 * 60)
-                    && now <= arrival.addingTimeInterval(60 * 60)
-            })
-            .min(by: { lhs, rhs in
-                guard let lhsArrival = lhs.arrival, let rhsArrival = rhs.arrival else { return lhs.departure < rhs.departure }
-                return lhsArrival < rhsArrival
-            }) {
-            return activeService.base
-        }
-
-        if let nearestUpcoming = candidates
-            .filter({ $0.departure >= now.addingTimeInterval(-5 * 60) })
-            .min(by: { $0.departure < $1.departure }) {
-            return nearestUpcoming.base
-        }
-
-        return storedBase
-    }
-
-    private enum StopEvent {
-        case arrival
-        case departure
-    }
-
-    private func terminalDelay(
-        for event: StopEvent,
-        stop: StoredStop?,
-        stopName: String?,
-        delayInfo: DelayInfo?,
-        fallback: Int
-    ) -> Int {
-        switch event {
-        case .arrival:
-            if let value = stop?.arrivalDelayMinutes { return value }
-        case .departure:
-            if let value = stop?.departureDelayMinutes { return value }
-        }
-
-        if let stationDelay = stationDelay(for: stopName ?? stop?.name, in: delayInfo) {
-            switch event {
-            case .arrival:
-                if let value = stationDelay.arrivalDelayMinutes { return value }
-            case .departure:
-                if let value = stationDelay.departureDelayMinutes { return value }
-            }
-        }
-
-        return fallback
-    }
-
-    private func nextStop(
-        for trip: Trip,
-        baseDate: Date,
-        reference: Date,
-        delayInfo: DelayInfo?,
-        activeDelay: Int
-    ) -> (name: String?, arrivalTime: Date?, stationsRemaining: Int) {
-        guard let stops = trip.stops?.sorted(by: { $0.sequence < $1.sequence }), !stops.isEmpty else {
-            return (nil, nil, 0)
-        }
-
-        let lower = trip.originSequence ?? stops.first?.sequence ?? 0
-        let upper = trip.destinationSequence ?? stops.last?.sequence ?? lower
-        let segmentStops = stops.filter { $0.sequence > lower && $0.sequence <= upper }
-        guard !segmentStops.isEmpty else { return (trip.destinationName, nil, 0) }
-
-        let tripIdentifier = trip.gtfsTripId ?? trip.id
-        var remaining: [(name: String?, arrivalTime: Date?)] = []
-        for stop in segmentStops {
-            guard let schedule = dataSource.stopSchedule(for: tripIdentifier, stopId: stop.id) else { continue }
-            let rawArrival = schedule.arrivalDate(on: baseDate) ?? schedule.departureDate(on: baseDate)
-            let delay = terminalDelay(
-                for: .arrival,
-                stop: stop,
-                stopName: stop.name,
-                delayInfo: delayInfo,
-                fallback: activeDelay
-            )
-            guard let arrival = adjustedDate(rawArrival, relativeTo: nil, delay: delay) else { continue }
-            if arrival > reference {
-                remaining.append((stop.name, arrival))
-            }
-        }
-
-        if let next = remaining.first {
-            return (next.name, next.arrivalTime, remaining.count)
-        }
-
-        return (trip.destinationName, nil, 0)
-    }
-
-    private func adjustedDate(_ date: Date?, relativeTo reference: Date?, delay: Int) -> Date? {
-        guard let date else { return nil }
-        let normalized = ScheduleDateUtils.normalizedArrival(date, relativeTo: reference) ?? date
-        return normalized.addingTimeInterval(TimeInterval(delay * 60))
-    }
-
-    private func resolvedStop(id: String?, sequence: Int?, in stops: [StoredStop]) -> StoredStop? {
-        if let id, let stop = stops.first(where: { $0.id == id }) {
-            return stop
-        }
-        if let sequence, let stop = stops.first(where: { $0.sequence == sequence }) {
-            return stop
-        }
-        return nil
-    }
-
-    private func stationDelay(for stationName: String?, in delayInfo: DelayInfo?) -> StationDelay? {
-        guard let stationName, let delayInfo else { return nil }
-        let normalized = normalizeStationName(stationName)
-        return delayInfo.stationDelays.first { normalizeStationName($0.stationName) == normalized }
-    }
-
-    private func normalizeStationName(_ value: String) -> String {
-        value
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func trainNumber(for trip: Trip) -> String {
@@ -446,22 +294,4 @@ final class LiveActivityManager {
         }
     }
 
-    private func platform(for trip: Trip, delayInfo: DelayInfo?) -> String? {
-        let stops = trip.stops?.sorted(by: { $0.sequence < $1.sequence }) ?? []
-        let originStop = resolvedStop(id: trip.originStopId, sequence: trip.originSequence, in: stops)
-
-        if let platform = originStop?.platform, !platform.isEmpty {
-            return platform
-        }
-        if let platform = stationDelay(for: trip.originName ?? originStop?.name, in: delayInfo)?.platform, !platform.isEmpty {
-            return platform
-        }
-        if let storedInfo = LiveDelayStore.shared.info(for: trip.id),
-           let platform = stationDelay(for: trip.originName ?? originStop?.name, in: storedInfo)?.platform,
-           !platform.isEmpty {
-            return platform
-        }
-        if let platform = trip.originPlatform, !platform.isEmpty { return platform }
-        return nil
-    }
 }

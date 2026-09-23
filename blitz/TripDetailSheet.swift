@@ -15,9 +15,10 @@ struct TripDetailSheet: View {
     let isPastTrip: Bool
     var onClose: (() -> Void)?
     var onUpdateTrip: ((Trip) -> Void)?
+    @ObservedObject var locationPhaseDetector: TripLocationPhaseDetector
 
     @Environment(\.openURL) private var openURL
-    @State private var timing = TripTimingSnapshot()
+    @State private var timing = ResolvedTripTiming.empty
     @State private var destinationWeather: DestinationWeather?
     @State private var isWeatherLoading = false
     @State private var hasAttemptedWeather = false
@@ -51,13 +52,15 @@ struct TripDetailSheet: View {
         pastTrips: [Trip] = [],
         isPastTrip: Bool = false,
         onClose: (() -> Void)? = nil,
-        onUpdateTrip: ((Trip) -> Void)? = nil
+        onUpdateTrip: ((Trip) -> Void)? = nil,
+        locationPhaseDetector: TripLocationPhaseDetector = TripLocationPhaseDetector()
     ) {
         self.trip = trip
         self.pastTrips = pastTrips
         self.isPastTrip = isPastTrip
         self.onClose = onClose
         self.onUpdateTrip = onUpdateTrip
+        self.locationPhaseDetector = locationPhaseDetector
         _ticketCode = State(initialValue: trip.ticketQRCode)
         _liveDelayInfo = State(initialValue: LiveDelayStore.shared.info(for: trip.id))
     }
@@ -124,17 +127,15 @@ struct TripDetailSheet: View {
 
             ToolbarItem(placement: .bottomBar) {
                 Button(action: {
-                    guard !stationDelayEntries.isEmpty else { return }
                     isShowingStationDelaySheet = true
                 }) {
                     Label("Delays", systemImage: "list.bullet.rectangle")
                 }
-                .disabled(stationDelayEntries.isEmpty)
             }
         }
         .task(id: trip.id) {
-            loadTiming()
-            loadSegments()
+            await loadTiming()
+            await loadSegments()
             refreshLiveActivityState()
             await loadDestinationWeather()
         }
@@ -161,9 +162,13 @@ struct TripDetailSheet: View {
         }
         .background(Color(.systemBackground))
         .sheet(isPresented: $isShowingStationDelaySheet) {
-            StationDelaysSheet(entries: stationDelayEntries) {
+            WebcamBoardSheet(trip: trip, station: "BucurestiNord", onDismiss: {
                 isShowingStationDelaySheet = false
-            }
+            }, onUpdateTrip: { updatedTrip in
+                onUpdateTrip?(updatedTrip)
+            })
+            .presentationDetents([.fraction(0.72), .large])
+            .presentationDragIndicator(.visible)
         }
         .onChange(of: trip.ticketQRCode ?? "") { _ in
             ticketCode = trip.ticketQRCode
@@ -182,27 +187,50 @@ struct TripDetailSheet: View {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                 Section {
                     VStack(alignment: .leading, spacing: 20) {
-                        if !isPastTrip, let status = syncStatusText {
-                            Text(status)
+                        if !isPastTrip {
+                            syncFreshnessIndicator
+                        }
+#if DEBUG
+                        // Keep operational detail available while developing. The
+                        // release UI communicates freshness through the indicator.
+                        if !isPastTrip, let syncStatusText {
+                            Text(syncStatusText)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
                         }
-                        if !isPastTrip, let status = liveActivityStatusText {
-                            Text(status)
+                        if !isPastTrip, let liveActivityStatusText {
+                            Text(liveActivityStatusText)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
                         }
-                        if !isPastTrip, let diagnostic = liveActivityDiagnosticText {
-                            Text(diagnostic)
+                        if !isPastTrip, let liveActivityDiagnosticText {
+                            Text(liveActivityDiagnosticText)
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.tertiary)
+                                .textSelection(.enabled)
+                        }
+                        if !isPastTrip, let freshness = liveDelayInfo?.freshnessText {
+                            Text("Live data: \(freshness)")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+#endif
+                        if !isPastTrip, let candidate = locationPhaseDetector.earlyExitCandidate(for: trip) {
+                            earlyExitConfirmationCard(candidate: candidate)
+                        }
+                        if !isPastTrip, let prediction = TripDelayFusionStore.shared.prediction(for: trip) {
+                            delayPredictionCard(prediction)
                         }
                         if !isPastTrip, let bannerText = scraperStatusText {
                             ScraperStatusBanner(text: bannerText, isDelayed: scraperStatusIsDelayed)
                                 .padding(.horizontal, -16)
                         }
                         if hasSegmentData {
-                            timetableSection
+                            TimelineView(.periodic(from: .now, by: 1)) { context in
+                                timetableSection(referenceDate: context.date)
+                            }
                         } else {
                             Text("Schedule information unavailable for this trip.")
                                 .font(.callout)
@@ -223,6 +251,53 @@ struct TripDetailSheet: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.hidden)
+    }
+
+    private func earlyExitConfirmationCard(candidate: TripEarlyExitCandidate) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Possible early exit", systemImage: "figure.walk.departure")
+                .font(.headline)
+            Text("Your location has stayed near \(candidate.stationName) beyond the expected stop. Did you get off here?")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            HStack {
+                Button("Keep tracking") {
+                    locationPhaseDetector.dismissEarlyExit(for: trip)
+                }
+                .buttonStyle(.bordered)
+                Spacer()
+                Button("I got off here") {
+                    locationPhaseDetector.confirmEarlyExit(for: trip)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func delayPredictionCard(_ prediction: TripDelayPrediction) -> some View {
+        let delayText: String = {
+            guard let delay = prediction.delayMinutes else { return "No estimate yet" }
+            if delay == 0 { return "Estimated on time" }
+            return delay > 0 ? "Estimated +\(delay)m" : "Estimated \(abs(delay))m early"
+        }()
+        return HStack(spacing: 10) {
+            Image(systemName: "location.north.line")
+                .foregroundStyle(prediction.source == .infoFerConfirmed ? .green : .orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Arrival forecast")
+                    .font(.subheadline.weight(.semibold))
+                Text("\(delayText) • \(prediction.source.rawValue)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
     }
 
     private var speedDashboard: some View {
@@ -357,6 +432,29 @@ struct TripDetailSheet: View {
         return value.isFinite ? value : nil
     }
 
+    private var syncFreshnessIndicator: some View {
+        Circle()
+            .fill(syncFreshnessColor)
+            .frame(width: 8, height: 8)
+            .accessibilityLabel(syncFreshnessAccessibilityLabel)
+    }
+
+    private var syncFreshnessColor: Color {
+        guard let fetchedAt = liveDelayInfo?.fetchedAt else { return .gray }
+        let age = Date().timeIntervalSince(fetchedAt)
+        if age < 5 * 60 { return .green }
+        if age < 20 * 60 { return .orange }
+        return .red
+    }
+
+    private var syncFreshnessAccessibilityLabel: String {
+        guard let fetchedAt = liveDelayInfo?.fetchedAt else { return "Live data unavailable" }
+        let age = Date().timeIntervalSince(fetchedAt)
+        if age < 5 * 60 { return "Live data is fresh" }
+        if age < 20 * 60 { return "Live data may be getting old" }
+        return "Live data is stale"
+    }
+
     private var currentSpeedDisplayValue: String {
         guard let speed = currentSpeedKPH else { return "--" }
         return String(format: "%.0f", speed)
@@ -463,14 +561,14 @@ struct TripDetailSheet: View {
     }
 
     @ViewBuilder
-    private var timetableSection: some View {
+    private func timetableSection(referenceDate: Date) -> some View {
         VStack(alignment: .leading, spacing: 24) {
             TerminalInfoView(
                 icon: "arrow.up.right.circle.fill",
                 title: trip.originName ?? "Origin",
                 timeText: formattedTime(adjustedDepartureDate),
                 originalTimeText: departureTerminalDisplay.originalTimeText,
-                relativeText: departureRelativeText,
+                relativeText: timeRemainingText(for: adjustedDepartureDate, type: .departure, referenceDate: referenceDate),
                 statusText: departureTerminalDisplay.statusText,
                 statusColor: departureTerminalDisplay.statusColor,
                 timeColor: departureTerminalDisplay.timeColor,
@@ -487,7 +585,7 @@ struct TripDetailSheet: View {
                 title: trip.destinationName ?? "Destination",
                 timeText: formattedTime(adjustedArrivalDate),
                 originalTimeText: arrivalTerminalDisplay.originalTimeText,
-                relativeText: arrivalRelativeText,
+                relativeText: timeRemainingText(for: adjustedArrivalDate, type: .arrival, referenceDate: referenceDate),
                 statusText: arrivalTerminalDisplay.statusText,
                 statusColor: arrivalTerminalDisplay.statusColor,
                 timeColor: arrivalTerminalDisplay.timeColor,
@@ -557,11 +655,11 @@ struct TripDetailSheet: View {
     }
 
     private var syncTravelDate: Date {
-        trip.travelDate ?? timing.departureDate ?? Date()
+        trip.travelDate ?? timing.scheduledDeparture ?? Date()
     }
 
     private var activeDelayMinutes: Int? {
-        liveDelayInfo?.delayMinutes ?? trip.delayMinutes
+        timing.headerDelayMinutes ?? trip.delayMinutes
     }
 
     private var orderedStops: [StoredStop] {
@@ -576,30 +674,8 @@ struct TripDetailSheet: View {
         storedStop(for: trip.destinationStopId, sequence: trip.destinationSequence, fallback: orderedStops.last)
     }
 
-    private var departureStationDepartureDelayMinutes: Int? {
-        originStoredStop?.departureDelayMinutes
-            ?? stationDelayFromLiveInfo(for: .departure)?.departureDelayMinutes
-    }
-
-    private var arrivalStationArrivalDelayMinutes: Int? {
-        destinationStoredStop?.arrivalDelayMinutes
-            ?? stationDelayFromLiveInfo(for: .arrival)?.arrivalDelayMinutes
-    }
-
-    private var shouldApplyHeaderDelayToEntireTrip: Bool {
-        departureStationDepartureDelayMinutes == nil && activeDelayMinutes != nil
-    }
-
-    private var departureRelativeText: String {
-        timeRemainingText(for: adjustedDepartureDate, type: .departure)
-    }
-
-    private var arrivalRelativeText: String {
-        timeRemainingText(for: adjustedArrivalDate, type: .arrival)
-    }
-
     private var isOvernightTrip: Bool {
-        guard let departure = timing.departureDate, let arrival = timing.arrivalDate else { return false }
+        guard let departure = timing.scheduledDeparture, let arrival = timing.scheduledArrival else { return false }
         return !Calendar.current.isDate(arrival, inSameDayAs: departure)
     }
 
@@ -638,11 +714,10 @@ struct TripDetailSheet: View {
     }
 
     private var effectiveDistanceText: String? {
-        if let stored = trip.detailDistance, !stored.isEmpty {
-            return stored
+        if let kilometers = distanceFromStops(for: trip) {
+            return formattedDistanceText(for: kilometers)
         }
-        guard let kilometers = distanceFromStops(for: trip) else { return nil }
-        return formattedDistanceText(for: kilometers)
+        return trip.detailDistance
     }
 
     private func platformText(_ value: String?) -> String {
@@ -651,13 +726,11 @@ struct TripDetailSheet: View {
     }
 
     private var adjustedDepartureDate: Date? {
-        guard let base = timing.departureDate else { return nil }
-        return applyDelay(to: base, minutes: terminalDelayMinutes(for: .departure))
+        timing.adjustedDeparture
     }
 
     private var adjustedArrivalDate: Date? {
-        guard let base = timing.arrivalDate else { return nil }
-        return applyDelay(to: base, minutes: terminalDelayMinutes(for: .arrival))
+        timing.adjustedArrival
     }
 
     private var adjustedTravelDuration: TimeInterval? {
@@ -669,19 +742,14 @@ struct TripDetailSheet: View {
         return duration > 0 ? duration : timing.duration
     }
 
-    private func applyDelay(to date: Date, minutes: Int?) -> Date {
-        guard let minutes, minutes != 0 else { return date }
-        return date.addingTimeInterval(TimeInterval(minutes * 60))
-    }
-
     private func formattedTime(_ date: Date?) -> String {
         guard let date else { return "--:--" }
         return Self.timeFormatter.string(from: date)
     }
 
-    private func timeRemainingText(for date: Date?, type: TerminalEventType) -> String {
+    private func timeRemainingText(for date: Date?, type: TerminalEventType, referenceDate: Date) -> String {
         guard let date else { return "\(type.prefix) time unavailable" }
-        let remaining = date.timeIntervalSince(now)
+        let remaining = date.timeIntervalSince(referenceDate)
 
         if remaining <= 0 {
             return type.completedText
@@ -702,16 +770,24 @@ struct TripDetailSheet: View {
         return "\(type.prefix) in \(minutes)m \(seconds)s"
     }
 
-    private func loadTiming() {
-        guard let snapshot = timingSnapshot(for: trip) else {
-            timing = TripTimingSnapshot()
-            return
-        }
-        timing = snapshot
+    private func loadTiming() async {
+        let trip = self.trip
+        let delayInfo = liveDelayInfo
+        let referenceDate = now
+        timing = await Task.detached(priority: .userInitiated) {
+            TripTimingResolver().resolve(
+                trip: trip,
+                delayInfo: delayInfo,
+                referenceDate: referenceDate
+            )
+        }.value
     }
 
-    private func loadSegments() {
-        segments = dataSource.segments(for: tripIdentifier)
+    private func loadSegments() async {
+        let identifier = tripIdentifier
+        segments = await Task.detached(priority: .userInitiated) {
+            dataSource.segments(for: identifier)
+        }.value
     }
 
     private func toggleSpeedDashboard() {
@@ -742,27 +818,6 @@ struct TripDetailSheet: View {
         isShowingSpeedPage = false
         isSpeedPageLoading = false
         locationProvider.disableTracking()
-    }
-
-    private func timingSnapshot(for trip: Trip) -> TripTimingSnapshot? {
-        guard
-            let travelDate = trip.travelDate,
-            let originId = trip.originStopId,
-            let destinationId = trip.destinationStopId
-        else {
-            return nil
-        }
-
-        let base = Calendar.current.startOfDay(for: travelDate)
-        let tripIdentifier = trip.gtfsTripId ?? trip.id
-        let originSchedule = dataSource.stopSchedule(for: tripIdentifier, stopId: originId)
-        let destinationSchedule = dataSource.stopSchedule(for: tripIdentifier, stopId: destinationId)
-
-        let departure = originSchedule?.departureDate(on: base) ?? originSchedule?.arrivalDate(on: base)
-        let rawArrival = destinationSchedule?.arrivalDate(on: base) ?? destinationSchedule?.departureDate(on: base)
-        let arrival = ScheduleDateUtils.normalizedArrival(rawArrival, relativeTo: departure)
-
-        return TripTimingSnapshot(departureDate: departure, arrivalDate: arrival)
     }
 
     private func loadDestinationWeather() async {
@@ -827,12 +882,6 @@ struct TripDetailSheet: View {
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
-
-    private static let mapDepartureTimeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
 
@@ -917,57 +966,19 @@ extension TripDetailSheet {
 
         Task {
             print("[TripDetailSheet] Starting InfoFer sync for \(trainNumber)")
-            await InfoFerSessionManager.shared.refreshSession(for: trainNumber)
-            var info = await InfoFerScraper.shared.fetchDelay(for: trainNumber, travelDate: syncTravelDate)
-            let mapInfo = await fetchMapInfo(for: trainNumber)
-            if let liveCoordinate = mapInfo.liveCoordinate {
-                info = info.updatingLiveCoordinate(liveCoordinate)
-            }
+            guard let result = await TripSyncService.shared.sync(trip: trip, shouldFetchMapInfo: true) else { return }
+            let info = result.info
             print("[TripDetailSheet] Sync completed delay=\(info.delayMinutes ?? -1) platform=\(info.platform ?? "n/a")")
 
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.35)) {
                     liveDelayInfo = info
                 }
-                LiveDelayStore.shared.save(info: info, for: trip.id)
-                var updatedTrip = applyStationDelays(from: info) ?? trip
-                let needsRoutePolyline = updatedTrip.routePolylines?.isEmpty != false
-                if needsRoutePolyline, !mapInfo.routePolylines.isEmpty {
-                    updatedTrip = updatedTrip.updatingRoutePolylines(mapInfo.routePolylines)
-                    onUpdateTrip?(updatedTrip)
-                }
-                if mapInfo.gpsPermanentlyUnavailable, !updatedTrip.infoFerGPSUnavailable {
-                    updatedTrip = updatedTrip.updatingInfoFerGPSUnavailable(true)
-                    onUpdateTrip?(updatedTrip)
-                } else if mapInfo.liveCoordinate != nil, updatedTrip.infoFerGPSUnavailable {
-                    updatedTrip = updatedTrip.updatingInfoFerGPSUnavailable(false)
-                    onUpdateTrip?(updatedTrip)
-                }
-                LiveActivityManager.shared.updateActivity(for: updatedTrip, delayInfo: info)
+                onUpdateTrip?(result.trip)
                 isSyncingDelay = false
-                syncStatusText = nil
+                syncStatusText = result.status.detailText
             }
         }
-    }
-
-    private func fetchMapInfo(for trainNumber: String) async -> InfoFerMapInfo {
-        let needsRoutePolyline = trip.routePolylines?.isEmpty != false
-        let shouldRefreshGPS = !trip.infoFerGPSUnavailable
-        guard needsRoutePolyline || shouldRefreshGPS else {
-            return InfoFerMapInfo(routePolylines: [], liveCoordinate: nil, gpsPermanentlyUnavailable: false)
-        }
-        guard let departureTime = scheduledDepartureTimeString else {
-            return InfoFerMapInfo(routePolylines: [], liveCoordinate: nil, gpsPermanentlyUnavailable: false)
-        }
-        return await InfoFerScraper.shared.fetchMapInfo(
-            for: trainNumber,
-            travelDate: syncTravelDate,
-            departureTime: departureTime
-        )
-    }
-
-    private var scheduledDepartureTimeString: String? {
-        serviceDepartureDate.map { Self.mapDepartureTimeFormatter.string(from: $0) }
     }
 
     private var serviceDepartureDate: Date? {
@@ -1011,59 +1022,11 @@ extension TripDetailSheet {
     }
 
     private var resolvedTrainNumber: String? {
-        let titleComponents = trip.title.split(separator: " ")
-        if let last = titleComponents.last {
-            let digits = last.filter { $0.isNumber }
-            if !digits.isEmpty { return String(digits) }
-        }
-
-        if let code = trip.gtfsTripId, !code.isEmpty {
-            return code
-        }
-        return nil
+        trip.resolvedTrainNumber
     }
 }
 
 private extension TripDetailSheet {
-    func applyStationDelays(from info: DelayInfo) -> Trip? {
-        guard !info.stationDelays.isEmpty else { return nil }
-        guard let storedStops = trip.stops, !storedStops.isEmpty else { return nil }
-
-        var lookup: [String: StationDelay] = [:]
-        for detail in info.stationDelays {
-            let key = normalizeStationName(detail.stationName)
-            lookup[key] = detail
-        }
-
-        var updatedStops = storedStops
-        var hasChanges = false
-
-        for index in updatedStops.indices {
-            let key = normalizeStationName(updatedStops[index].name)
-            guard let detail = lookup[key] else { continue }
-
-            if updatedStops[index].arrivalDelayMinutes != detail.arrivalDelayMinutes {
-                updatedStops[index].arrivalDelayMinutes = detail.arrivalDelayMinutes
-                hasChanges = true
-            }
-
-            if updatedStops[index].departureDelayMinutes != detail.departureDelayMinutes {
-                updatedStops[index].departureDelayMinutes = detail.departureDelayMinutes
-                hasChanges = true
-            }
-
-            if updatedStops[index].platform != detail.platform {
-                updatedStops[index].platform = detail.platform
-                hasChanges = true
-            }
-        }
-
-        guard hasChanges else { return nil }
-        let updatedTrip = trip.updatingStops(updatedStops)
-        onUpdateTrip?(updatedTrip)
-        return updatedTrip
-    }
-
     func normalizeStationName(_ value: String) -> String {
         value
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
@@ -1118,11 +1081,41 @@ private extension TripDetailSheet {
     }
 
     private var departureTerminalDisplay: TerminalStatusDisplay {
-        terminalStatusDisplay(for: .departure, scheduledDate: timing.departureDate)
+        terminalStatusDisplay(for: .departure, scheduledDate: timing.scheduledDeparture)
     }
 
     private var arrivalTerminalDisplay: TerminalStatusDisplay {
-        terminalStatusDisplay(for: .arrival, scheduledDate: timing.arrivalDate)
+        terminalStatusDisplay(for: .arrival, scheduledDate: timing.scheduledArrival)
+    }
+
+    private var isWaitingAtOriginForDeparture: Bool {
+        guard !isPastTrip,
+              let departure = timing.adjustedDeparture,
+              now >= departure,
+              locationPhaseDetector.phase(for: trip) != .boarded,
+              !hasFreshInfoFerTrainDeparture,
+              let location = locationProvider.lastLocation,
+              location.horizontalAccuracy >= 0,
+              location.horizontalAccuracy <= 150,
+              abs(location.timestamp.timeIntervalSinceNow) <= 15 * 60,
+              let origin = coordinate(for: trip.originStopId, sequence: trip.originSequence, in: trip) else {
+            return false
+        }
+        let radius = max(250, location.horizontalAccuracy * 1.5)
+        return location.distance(from: CLLocation(latitude: origin.latitude, longitude: origin.longitude)) <= radius
+    }
+
+    private var hasFreshInfoFerTrainDeparture: Bool {
+        guard let info = liveDelayInfo,
+              let liveCoordinate = info.liveCoordinate,
+              let fetchedAt = info.fetchedAt,
+              Date().timeIntervalSince(fetchedAt) <= 15 * 60,
+              let origin = coordinate(for: trip.originStopId, sequence: trip.originSequence, in: trip) else {
+            return false
+        }
+        let trainDistance = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
+            .distance(from: CLLocation(latitude: liveCoordinate.latitude, longitude: liveCoordinate.longitude))
+        return trainDistance > 750
     }
 
     private var stationDelayEntries: [StationDelayEntry] {
@@ -1203,18 +1196,9 @@ private extension TripDetailSheet {
     private func terminalDelayMinutes(for type: TerminalEventType) -> Int? {
         switch type {
         case .departure:
-            if let stationDelay = departureStationDepartureDelayMinutes {
-                return stationDelay
-            }
-            return activeDelayMinutes
+            return timing.originDelayMinutes
         case .arrival:
-            if shouldApplyHeaderDelayToEntireTrip {
-                return activeDelayMinutes
-            }
-            if let stationDelay = arrivalStationArrivalDelayMinutes {
-                return stationDelay
-            }
-            return activeDelayMinutes
+            return timing.destinationDelayMinutes
         }
     }
 
@@ -1258,7 +1242,12 @@ private extension TripDetailSheet {
         let timeColor: Color
         let showsOriginalTime: Bool
 
-        if let delay {
+        if type == .departure && isWaitingAtOriginForDeparture {
+            statusText = "Waiting to depart"
+            statusColor = .orange
+            timeColor = .orange
+            showsOriginalTime = true
+        } else if let delay {
             if delay > 0 {
                 statusText = "Delay +\(delay)m"
                 statusColor = .red
@@ -1407,6 +1396,7 @@ private extension TripDetailSheet {
 
     @ViewBuilder
     var arrivalForecastSection: some View {
+        let history = dataSource.delayHistory(for: resolvedTrainNumber ?? trip.id)
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Arrival Forecast")
@@ -1417,9 +1407,9 @@ private extension TripDetailSheet {
             }
 
             HStack(spacing: 50) {
-                ForecastStatView(title: "Late", icon: "clock", value: "16%")
-                ForecastStatView(title: "Avg. delay", icon: "stopwatch", value: "12m")
-                ForecastStatView(title: "Observed", icon: "binoculars", value: "42")
+                ForecastStatView(title: "Late", icon: "clock", value: history.map { "\(roundedPercent($0.delayedTrips, of: $0.observedTrips))%" } ?? "--")
+                ForecastStatView(title: "Avg. delay", icon: "stopwatch", value: history.map { formattedAverageDelay($0.averageDelayMinutes) } ?? "--")
+                ForecastStatView(title: "Observed", icon: "binoculars", value: history.map { "\($0.observedTrips)" } ?? "--")
             }
 
             VStack(spacing: 10) {
@@ -1447,18 +1437,34 @@ private extension TripDetailSheet {
     }
 
     private var arrivalDistribution: [(label: String, percent: Int, color: Color)] {
-        [
-            ("Early", 8, Color(.sRGB, red: 0, green: 0.45, blue: 0.1, opacity: 1)),
-            ("On time", 32, Color.green.opacity(0.8)),
-            ("15m late", 25, Color.yellow.opacity(0.8)),
-            ("30m late", 15, Color.orange.opacity(0.85)),
-            ("45m+ late", 12, Color.orange.opacity(0.6)),
-            ("Canceled", 8, Color.red.opacity(0.85))
+        guard let history = dataSource.delayHistory(for: resolvedTrainNumber ?? trip.id) else {
+            return []
+        }
+        return [
+            ("On time", percentValue(history.percentOnTime), Color.green.opacity(0.8)),
+            ("15m late", percentValue(history.percentDelay15Minutes), Color.yellow.opacity(0.8)),
+            ("30m late", percentValue(history.percentDelay30Minutes), Color.orange.opacity(0.85)),
+            ("45m+ late", percentValue(history.percentDelay45MinutesPlus), Color.orange.opacity(0.6))
         ]
     }
 
     private var arrivalForecastSubtitle: String {
         "\(trainDisplayName) performance over the last 60 days"
+    }
+
+    private func percentValue(_ value: Double) -> Int {
+        Int(value.rounded())
+    }
+
+    private func roundedPercent(_ count: Int, of total: Int) -> Int {
+        guard total > 0 else { return 0 }
+        return Int((Double(count) / Double(total) * 100).rounded())
+    }
+
+    private func formattedAverageDelay(_ value: Double) -> String {
+        let minutes = Int(value.rounded())
+        if minutes == 0 { return "0m" }
+        return minutes > 0 ? "+\(minutes)m" : "\(minutes)m"
     }
 
     private var trainDisplayName: String {
@@ -1962,15 +1968,22 @@ private extension TripDetailSheet {
     }
 
     private func distanceInKilometers(for trip: Trip) -> Double? {
-        if let stored = trip.detailDistance, let parsed = parsedDistanceKilometers(from: stored) {
-            return parsed
+        if let kilometers = distanceFromStops(for: trip) {
+            return kilometers
         }
-
-        return distanceFromStops(for: trip)
+        guard let stored = trip.detailDistance else { return nil }
+        return parsedDistanceKilometers(from: stored)
     }
 
     private func distanceFromStops(for trip: Trip) -> Double? {
-        guard let orderedStops = trip.stops?.sorted(by: { $0.sequence < $1.sequence }), orderedStops.count > 1 else {
+        let orderedStops = stopsForRide(
+            trip.stops,
+            originStopID: trip.originStopId,
+            destinationStopID: trip.destinationStopId,
+            originSequence: trip.originSequence,
+            destinationSequence: trip.destinationSequence
+        )
+        guard orderedStops.count > 1 else {
             return nil
         }
 
@@ -1996,12 +2009,15 @@ private extension TripDetailSheet {
     }
 
     private func travelDuration(for trip: Trip) -> TimeInterval? {
-        guard let snapshot = timingSnapshot(for: trip),
-              let departure = snapshot.departureDate,
-              let arrival = snapshot.arrivalDate else { return nil }
-
-        let delaySeconds = TimeInterval((trip.delayMinutes ?? 0) * 60)
-        return arrival.addingTimeInterval(delaySeconds).timeIntervalSince(departure)
+        let resolved = TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: LiveDelayStore.shared.info(for: trip.id),
+            referenceDate: now
+        )
+        guard let departure = resolved.adjustedDeparture,
+              let arrival = resolved.adjustedArrival else { return nil }
+        let duration = arrival.timeIntervalSince(departure)
+        return duration > 0 ? duration : nil
     }
 
     private func isSameRoute(_ lhs: Trip, _ rhs: Trip) -> Bool {
@@ -2076,16 +2092,6 @@ private struct RouteHistoryMetrics {
     let rideCount: Int
     let totalDistance: Double?
     let totalDuration: TimeInterval?
-}
-
-private struct TripTimingSnapshot {
-    var departureDate: Date?
-    var arrivalDate: Date?
-
-    var duration: TimeInterval? {
-        guard let departureDate, let arrivalDate else { return nil }
-        return arrivalDate.timeIntervalSince(departureDate)
-    }
 }
 
 private struct SegmentTimelineEntry {
@@ -2172,6 +2178,226 @@ private struct StationDelaysSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { onDismiss?() }
                 }
+            }
+        }
+    }
+}
+
+private struct WebcamBoardSheet: View {
+    let trip: Trip
+    let station: String
+    var onDismiss: (() -> Void)? = nil
+    var onUpdateTrip: ((Trip) -> Void)? = nil
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var currentImage: UIImage?
+    @State private var platformText: String?
+    @State private var statusText: String = "Waiting for the first webcam refresh…"
+    @State private var isLoading = false
+    @State private var loadError: String?
+    @State private var loadTask: Task<Void, Never>?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    headerCard
+
+                    if isLoading && currentImage == nil {
+                        loadingCard
+                    } else {
+                        if let loadError {
+                            errorCard(text: loadError)
+                        }
+                        platformCard
+                        webcamImageCard
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Platform OCR")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        loadTask?.cancel()
+                        dismiss()
+                        onDismiss?()
+                    }
+                }
+            }
+        }
+        .onAppear {
+            guard loadTask == nil else { return }
+            loadTask = Task { await runRefreshLoop() }
+        }
+        .onDisappear {
+            loadTask?.cancel()
+            loadTask = nil
+        }
+    }
+
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Bucharest North platform")
+                    .font(.system(size: 22, weight: .semibold))
+                Spacer(minLength: 12)
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                }
+            }
+            Text("Live board OCR for \(station)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color(.separator).opacity(0.7), lineWidth: 1)
+        )
+    }
+
+    private var loadingCard: some View {
+        VStack(spacing: 14) {
+            ProgressView()
+                .progressViewStyle(.circular)
+                .scaleEffect(1.2)
+            Text("Reading the board…")
+                .font(.headline)
+            Text("Fetching the JPG and checking the train row.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
+        .padding(.horizontal, 24)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color(.separator).opacity(0.7), lineWidth: 1)
+        )
+    }
+
+    private var platformCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Platform")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .lastTextBaseline, spacing: 10) {
+                Text(platformText ?? "—")
+                    .font(.system(size: 56, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                Text(platformText == nil ? "not there yet" : "confirmed")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(statusText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color(.separator).opacity(0.7), lineWidth: 1)
+        )
+    }
+
+    private func errorCard(text: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Could not load board")
+                .font(.headline)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var webcamImageCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Webcam JPG")
+                .font(.system(size: 20, weight: .semibold))
+            Text("The raw image fetched from the CFR webcam page.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            if let currentImage {
+                Image(uiImage: currentImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color(.separator).opacity(0.7), lineWidth: 1)
+                    )
+            } else {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.quaternary.opacity(0.35))
+                    .frame(height: 220)
+                    .overlay {
+                        ProgressView()
+                    }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color(.separator).opacity(0.7), lineWidth: 1)
+        )
+    }
+
+    private func runRefreshLoop() async {
+        await refreshOnce()
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .seconds(60))
+            } catch {
+                break
+            }
+            guard !Task.isCancelled else { break }
+            await refreshOnce()
+        }
+    }
+
+    private func refreshOnce() async {
+        await MainActor.run {
+            isLoading = true
+            loadError = nil
+        }
+
+        let observation = await InfoFerScraper.shared.fetchBoardObservation(for: trip, station: station)
+
+        guard !Task.isCancelled else { return }
+
+        await MainActor.run {
+            guard !Task.isCancelled else { return }
+            isLoading = false
+            guard let observation else {
+                loadError = "Unable to fetch or read the webcam board."
+                statusText = "Unable to fetch or read the webcam board."
+                return
+            }
+
+            currentImage = observation.image
+            platformText = observation.platformText
+            statusText = observation.statusText
+            loadError = nil
+
+            if let updatedTrip = observation.updatedTrip {
+                onUpdateTrip?(updatedTrip)
             }
         }
     }
@@ -2317,7 +2543,7 @@ private extension TripDetailSheet {
     }
 
     private var segmentBaseDate: Date {
-        let reference = timing.departureDate ?? trip.travelDate ?? syncTravelDate
+        let reference = timing.scheduledDeparture ?? trip.travelDate ?? syncTravelDate
         var candidate = Calendar.current.startOfDay(for: reference)
         if reference < now,
            let firstSeconds = segments.first?.departureSeconds {

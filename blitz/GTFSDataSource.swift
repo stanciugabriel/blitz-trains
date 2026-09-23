@@ -22,6 +22,18 @@ struct GTFSSegment: Identifiable, Equatable {
     let trainTonnage: Int?
 }
 
+struct TrainDelayHistory: Equatable {
+    let trainNumber: String
+    let observedTrips: Int
+    let delayedTrips: Int
+    let averageDelayMinutes: Double
+    let percentEarly: Double
+    let percentOnTime: Double
+    let percentDelay15Minutes: Double
+    let percentDelay30Minutes: Double
+    let percentDelay45MinutesPlus: Double
+}
+
 extension GTFSDataSource {
     struct AgencyInfo {
         let id: String
@@ -43,46 +55,246 @@ extension GTFSDataSource.GTFSStopSchedule {
     }
 }
 
-final class GTFSDataSource {
+// Database work must not inherit the app's default MainActor isolation.
+// Callers can safely use this source from the background search queue while
+// the UI remains responsive.
+nonisolated final class GTFSDataSource {
     static let shared = GTFSDataSource()
 
     private var database: OpaquePointer?
+    // Search runs on a separate connection because the rest of the data
+    // source uses `database` for map/timing reads on the app's main actor.
+    private var searchDatabase: OpaquePointer?
+    private let searchQueue = DispatchQueue(label: "ro.openlabs.blitz.gtfs-search")
     private let searchLimit = 25
     private var agenciesById: [String: AgencyInfo] = [:]
+    private let cacheLock = NSLock()
+    private var stopsCache: [String: [GTFSStop]] = [:]
+    private var polylineStopsCache: [String: [GTFSStop]] = [:]
+    private var segmentsCache: [String: [GTFSSegment]] = [:]
+    private var scheduleCache: [String: GTFSStopSchedule?] = [:]
+    private var delayHistoryCache: [String: TrainDelayHistory?] = [:]
 
     private init() {
         openDatabase()
+        openSearchDatabase()
         loadAgencies()
     }
 
     deinit {
         sqlite3_close(database)
+        sqlite3_close(searchDatabase)
     }
 
-    func searchTrips(matching query: String, limit: Int? = nil) -> [Trip] {
+    func searchTrips(matching query: String, limit: Int? = nil, travelDate: Date? = nil) -> [Trip] {
+        searchQueue.sync {
+            searchTripsOnSearchConnection(matching: query, limit: limit, travelDate: travelDate)
+        }
+    }
+
+    /// Warms the static route cache without requiring a view to perform the
+    /// first map lookup synchronously during body evaluation.
+    func preloadRouteData(for tripId: String) {
+        _ = segments(for: tripId)
+        _ = stops(for: tripId)
+        _ = polylineStops(for: tripId)
+    }
+
+    /// Returns the bundled 60-day delay summary for a train, when the
+    /// optional train_delays table is present in the shipped database.
+    func delayHistory(for trainNumber: String) -> TrainDelayHistory? {
+        cacheLock.lock()
+        if let cached = delayHistoryCache[trainNumber] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
+        let result = loadDelayHistory(for: trainNumber)
+        cacheLock.lock()
+        delayHistoryCache[trainNumber] = result
+        cacheLock.unlock()
+        return result
+    }
+
+    private func loadDelayHistory(for trainNumber: String) -> TrainDelayHistory? {
+        guard let database else { return nil }
+        let sql = """
+        SELECT train_number, observed_trips, delayed_trips,
+               avg_delay_minutes, pct_early, pct_on_time,
+               pct_delay_15m, pct_delay_30m, pct_delay_45m_plus
+        FROM train_delays
+        WHERE train_number = ?
+        LIMIT 1
+        """
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(statement, 1, trainNumber, -1, transient)
+        guard sqlite3_step(statement) == SQLITE_ROW,
+              let numberPointer = sqlite3_column_text(statement, 0) else {
+            return nil
+        }
+
+        return TrainDelayHistory(
+            trainNumber: String(cString: numberPointer),
+            observedTrips: Int(sqlite3_column_int(statement, 1)),
+            delayedTrips: Int(sqlite3_column_int(statement, 2)),
+            averageDelayMinutes: sqlite3_column_double(statement, 3),
+            percentEarly: sqlite3_column_double(statement, 4),
+            percentOnTime: sqlite3_column_double(statement, 5),
+            percentDelay15Minutes: sqlite3_column_double(statement, 6),
+            percentDelay30Minutes: sqlite3_column_double(statement, 7),
+            percentDelay45MinutesPlus: sqlite3_column_double(statement, 8)
+        )
+    }
+
+    /// Returns bundled-schedule departures from a station after the supplied
+    /// time. This is intentionally local and synchronous so missed-train
+    /// recovery still works without InfoFer connectivity.
+    func departures(from stationID: String, after date: Date, excluding trainID: String? = nil, destinationStationID: String? = nil, limit: Int = 8) -> [Trip] {
+        guard let database else { return [] }
+        let calendar = Calendar.current
+        let sql = """
+        SELECT DISTINCT first.train_number,
+               trains.category,
+               trains.operator_id,
+               destination.uic_code,
+               destination.name,
+               first.departure_time
+        FROM trip_segments first
+        INNER JOIN trains ON trains.train_number = first.train_number
+        LEFT JOIN trip_segments last ON last.train_number = first.train_number
+            AND last.sequence_id = (
+                SELECT MAX(candidate.sequence_id)
+                FROM trip_segments candidate
+                WHERE candidate.train_number = first.train_number
+            )
+        LEFT JOIN stations destination ON destination.uic_code = last.uic_end
+        WHERE first.uic_start = ?
+          AND first.departure_time IS NOT NULL
+          \(destinationStationID == nil ? "" : "AND last.uic_end = ?")
+        ORDER BY first.departure_time ASC
+        LIMIT ?
+        """
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            logError("Failed to prepare departures query")
+            return []
+        }
+        defer { sqlite3_finalize(statement) }
+
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(statement, 1, stationID, -1, transient)
+        var limitBindingIndex: Int32 = 2
+        if let destinationStationID {
+            sqlite3_bind_text(statement, 2, destinationStationID, -1, transient)
+            limitBindingIndex = 3
+        }
+        // Fetch a broad window before applying the time filter below. The
+        // query is ordered for the full service day, so a small SQL limit can
+        // contain only already-departed trains when the user searches later.
+        sqlite3_bind_int(statement, limitBindingIndex, Int32(max(limit * 20, 200)))
+
+        var departures: [Trip] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let numberPointer = sqlite3_column_text(statement, 0) else { continue }
+            let trainNumber = String(cString: numberPointer)
+            if trainNumber == trainID { continue }
+            guard let departureSeconds = sqlite3_column_text(statement, 5).flatMap({
+                parseTimeSeconds(String(cString: $0))
+            }) else { continue }
+            let stops = self.stops(for: trainNumber)
+
+            // A stop after midnight is still part of the previous GTFS
+            // service. Compare the normalized wall-clock date, rather than
+            // raw seconds after midnight, so a 26:00 stop is not mistaken for
+            // the following day's 02:00 service.
+            let scheduleTimes = stops.map { stop in
+                let schedule = stopSchedule(for: trainNumber, stopId: stop.id)
+                return schedule?.departureSeconds ?? schedule?.arrivalSeconds
+            }
+            let stationIndex = stops.firstIndex(where: { $0.id == stationID }) ?? 0
+            let serviceDayOffset = ScheduleDateUtils.serviceDayOffset(for: scheduleTimes, through: stationIndex)
+            let serviceDate = ScheduleDateUtils.serviceDate(
+                forBoardingDate: date,
+                dayOffset: serviceDayOffset,
+                calendar: calendar
+            )
+            let departureDate = serviceDate.addingTimeInterval(TimeInterval(departureSeconds))
+            guard departureDate > date else { continue }
+
+            let category = sqlite3_column_text(statement, 1).map { String(cString: $0) }
+            let agencyID = sqlite3_column_text(statement, 2).map { String(cString: $0) }
+            let destinationID = sqlite3_column_text(statement, 3).map { String(cString: $0) }
+            let destinationName = sqlite3_column_text(statement, 4).map { String(cString: $0) }
+            let originSequence = stops.first(where: { $0.id == stationID })?.sequence
+            let destinationSequence = destinationID.flatMap { id in stops.first(where: { $0.id == id })?.sequence }
+            let travelDate = serviceDate
+            let title = formattedTrainTitle(category: category, number: trainNumber)
+            departures.append(Trip(
+                id: "\(trainNumber)-\(stationID)-\(Int(date.timeIntervalSince1970))",
+                title: title,
+                subtitle: routeDescription(origin: stops.first(where: { $0.id == stationID })?.name, destination: destinationName) ?? "Route info unavailable",
+                agencyId: agencyID,
+                detailRoute: routeDescription(origin: stops.first(where: { $0.id == stationID })?.name, destination: destinationName),
+                gtfsTripId: trainNumber,
+                travelDate: travelDate,
+                originStopId: stationID,
+                originName: stops.first(where: { $0.id == stationID })?.name,
+                destinationStopId: destinationID,
+                destinationName: destinationName,
+                stops: stops.map(StoredStop.init(gtfsStop:)),
+                originSequence: originSequence,
+                destinationSequence: destinationSequence,
+                trainType: category.flatMap { TrainType(categoryCode: $0) }
+            ))
+            if departures.count >= limit { break }
+        }
+        return departures
+    }
+
+    private func searchTripsOnSearchConnection(matching query: String, limit: Int? = nil, travelDate: Date? = nil) -> [Trip] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let database else { return [] }
+        guard !trimmed.isEmpty, let database = searchDatabase else { return [] }
 
         let fetchLimit = Int32(limit ?? searchLimit)
         let sql = """
-        WITH first_segment AS (
-            SELECT ts.train_number, ts.sequence_id, ts.uic_start, ts.train_length_meters, ts.train_tonnage
+        WITH matched_trains AS (
+            SELECT train_number
+            FROM trains
+            WHERE train_number LIKE ? OR train_number LIKE ?
+
+            UNION
+
+            SELECT DISTINCT ts.train_number
             FROM trip_segments ts
-            INNER JOIN (
-                SELECT train_number, MIN(sequence_id) AS min_sequence
-                FROM trip_segments
-                GROUP BY train_number
-            ) grouped ON grouped.train_number = ts.train_number AND grouped.min_sequence = ts.sequence_id
+            INNER JOIN stations station ON station.uic_code = ts.uic_start OR station.uic_code = ts.uic_end
+            WHERE COALESCE(station.search_index, '') LIKE ?
+        ), first_segment AS (
+            SELECT ts.train_number, ts.uic_start, ts.train_length_meters, ts.train_tonnage
+            FROM trip_segments ts
+            INNER JOIN matched_trains matched ON matched.train_number = ts.train_number
+            WHERE ts.sequence_id = (
+                SELECT MIN(first.sequence_id)
+                FROM trip_segments first
+                WHERE first.train_number = ts.train_number
+            )
         ), last_segment AS (
-            SELECT ts.train_number, ts.sequence_id, ts.uic_end
+            SELECT ts.train_number, ts.uic_end
             FROM trip_segments ts
-            INNER JOIN (
-                SELECT train_number, MAX(sequence_id) AS max_sequence
-                FROM trip_segments
-                GROUP BY train_number
-            ) grouped ON grouped.train_number = ts.train_number AND grouped.max_sequence = ts.sequence_id
+            INNER JOIN matched_trains matched ON matched.train_number = ts.train_number
+            WHERE ts.sequence_id = (
+                SELECT MAX(last.sequence_id)
+                FROM trip_segments last
+                WHERE last.train_number = ts.train_number
+            )
         )
-        SELECT t.train_number,
+        SELECT DISTINCT t.train_number,
                t.category,
                t.operator_id,
                origin.name AS origin_name,
@@ -94,10 +306,7 @@ final class GTFSDataSource {
         LEFT JOIN stations origin ON origin.uic_code = fs.uic_start
         LEFT JOIN last_segment ls ON ls.train_number = t.train_number
         LEFT JOIN stations destination ON destination.uic_code = ls.uic_end
-        WHERE t.train_number LIKE ?
-           OR t.train_number LIKE ?
-           OR COALESCE(origin.search_index, '') LIKE ?
-           OR COALESCE(destination.search_index, '') LIKE ?
+        INNER JOIN matched_trains matched ON matched.train_number = t.train_number
         ORDER BY t.train_number ASC
         LIMIT ?
         """
@@ -109,25 +318,33 @@ final class GTFSDataSource {
         }
         defer { sqlite3_finalize(statement) }
 
+        // A prefix search uses the train-number index while the user is typing.
+        // Keep the contains pattern as a fallback for station/name searches and
+        // for numbers that are not stored with the exact formatting entered.
         let pattern = "%\(trimmed)%"
         let numericQuery = trimmed.filter { $0.isNumber }
-        let numericPattern = numericQuery.isEmpty ? pattern : "%\(numericQuery)%"
+        let numericPattern = numericQuery.isEmpty ? pattern : "\(numericQuery)%"
         var normalizedQuery = normalizedSearchQuery(trimmed)
         if normalizedQuery.isEmpty {
             normalizedQuery = trimmed.lowercased()
         }
         let normalizedPattern = "%\(normalizedQuery)%"
         let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        sqlite3_bind_text(statement, 1, pattern, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(statement, 2, numericPattern, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(statement, 1, numericPattern, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(statement, 2, pattern, -1, SQLITE_TRANSIENT)
         sqlite3_bind_text(statement, 3, normalizedPattern, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(statement, 4, normalizedPattern, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_int(statement, 5, fetchLimit)
+        sqlite3_bind_int(statement, 4, fetchLimit)
 
         var trips: [Trip] = []
+        var seenTrainNumbers = Set<String>()
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let numberPointer = sqlite3_column_text(statement, 0) else { continue }
             let trainNumber = String(cString: numberPointer)
+            // A train number can have multiple segment chains in the static
+            // data. Trip currently uses the train number as its identity, so
+            // return one representative result per number to keep SwiftUI IDs
+            // stable.
+            guard seenTrainNumbers.insert(trainNumber).inserted else { continue }
             let category: String?
             if let categoryPointer = sqlite3_column_text(statement, 1) {
                 let raw = String(cString: categoryPointer).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -176,6 +393,10 @@ final class GTFSDataSource {
             let trainType = category.flatMap { TrainType(categoryCode: $0) }
             let lengthText = formattedTrainLength(meters: lengthMeters)
             let tonnageText = formattedTrainTonnage(tons: tonnageValue)
+            let routeStops = stops(for: trainNumber)
+            let originStop = routeStops.first
+            let destinationStop = routeStops.last
+            let selectedTravelDate = travelDate.map { Calendar.current.startOfDay(for: $0) }
             trips.append(
                 Trip(
                     id: trainNumber,
@@ -184,6 +405,14 @@ final class GTFSDataSource {
                     agencyId: agencyId,
                     detailRoute: routeName,
                     gtfsTripId: trainNumber,
+                    travelDate: selectedTravelDate,
+                    originStopId: originStop?.id,
+                    originName: originStop?.name ?? originName,
+                    destinationStopId: destinationStop?.id,
+                    destinationName: destinationStop?.name ?? destinationName,
+                    stops: routeStops.map(StoredStop.init(gtfsStop:)),
+                    originSequence: originStop?.sequence,
+                    destinationSequence: destinationStop?.sequence,
                     trainType: trainType,
                     trainLength: lengthText,
                     trainTonnage: tonnageText
@@ -304,6 +533,25 @@ final class GTFSDataSource {
     }
 
     func stops(for tripId: String) -> [GTFSStop] {
+        cacheLock.lock()
+        if let cached = stopsCache[tripId] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
+        let startedAt = Date()
+        let result = loadStops(for: tripId)
+#if DEBUG
+        logSlowCacheMiss("stops", tripId: tripId, startedAt: startedAt)
+#endif
+        cacheLock.lock()
+        stopsCache[tripId] = result
+        cacheLock.unlock()
+        return result
+    }
+
+    private func loadStops(for tripId: String) -> [GTFSStop] {
         guard let database else { return [] }
         let sql = """
         SELECT
@@ -379,6 +627,25 @@ final class GTFSDataSource {
     }
 
     func polylineStops(for tripId: String) -> [GTFSStop] {
+        cacheLock.lock()
+        if let cached = polylineStopsCache[tripId] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
+        let startedAt = Date()
+        let result = loadPolylineStops(for: tripId)
+#if DEBUG
+        logSlowCacheMiss("polyline stops", tripId: tripId, startedAt: startedAt)
+#endif
+        cacheLock.lock()
+        polylineStopsCache[tripId] = result
+        cacheLock.unlock()
+        return result
+    }
+
+    private func loadPolylineStops(for tripId: String) -> [GTFSStop] {
         guard let database else { return [] }
         let sql = """
         SELECT
@@ -437,6 +704,25 @@ final class GTFSDataSource {
     }
 
     func segments(for tripId: String) -> [GTFSSegment] {
+        cacheLock.lock()
+        if let cached = segmentsCache[tripId] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
+        let startedAt = Date()
+        let result = loadSegments(for: tripId)
+#if DEBUG
+        logSlowCacheMiss("segments", tripId: tripId, startedAt: startedAt)
+#endif
+        cacheLock.lock()
+        segmentsCache[tripId] = result
+        cacheLock.unlock()
+        return result
+    }
+
+    private func loadSegments(for tripId: String) -> [GTFSSegment] {
         guard let database else { return [] }
         let sql = """
         SELECT
@@ -526,6 +812,104 @@ final class GTFSDataSource {
     }
 
     func stopSchedule(for tripId: String, stopId: String) -> GTFSStopSchedule? {
+        let key = "\(tripId)|\(stopId)"
+        cacheLock.lock()
+        if let cached = scheduleCache[key] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
+        let startedAt = Date()
+        let result = loadStopSchedule(for: tripId, stopId: stopId)
+#if DEBUG
+        logSlowCacheMiss("schedule \(stopId)", tripId: tripId, startedAt: startedAt)
+#endif
+        cacheLock.lock()
+        scheduleCache[key] = result
+        cacheLock.unlock()
+        return result
+    }
+
+    func stopSchedules(for tripId: String, stopIds: [String]) -> [String: GTFSStopSchedule] {
+        let uniqueStopIDs = Array(Set(stopIds))
+        guard !uniqueStopIDs.isEmpty, let database else { return [:] }
+
+        var cached: [String: GTFSStopSchedule] = [:]
+        var missing: [String] = []
+        cacheLock.lock()
+        for stopID in uniqueStopIDs {
+            let key = "\(tripId)|\(stopID)"
+            if let schedule = scheduleCache[key] {
+                if let schedule { cached[stopID] = schedule }
+            } else {
+                missing.append(stopID)
+            }
+        }
+        cacheLock.unlock()
+        guard !missing.isEmpty else { return cached }
+
+        let placeholders = Array(repeating: "?", count: missing.count).joined(separator: ",")
+        let sql = """
+        SELECT stop_id, MIN(arrival_time), MIN(departure_time)
+        FROM (
+            SELECT uic_end AS stop_id, arrival_time, NULL AS departure_time
+            FROM trip_segments
+            WHERE train_number = ? AND uic_end IN (\(placeholders))
+            UNION ALL
+            SELECT uic_start AS stop_id, NULL AS arrival_time, departure_time
+            FROM trip_segments
+            WHERE train_number = ? AND uic_start IN (\(placeholders))
+        )
+        GROUP BY stop_id
+        """
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            logError("Failed to prepare bulk stop schedule query")
+            return cached
+        }
+        defer { sqlite3_finalize(statement) }
+
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        var index: Int32 = 1
+        sqlite3_bind_text(statement, index, tripId, -1, transient)
+        index += 1
+        for stopID in missing {
+            sqlite3_bind_text(statement, index, stopID, -1, transient)
+            index += 1
+        }
+        sqlite3_bind_text(statement, index, tripId, -1, transient)
+        index += 1
+        for stopID in missing {
+            sqlite3_bind_text(statement, index, stopID, -1, transient)
+            index += 1
+        }
+
+        var loaded: [String: GTFSStopSchedule] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let stopPointer = sqlite3_column_text(statement, 0) else { continue }
+            let stopID = String(cString: stopPointer)
+            let arrival = sqlite3_column_text(statement, 1).flatMap {
+                parseTimeSeconds(String(cString: $0))
+            }
+            let departure = sqlite3_column_text(statement, 2).flatMap {
+                parseTimeSeconds(String(cString: $0))
+            }
+            guard arrival != nil || departure != nil else { continue }
+            loaded[stopID] = GTFSStopSchedule(arrivalSeconds: arrival, departureSeconds: departure)
+        }
+
+        cacheLock.lock()
+        for stopID in missing {
+            let key = "\(tripId)|\(stopID)"
+            scheduleCache[key] = loaded[stopID]
+        }
+        cacheLock.unlock()
+        cached.merge(loaded) { _, new in new }
+        return cached
+    }
+
+    private func loadStopSchedule(for tripId: String, stopId: String) -> GTFSStopSchedule? {
         guard let database else { return nil }
         let sql = """
         SELECT
@@ -604,6 +988,14 @@ final class GTFSDataSource {
         let baseSeconds = hours * 3600 + minutes * 60 + seconds
         return baseSeconds + dayComponent * 24 * 3600
     }
+
+#if DEBUG
+    private func logSlowCacheMiss(_ resource: String, tripId: String, startedAt: Date) {
+        let elapsed = Date().timeIntervalSince(startedAt)
+        guard elapsed >= 0.05 else { return }
+        print("[GTFSDataSource] slow cache miss \(resource) for \(tripId): \(Int(elapsed * 1000))ms")
+    }
+#endif
 
     private struct StopInfo {
         let id: String
@@ -712,6 +1104,16 @@ final class GTFSDataSource {
             logError("Unable to open static_data.sqlite at \(url.path)")
             sqlite3_close(database)
             database = nil
+        }
+    }
+
+    private func openSearchDatabase() {
+        guard searchDatabase == nil, let url = locateDatabaseURL() else { return }
+
+        if sqlite3_open_v2(url.path, &searchDatabase, SQLITE_OPEN_READONLY, nil) != SQLITE_OK {
+            logError("Unable to open search connection for static_data.sqlite at \(url.path)")
+            sqlite3_close(searchDatabase)
+            searchDatabase = nil
         }
     }
 

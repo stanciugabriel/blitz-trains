@@ -2,6 +2,7 @@ import SwiftUI
 import CoreLocation
 import Combine
 import PhotosUI
+import UniformTypeIdentifiers
 internal import UIKit
 
 
@@ -11,11 +12,21 @@ struct SheetContent: View {
     @Binding var isAddTripMode: Bool
     @Binding var trainSearchQuery: String
     @Binding var pastTrips: [Trip]
+    @Binding var missedTrainPrompt: MissedTrainPrompt?
+    @Binding var isShowingMissedTrainAlternatives: Bool
+    let missedTrainAlternatives: [Trip]
     var onTripAdded: (Trip) -> Void
+    var onMissedTrainFindAlternatives: (MissedTrainPrompt) -> Void
+    var onMissedTrainKeepTracking: (MissedTrainPrompt) -> Void
+    var onSelectMissedTrainAlternative: (Trip) -> Void
+    @ObservedObject var locationPhaseDetector: TripLocationPhaseDetector
 
     @FocusState private var isTextFieldFocused: Bool
     @State private var searchResults: [Trip] = []
+    @State private var trainSearchText = ""
     @State private var searchTask: Task<Void, Never>?
+    @State private var isSearchingTrains = false
+    @State private var searchRequestID = UUID()
     @State private var addStep: AddTripStep = .search
     @State private var pendingTrip: Trip?
     @State private var availableStops: [GTFSStop] = []
@@ -52,14 +63,28 @@ struct SheetContent: View {
         isAddTripMode: Binding<Bool>,
         trainSearchQuery: Binding<String>,
         pastTrips: Binding<[Trip]> = .constant([]),
-        onTripAdded: @escaping (Trip) -> Void = { _ in }
+        missedTrainPrompt: Binding<MissedTrainPrompt?>,
+        isShowingMissedTrainAlternatives: Binding<Bool>,
+        missedTrainAlternatives: [Trip],
+        locationPhaseDetector: TripLocationPhaseDetector,
+        onTripAdded: @escaping (Trip) -> Void = { _ in },
+        onMissedTrainFindAlternatives: @escaping (MissedTrainPrompt) -> Void = { _ in },
+        onMissedTrainKeepTracking: @escaping (MissedTrainPrompt) -> Void = { _ in },
+        onSelectMissedTrainAlternative: @escaping (Trip) -> Void = { _ in }
     ) {
         self._trips = trips
         self._selectedTrip = selectedTrip
         self._isAddTripMode = isAddTripMode
         self._trainSearchQuery = trainSearchQuery
         self._pastTrips = pastTrips
+        self._missedTrainPrompt = missedTrainPrompt
+        self._isShowingMissedTrainAlternatives = isShowingMissedTrainAlternatives
+        self.missedTrainAlternatives = missedTrainAlternatives
+        self.locationPhaseDetector = locationPhaseDetector
         self.onTripAdded = onTripAdded
+        self.onMissedTrainFindAlternatives = onMissedTrainFindAlternatives
+        self.onMissedTrainKeepTracking = onMissedTrainKeepTracking
+        self.onSelectMissedTrainAlternative = onSelectMissedTrainAlternative
     }
 
     var body: some View {
@@ -69,7 +94,7 @@ struct SheetContent: View {
                 .frame(width: 40, height: 5)
                 .padding(.top, 8)
 
-            if !isShowingDetailHeader {
+            if !isShowingDetailHeader && !isShowingMissedTrainAlternatives {
                 HStack {
                     Text(headerTitle)
                         .font(.system(size: 34, weight: .bold, design: .rounded))
@@ -115,10 +140,6 @@ struct SheetContent: View {
                 }
             }
         }
-        .onChange(of: trainSearchQuery) { _, newValue in
-            guard isAddTripMode, addStep == .search else { return }
-            performTrainSearch(query: newValue)
-        }
         .onChange(of: selectedTrip) { _, newValue in
             if newValue == nil {
                 
@@ -145,6 +166,18 @@ struct SheetContent: View {
             searchTask?.cancel()
             logAddedToastTask?.cancel()
         }
+        .alert(item: $missedTrainPrompt) { prompt in
+            Alert(
+                title: Text("Did you miss \(prompt.trainTitle)?"),
+                message: Text("Your train has departed and there is no boarding confirmation yet. You can look for another train without changing this trip."),
+                primaryButton: .default(Text("Find another train")) {
+                    onMissedTrainFindAlternatives(prompt)
+                },
+                secondaryButton: .cancel(Text("Keep tracking")) {
+                    onMissedTrainKeepTracking(prompt)
+                }
+            )
+        }
         .sheet(item: $activeConnectionInfo) { info in
             ConnectionDetailSheet(info: info) {
                 activeConnectionInfo = nil
@@ -156,7 +189,7 @@ struct SheetContent: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $isShowingSettingsSheet) {
-            SettingsSheet {
+            SettingsSheet(trips: $trips, pastTrips: $pastTrips) {
                 isShowingSettingsSheet = false
             }
             .presentationDetents([.large])
@@ -208,13 +241,20 @@ struct SheetContent: View {
 
     @ViewBuilder
     private var contentView: some View {
-        if let trip = selectedTrip {
+        if isShowingMissedTrainAlternatives {
+            MissedTrainAlternativesView(
+                alternatives: missedTrainAlternatives,
+                onSelect: onSelectMissedTrainAlternative,
+                onCancel: { isShowingMissedTrainAlternatives = false }
+            )
+        } else if let trip = selectedTrip {
             TripDetailSheet(
                 trip: trip,
                 pastTrips: pastTrips,
                 isPastTrip: isSelectedTripPast,
                 onClose: exitDetailView,
-                onUpdateTrip: handleTripUpdate
+                onUpdateTrip: handleTripUpdate,
+                locationPhaseDetector: locationPhaseDetector
             )
         } else {
             mainTabContent
@@ -246,6 +286,7 @@ struct SheetContent: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeOut(duration: 0.12), value: selectedMainTab)
     }
+
 
     private var tripsContent: some View {
         Group {
@@ -367,17 +408,39 @@ struct SheetContent: View {
         }
     }
 
+    @ViewBuilder
     private var addFlowContent: some View {
-        VStack(spacing: 16) {
-            addInputField
-            addStepContent
+        if addStep == .date {
+            VStack(spacing: 0) {
+                addInputField
+                addStepContent
+            }
+        } else {
+            VStack(spacing: 8) {
+                addInputField
+                addStepContent
+            }
         }
     }
 
     @ViewBuilder
     private var addInputField: some View {
         switch addStep {
-        case .search, .origin, .destination:
+        case .search:
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TrainNumberSearchInput(focusNonce: searchFocusNonce) { query in
+                    trainSearchText = query
+                    performTrainSearch(query: query)
+                }
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(.horizontal)
+        case .origin, .destination:
             let placeholder = addStep.placeholder
             let binding = bindingForCurrentInput
             HStack(spacing: 8) {
@@ -386,6 +449,9 @@ struct SheetContent: View {
                 TextField(placeholder, text: binding)
                     .textFieldStyle(.plain)
                     .foregroundStyle(.primary)
+                    .keyboardType(.default)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.sentences)
                     .focused($isTextFieldFocused)
                     .id(searchFocusNonce)
                     .onAppear {
@@ -408,8 +474,10 @@ struct SheetContent: View {
                     displayedComponents: [.date]
                 )
                 .datePickerStyle(.graphical)
+                .labelsHidden()
             }
-            .padding()
+            .padding(.horizontal)
+            .padding(.bottom)
             .background(Color(.secondarySystemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .padding(.horizontal)
@@ -516,11 +584,18 @@ struct SheetContent: View {
         if normalizedTrainQuery.isEmpty {
             SearchPlaceholderView(text: "Type a train number to look up schedules.")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if isSearchingTrains {
+            VStack(spacing: 10) {
+                ProgressView()
+                Text("Searching schedules…")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if searchResults.isEmpty {
-            SearchPlaceholderView(text: "No trains found for \"\(trainSearchQuery)\"")
+            SearchPlaceholderView(text: "No trains found for \"\(trainSearchText)\"")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            List(searchResults) { trip in
+            List(searchResults, id: \.id) { trip in
                 Button {
                     handleTrainSelection(trip)
                 } label: {
@@ -661,7 +736,7 @@ struct SheetContent: View {
     }
 
     private var isShowingDetailHeader: Bool {
-        selectedTrip != nil && !isAddTripMode
+        selectedTrip != nil && !isAddTripMode && !isShowingMissedTrainAlternatives
     }
 
     private var shouldShowMainBottomBar: Bool {
@@ -702,6 +777,9 @@ struct SheetContent: View {
         destinationQuery = ""
         searchResults = []
         searchTask?.cancel()
+        isSearchingTrains = false
+        searchRequestID = UUID()
+        trainSearchText = ""
         trainSearchQuery = ""
         isTextFieldFocused = false
         pendingSearchAutofocus = true
@@ -718,6 +796,9 @@ struct SheetContent: View {
         destinationQuery = ""
         searchResults = []
         searchTask?.cancel()
+        isSearchingTrains = false
+        searchRequestID = UUID()
+        trainSearchText = ""
         trainSearchQuery = ""
         isTextFieldFocused = false
         pendingSearchAutofocus = false
@@ -748,7 +829,7 @@ struct SheetContent: View {
         pendingTrip = trip
         availableStops = dataSource.stops(for: trip.id)
         addStep = .date
-        trainSearchQuery = trip.title
+        trainSearchQuery = trainSearchText
         originQuery = ""
         destinationQuery = ""
         selectedOrigin = nil
@@ -770,6 +851,14 @@ struct SheetContent: View {
         let routeText = "\(origin.name) → \(destination.name)"
         let subtitle = "\(routeText) · \(dateText)"
         let composedID = "\(baseTrip.id)-\(origin.id)-\(destination.id)-\(Int(selectedDate.timeIntervalSince1970))"
+        let routeSchedules = availableStops.sorted { $0.sequence < $1.sequence }.map { stop in
+            dataSource.stopSchedule(for: baseTrip.gtfsTripId ?? baseTrip.id, stopId: stop.id)
+        }
+        let routeTimes = routeSchedules.map { $0?.departureSeconds ?? $0?.arrivalSeconds }
+        let originIndex = availableStops.sorted { $0.sequence < $1.sequence }
+            .firstIndex(where: { $0.id == origin.id }) ?? 0
+        let serviceDayOffset = ScheduleDateUtils.serviceDayOffset(for: routeTimes, through: originIndex)
+        let serviceDate = ScheduleDateUtils.serviceDate(forBoardingDate: selectedDate, dayOffset: serviceDayOffset)
         let storedStops = availableStops.map { stop in
             StoredStop(
                 id: stop.id,
@@ -780,7 +869,14 @@ struct SheetContent: View {
             )
         }
 
-        let distanceText = formattedDistance(for: storedStops)
+        let rideStops = stopsForRide(
+            storedStops,
+            originStopID: origin.id,
+            destinationStopID: destination.id,
+            originSequence: origin.sequence,
+            destinationSequence: destination.sequence
+        )
+        let distanceText = formattedDistance(for: rideStops)
         let trainId = baseTrip.gtfsTripId ?? baseTrip.id
         let originPlatform = StaticPlatformDataSource.shared.platform(trainId: trainId, stationId: origin.id)
             ?? baseTrip.originPlatform
@@ -795,7 +891,7 @@ struct SheetContent: View {
             detailDate: dateText,
             detailRoute: routeText,
             gtfsTripId: baseTrip.gtfsTripId ?? baseTrip.id,
-            travelDate: selectedDate,
+            travelDate: serviceDate,
             originStopId: origin.id,
             originName: origin.name,
             destinationStopId: destination.id,
@@ -911,16 +1007,34 @@ struct SheetContent: View {
     private func performTrainSearch(query: String) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         searchTask?.cancel()
+        let requestID = UUID()
+        searchRequestID = requestID
 
         guard !trimmed.isEmpty else {
+            isSearchingTrains = false
             searchResults = []
             return
         }
 
-        searchTask = Task(priority: .userInitiated) {
-            let matches = dataSource.searchTrips(matching: trimmed)
+        isSearchingTrains = true
+
+        searchTask = Task { [dataSource] in
+            // Search is submitted explicitly from the keyboard. Keep the
+            // database work off the UI thread; there is intentionally no
+            // debounce here.
+            let matches = await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    continuation.resume(returning: dataSource.searchTrips(
+                        matching: trimmed,
+                        travelDate: selectedDate
+                    ))
+                }
+            }
             guard !Task.isCancelled else { return }
             await MainActor.run {
+                guard searchRequestID == requestID,
+                      trainSearchText.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
+                isSearchingTrains = false
                 searchResults = matches
             }
         }
@@ -929,7 +1043,7 @@ struct SheetContent: View {
     private var bindingForCurrentInput: Binding<String> {
         switch addStep {
         case .search:
-            return $trainSearchQuery
+            return $trainSearchText
         case .origin:
             return $originQuery
         case .destination:
@@ -940,7 +1054,7 @@ struct SheetContent: View {
     }
 
     private var normalizedTrainQuery: String {
-        trainSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        trainSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var sortedTrips: [Trip] {
@@ -1094,21 +1208,12 @@ struct SheetContent: View {
     }
 
     private func computeSortKey(for trip: Trip) -> Date {
-        guard let travelDate = trip.travelDate, let originId = trip.originStopId else {
-            return fallbackSortDate(for: trip)
-        }
-
-        let base = Calendar.current.startOfDay(for: travelDate)
-        let identifier = trip.gtfsTripId ?? trip.id
-        let schedule = dataSource.stopSchedule(for: identifier, stopId: originId)
-        let departure = schedule?.departureDate(on: base) ?? schedule?.arrivalDate(on: base)
-        let delaySeconds = TimeInterval((trip.delayMinutes ?? 0) * 60)
-
-        if let departure {
-            return departure.addingTimeInterval(delaySeconds)
-        }
-
-        return travelDate
+        TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: LiveDelayStore.shared.info(for: trip.id),
+            referenceDate: Date(),
+            includeProgressDetails: false
+        ).adjustedDeparture ?? fallbackSortDate(for: trip)
     }
 
     private func pruneCompletedTrips() {
@@ -1131,7 +1236,12 @@ struct SheetContent: View {
     }
 
     private func removalCutoffDate(for trip: Trip) -> Date? {
-        guard let arrival = arrivalDateWithDelay(for: trip) else { return nil }
+        guard let arrival = TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: LiveDelayStore.shared.info(for: trip.id),
+            referenceDate: Date(),
+            includeProgressDetails: false
+        ).adjustedArrival else { return nil }
         let calendar = Calendar.current
         let arrivalDay = calendar.startOfDay(for: arrival)
         return calendar.date(byAdding: .day, value: 1, to: arrivalDay)
@@ -1189,82 +1299,30 @@ struct SheetContent: View {
     }
 
     private func arrivalDateWithDelay(for trip: Trip) -> Date? {
-        guard let travelDate = trip.travelDate else { return nil }
-        guard let destinationId = trip.destinationStopId else { return nil }
-
-        let base = Calendar.current.startOfDay(for: travelDate)
-        let identifier = trip.gtfsTripId ?? trip.id
-        guard let destinationSchedule = dataSource.stopSchedule(for: identifier, stopId: destinationId) else { return nil }
-
-        var departureReference: Date?
-        if let originId = trip.originStopId,
-           let originSchedule = dataSource.stopSchedule(for: identifier, stopId: originId) {
-            departureReference = originSchedule.departureDate(on: base) ?? originSchedule.arrivalDate(on: base)
-        }
-
-        guard let rawArrival = destinationSchedule.arrivalDate(on: base) ?? destinationSchedule.departureDate(on: base) else { return nil }
-        guard let arrival = ScheduleDateUtils.normalizedArrival(rawArrival, relativeTo: departureReference) else { return nil }
-        let delaySeconds = TimeInterval((trip.delayMinutes ?? 0) * 60)
-        return arrival.addingTimeInterval(delaySeconds)
+        TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: LiveDelayStore.shared.info(for: trip.id),
+            referenceDate: Date(),
+            includeProgressDetails: false
+        ).adjustedArrival
     }
 
     private func departureDateWithDelay(for trip: Trip) -> Date? {
-        guard let travelDate = trip.travelDate else { return nil }
-        guard let originId = trip.originStopId else { return nil }
-
-        let base = Calendar.current.startOfDay(for: travelDate)
-        let identifier = trip.gtfsTripId ?? trip.id
-        guard let originSchedule = dataSource.stopSchedule(for: identifier, stopId: originId) else { return nil }
-        guard let departure = originSchedule.departureDate(on: base) ?? originSchedule.arrivalDate(on: base) else { return nil }
-        let delaySeconds = TimeInterval((trip.delayMinutes ?? 0) * 60)
-        return departure.addingTimeInterval(delaySeconds)
+        TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: LiveDelayStore.shared.info(for: trip.id),
+            referenceDate: Date(),
+            includeProgressDetails: false
+        ).adjustedDeparture
     }
 
     private func arrivalDelayMinutes(for trip: Trip) -> Int {
-        let liveInfo = LiveDelayStore.shared.info(for: trip.id)
-        let activeDelay = liveInfo?.delayMinutes ?? trip.delayMinutes
-        let arrivalDelay = destinationStop(for: trip)?.arrivalDelayMinutes
-            ?? destinationStationDelay(from: liveInfo, for: trip)?.arrivalDelayMinutes
-
-        if let activeDelay {
-            return activeDelay
-        }
-
-        return arrivalDelay ?? 0
-    }
-
-    private func destinationStationDelay(from info: DelayInfo?, for trip: Trip) -> StationDelay? {
-        guard let info else { return nil }
-        let targetName = trip.destinationName ?? destinationStop(for: trip)?.name ?? trip.stops?.sorted { $0.sequence < $1.sequence }.last?.name
-        if let targetName {
-            let normalizedTarget = normalizeStationName(targetName)
-            if let match = info.stationDelays.first(where: { normalizeStationName($0.stationName) == normalizedTarget }) {
-                return match
-            }
-        }
-        return info.stationDelays.last
-    }
-
-    private func originStop(for trip: Trip) -> StoredStop? {
-        guard let stops = trip.stops else { return nil }
-        if let id = trip.originStopId, let stop = stops.first(where: { $0.id == id }) {
-            return stop
-        }
-        if let sequence = trip.originSequence, let stop = stops.first(where: { $0.sequence == sequence }) {
-            return stop
-        }
-        return nil
-    }
-
-    private func destinationStop(for trip: Trip) -> StoredStop? {
-        guard let stops = trip.stops else { return nil }
-        if let id = trip.destinationStopId, let stop = stops.first(where: { $0.id == id }) {
-            return stop
-        }
-        if let sequence = trip.destinationSequence, let stop = stops.first(where: { $0.sequence == sequence }) {
-            return stop
-        }
-        return nil
+        TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: LiveDelayStore.shared.info(for: trip.id),
+            referenceDate: Date(),
+            includeProgressDetails: false
+        ).destinationDelayMinutes
     }
 
     private func tripDuration(for trip: Trip) -> TimeInterval? {
@@ -1275,15 +1333,21 @@ struct SheetContent: View {
     }
 
     private func distanceKilometers(for trip: Trip) -> Double? {
-        if let parsed = parsedDistanceKilometers(from: trip.detailDistance) {
-            return parsed
+        if let kilometers = distanceKilometersFromStops(for: trip) {
+            return kilometers
         }
-        return distanceKilometersFromStops(for: trip)
+        return parsedDistanceKilometers(from: trip.detailDistance)
     }
 
     private func distanceKilometersFromStops(for trip: Trip) -> Double? {
-        guard let stops = trip.stops, stops.count > 1 else { return nil }
-        let sorted = stops.sorted { $0.sequence < $1.sequence }
+        let sorted = stopsForRide(
+            trip.stops,
+            originStopID: trip.originStopId,
+            destinationStopID: trip.destinationStopId,
+            originSequence: trip.originSequence,
+            destinationSequence: trip.destinationSequence
+        )
+        guard sorted.count > 1 else { return nil }
         var totalMeters: CLLocationDistance = 0
         for pair in zip(sorted, sorted.dropFirst()) {
             let start = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
@@ -1382,7 +1446,7 @@ struct TripRowView: View {
     var showsCardBackground: Bool = false
     var displayMode: DisplayMode = .live
 
-    @State private var timing = TripRowTiming()
+    @State private var timing = ResolvedTripTiming.empty
     @State private var derivedStops: StopPair?
     @State private var now = Date()
     @State private var liveDelayInfo: DelayInfo?
@@ -1416,7 +1480,7 @@ struct TripRowView: View {
             }
         }
         .task(id: trip.id) {
-            loadTiming()
+            await loadTiming()
         }
         .onReceive(secondTimer) { value in
             guard shouldTickEverySecond else { return }
@@ -1429,6 +1493,7 @@ struct TripRowView: View {
         .onReceive(NotificationCenter.default.publisher(for: .liveDelayInfoUpdated)) { notification in
             guard let updatedID = notification.object as? String, updatedID == trip.id else { return }
             liveDelayInfo = LiveDelayStore.shared.info(for: trip.id)
+            Task { await loadTiming() }
         }
     }
 
@@ -1708,37 +1773,11 @@ struct TripRowView: View {
     }
 
     private var activeDelayMinutes: Int? {
-        liveDelayInfo?.delayMinutes ?? trip.delayMinutes
+        timing.headerDelayMinutes ?? trip.delayMinutes
     }
 
     private var effectiveDelayMinutes: Int {
         activeDelayMinutes ?? 0
-    }
-
-    private var orderedStops: [StoredStop] {
-        trip.stops?.sorted(by: { $0.sequence < $1.sequence }) ?? []
-    }
-
-    private var originStoredStop: StoredStop? {
-        storedStop(for: trip.originStopId, sequence: trip.originSequence, fallback: orderedStops.first)
-    }
-
-    private var destinationStoredStop: StoredStop? {
-        storedStop(for: trip.destinationStopId, sequence: trip.destinationSequence, fallback: orderedStops.last)
-    }
-
-    private var departureStationDepartureDelayMinutes: Int? {
-        originStoredStop?.departureDelayMinutes
-            ?? stationDelayFromLiveInfo(for: .departure)?.departureDelayMinutes
-    }
-
-    private var arrivalStationArrivalDelayMinutes: Int? {
-        destinationStoredStop?.arrivalDelayMinutes
-            ?? stationDelayFromLiveInfo(for: .arrival)?.arrivalDelayMinutes
-    }
-
-    private var shouldApplyHeaderDelayToEntireTrip: Bool {
-        departureStationDepartureDelayMinutes == nil && activeDelayMinutes != nil
     }
 
     private func formattedDelay(minutes: Int) -> String {
@@ -1752,18 +1791,11 @@ struct TripRowView: View {
     }
 
     private var adjustedDepartureDate: Date? {
-        guard let date = timing.departureDate else { return nil }
-        return applyDelay(to: date, minutes: terminalDelayMinutes(for: .departure))
+        timing.adjustedDeparture
     }
 
     private var adjustedArrivalDate: Date? {
-        guard let date = timing.arrivalDate else { return nil }
-        return applyDelay(to: date, minutes: terminalDelayMinutes(for: .arrival))
-    }
-
-    private func applyDelay(to date: Date, minutes: Int?) -> Date {
-        guard let minutes, minutes != 0 else { return date }
-        return date.addingTimeInterval(TimeInterval(minutes * 60))
+        timing.adjustedArrival
     }
 
     private func formattedTime(_ date: Date?) -> String {
@@ -1779,26 +1811,21 @@ struct TripRowView: View {
         return .green
     }
 
-    private func loadTiming() {
+    private func loadTiming() async {
         ensureDerivedStops()
-
-        guard
-            let originId = resolvedOriginStopId,
-            let destinationId = resolvedDestinationStopId
-        else {
-            timing = TripRowTiming()
-            return
-        }
-
-        let base = Calendar.current.startOfDay(for: resolvedTravelDate)
-        let tripIdentifier = trip.gtfsTripId ?? trip.id
-        let originSchedule = dataSource.stopSchedule(for: tripIdentifier, stopId: originId)
-        let destinationSchedule = dataSource.stopSchedule(for: tripIdentifier, stopId: destinationId)
-
-        let departure = originSchedule?.departureDate(on: base) ?? originSchedule?.arrivalDate(on: base)
-        let rawArrival = destinationSchedule?.arrivalDate(on: base) ?? destinationSchedule?.departureDate(on: base)
-        let arrival = ScheduleDateUtils.normalizedArrival(rawArrival, relativeTo: departure)
-        timing = TripRowTiming(departureDate: departure, arrivalDate: arrival)
+        let trip = self.trip
+        let delayInfo = liveDelayInfo
+        let referenceDate = now
+        let resolved = await Task.detached(priority: .userInitiated) {
+            TripTimingResolver().resolve(
+                trip: trip,
+                delayInfo: delayInfo,
+                referenceDate: referenceDate,
+                includeProgressDetails: false
+            )
+        }.value
+        guard self.trip.id == trip.id else { return }
+        timing = resolved
     }
 
     private static let timeFormatter: DateFormatter = {
@@ -1816,59 +1843,10 @@ struct TripRowView: View {
     private func terminalDelayMinutes(for type: TerminalEventType) -> Int? {
         switch type {
         case .departure:
-            if let stationDelay = departureStationDepartureDelayMinutes {
-                return stationDelay
-            }
-            return activeDelayMinutes
+            return timing.originDelayMinutes
         case .arrival:
-            if shouldApplyHeaderDelayToEntireTrip {
-                return activeDelayMinutes
-            }
-            if let stationDelay = arrivalStationArrivalDelayMinutes {
-                return stationDelay
-            }
-            return activeDelayMinutes
+            return timing.destinationDelayMinutes
         }
-    }
-
-    private func stationDelayFromLiveInfo(for type: TerminalEventType) -> StationDelay? {
-        guard let info = liveDelayInfo else { return nil }
-        let targetName: String?
-        switch type {
-        case .departure:
-            targetName = trip.originName ?? originStoredStop?.name ?? orderedStops.first?.name
-        case .arrival:
-            targetName = trip.destinationName ?? destinationStoredStop?.name ?? orderedStops.last?.name
-        }
-        if let name = targetName {
-            let normalizedName = normalizeStationName(name)
-            if let match = info.stationDelays.first(where: { normalizeStationName($0.stationName) == normalizedName }) {
-                return match
-            }
-        }
-        switch type {
-        case .departure:
-            return info.stationDelays.first
-        case .arrival:
-            return info.stationDelays.last
-        }
-    }
-
-    private func storedStop(for stopId: String?, sequence: Int?, fallback: StoredStop?) -> StoredStop? {
-        if let stopId, let stop = orderedStops.first(where: { $0.id == stopId }) {
-            return stop
-        }
-        if let sequence, let stop = orderedStops.first(where: { $0.sequence == sequence }) {
-            return stop
-        }
-        return fallback
-    }
-
-    private func normalizeStationName(_ value: String) -> String {
-        value
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private enum TerminalEventType {
@@ -2128,11 +2106,6 @@ private struct ConnectionInfo: Identifiable {
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
-}
-
-private struct TripRowTiming {
-    var departureDate: Date?
-    var arrivalDate: Date?
 }
 
 private struct StopPair {
@@ -2626,6 +2599,11 @@ private enum UserProfilePreferences {
         }
     }
 
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: nameKey)
+        UserDefaults.standard.removeObject(forKey: imageDataKey)
+    }
+
     private static let defaultName = "Your Name"
 
     private static func normalizedImageData(_ data: Data?) -> Data? {
@@ -2877,12 +2855,168 @@ private extension UIImage {
 }
 
 private struct SettingsSheet: View {
+    @Binding var trips: [Trip]
+    @Binding var pastTrips: [Trip]
     var dismissAction: () -> Void
+    @State private var automaticStationDetection = TripLocationDetectionPreferences.isEnabled
+    @State private var batterySavingMode = TripLocationDetectionPreferences.batterySavingEnabled
+    @State private var continuousSpeedCapsule = TripLocationDetectionPreferences.continuousSpeedCapsuleEnabled
+    @State private var notifyDelayChanges = RailyNotificationPreferences.delayChangesEnabled
+    @State private var notifyPlatformChanges = RailyNotificationPreferences.platformChangesEnabled
+    @State private var notifyEarlyTrains = RailyNotificationPreferences.earlyTrainsEnabled
+    @State private var delayThreshold = RailyNotificationPreferences.delayChangeThreshold
+    @State private var missedTrainDebugUI = TripLocationDetectionPreferences.missedTrainDebugUIEnabled
+    @State private var missedTrainSimulation = TripLocationDetectionPreferences.missedTrainSimulationEnabled
+    @State private var isImporting = false
+    @State private var showDeleteAllConfirmation = false
+    @State private var importError: String?
+
+    private var exportData: Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return (try? encoder.encode(TripStorage.shared.exportDocument())) ?? Data()
+    }
 
     var body: some View {
         NavigationStack {
-            VStack {
-                Spacer()
+            Form {
+                Section {
+                    settingRow(
+                        title: "Automatic boarding and arrival detection",
+                        description: "Uses station proximity, route progress, movement, and GPS to detect when you board or reach your destination.",
+                        isOn: $automaticStationDetection
+                    )
+                    .onChange(of: automaticStationDetection) { _, enabled in
+                        TripLocationDetectionPreferences.isEnabled = enabled
+                    }
+                    settingRow(
+                        title: "Save battery",
+                        description: "Reduces GPS frequency and disables continuous background location updates. Detection may be less immediate.",
+                        isOn: $batterySavingMode
+                    )
+                    .disabled(!automaticStationDetection)
+                    .onChange(of: batterySavingMode) { _, enabled in
+                        TripLocationDetectionPreferences.batterySavingEnabled = enabled
+                    }
+                    settingRow(
+                        title: "Always show speed and limit",
+                        description: "Keeps both values visible in the glass capsule. Turn this off to reveal them only for two minutes after tapping, which uses less battery.",
+                        isOn: $continuousSpeedCapsule
+                    )
+                    .onChange(of: continuousSpeedCapsule) { _, enabled in
+                        TripLocationDetectionPreferences.continuousSpeedCapsuleEnabled = enabled
+                    }
+                    settingRow(
+                        title: "High-confidence arrival detection",
+                        description: "Requires two reliable GPS fixes at your destination before confirming arrival, reducing false positives.",
+                        isOn: highConfidenceArrivalBinding
+                    )
+                    .disabled(!automaticStationDetection)
+                    settingRow(
+                        title: "Missed-train suggestions",
+                        description: "Will offer alternative trains when GPS suggests you reached the origin too late. It will not replace your trip automatically.",
+                        isOn: missedTrainSuggestionsBinding
+                    )
+                    .disabled(!automaticStationDetection)
+                } header: {
+                    Text("Trip Tracking")
+                } footer: {
+                    Text("All preferences are remembered across launches. Location-based features require permission and work best with precise location enabled.")
+                }
+
+                Section {
+                    settingRow(
+                        title: "Delay changes",
+                        description: "Alert when the delay changes by at least the selected threshold.",
+                        isOn: $notifyDelayChanges
+                    )
+                    .onChange(of: notifyDelayChanges) { _, enabled in
+                        RailyNotificationPreferences.delayChangesEnabled = enabled
+                        if enabled { RailyNotificationPreferences.requestAuthorization() }
+                    }
+
+                    Picker("Delay threshold", selection: $delayThreshold) {
+                        Text("5 minutes").tag(5)
+                        Text("10 minutes").tag(10)
+                        Text("15 minutes").tag(15)
+                    }
+                    .disabled(!notifyDelayChanges)
+                    .onChange(of: delayThreshold) { _, value in
+                        RailyNotificationPreferences.delayChangeThreshold = value
+                    }
+
+                    settingRow(
+                        title: "Platform changes",
+                        description: "Alert when a confirmed platform changes.",
+                        isOn: $notifyPlatformChanges
+                    )
+                    .onChange(of: notifyPlatformChanges) { _, enabled in
+                        RailyNotificationPreferences.platformChangesEnabled = enabled
+                        if enabled { RailyNotificationPreferences.requestAuthorization() }
+                    }
+
+                    settingRow(
+                        title: "Train becomes early",
+                        description: "Alert when live data changes from on time or late to early. This is off by default.",
+                        isOn: $notifyEarlyTrains
+                    )
+                    .onChange(of: notifyEarlyTrains) { _, enabled in
+                        RailyNotificationPreferences.earlyTrainsEnabled = enabled
+                        if enabled { RailyNotificationPreferences.requestAuthorization() }
+                    }
+                } header: {
+                    Text("Notifications")
+                } footer: {
+                    Text("Alerts are sent only after a previous live snapshot exists and a meaningful change is detected.")
+                }
+
+                Section {
+                    settingRow(
+                        title: "Missed-train debug UI",
+                        description: "Shows the development status capsule explaining why a missed-train prompt is or is not ready.",
+                        isOn: $missedTrainDebugUI
+                    )
+                    .onChange(of: missedTrainDebugUI) { _, enabled in
+                        TripLocationDetectionPreferences.missedTrainDebugUIEnabled = enabled
+                    }
+
+                    settingRow(
+                        title: "Missed-train simulation mode",
+                        description: "Adds a Debug-only action to simulate the confirmation prompt for the selected trip. It never changes the trip automatically.",
+                        isOn: $missedTrainSimulation
+                    )
+                    .onChange(of: missedTrainSimulation) { _, enabled in
+                        TripLocationDetectionPreferences.missedTrainSimulationEnabled = enabled
+                    }
+
+                } header: {
+                    Text("Experimental")
+                } footer: {
+                    Text("Simulation controls are intended for development and testing.")
+                }
+
+                Section {
+                    ShareLink(item: exportData, preview: SharePreview("Raily Trips", image: Image(systemName: "tram.fill"))) {
+                        Label("Export Trips", systemImage: "square.and.arrow.up")
+                    }
+
+                    Button {
+                        isImporting = true
+                    } label: {
+                        Label("Import Trips", systemImage: "square.and.arrow.down")
+                    }
+
+                    Button(role: .destructive) {
+                        showDeleteAllConfirmation = true
+                    } label: {
+                        Label("Delete All Data", systemImage: "trash")
+                    }
+                } header: {
+                    Text("Data")
+                } footer: {
+                    Text("Exports include active and past trips, route selections, delay/platform state, seats, tickets, and saved route data. Importing merges records without replacing existing trips.")
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(.systemBackground))
@@ -2896,6 +3030,261 @@ private struct SettingsSheet: View {
                             .foregroundStyle(.primary)
                     }
                     .accessibilityLabel("Close Settings")
+                }
+            }
+            .fileImporter(isPresented: $isImporting, allowedContentTypes: [.json]) { result in
+                importDocument(result)
+            }
+            .alert("Delete all data?", isPresented: $showDeleteAllConfirmation) {
+                Button("Delete Everything", role: .destructive) { deleteAllData() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes trips, profile data, ticket QR codes, tracking evidence, delay state, preferences, and Live Activities. Bundled schedules stay on this device.")
+            }
+            .alert("Import failed", isPresented: Binding(
+                get: { importError != nil },
+                set: { if !$0 { importError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(importError ?? "The selected file is not a valid Raily export.")
+            }
+        }
+    }
+
+    private func settingRow(title: String, description: String, isOn: Binding<Bool>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle(title, isOn: isOn)
+            Text(description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 3)
+    }
+
+    private var highConfidenceArrivalBinding: Binding<Bool> {
+        Binding(
+            get: { TripLocationDetectionPreferences.highConfidenceArrivalEnabled },
+            set: { TripLocationDetectionPreferences.highConfidenceArrivalEnabled = $0 }
+        )
+    }
+
+    private var missedTrainSuggestionsBinding: Binding<Bool> {
+        Binding(
+            get: { TripLocationDetectionPreferences.missedTrainSuggestionsEnabled },
+            set: { TripLocationDetectionPreferences.missedTrainSuggestionsEnabled = $0 }
+        )
+    }
+
+    private func importDocument(_ result: Result<URL, Error>) {
+        do {
+            let url = try result.get()
+            let data = try Data(contentsOf: url)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let document = try decoder.decode(TripExportDocument.self, from: data)
+            guard document.schemaVersion == 1 else {
+                importError = "This export version is not supported."
+                return
+            }
+            let merged = TripStorage.shared.merge(document)
+            trips = merged.active
+            pastTrips = merged.past
+        } catch {
+            importError = "Choose a Raily JSON export file."
+        }
+    }
+
+    private func deleteAllData() {
+        for trip in trips {
+            LiveActivityManager.shared.endActivity(for: trip.id)
+        }
+        for trip in pastTrips {
+            LiveActivityManager.shared.endActivity(for: trip.id)
+        }
+        LiveActivityManager.shared.endAllActivities()
+        TripStorage.shared.deleteAllData()
+        LiveDelayStore.shared.clearAll()
+        TripDelayFusionStore.shared.clearAll()
+        trips = []
+        pastTrips = []
+        UserProfilePreferences.clear()
+    }
+
+}
+
+private struct TrainspotterDiaryEntry: Identifiable, Codable, Equatable {
+    let id: UUID
+    let createdAt: Date
+    var uicNumber: String
+    var locomotive: String
+    var formation: String
+    var livery: String
+    var station: String
+    var notes: String
+}
+
+private enum TrainspotterDiaryStore {
+    private static let key = "raily.trainspotter.diary"
+
+    static func load() -> [TrainspotterDiaryEntry] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let entries = try? JSONDecoder().decode([TrainspotterDiaryEntry].self, from: data) else {
+            return []
+        }
+        return entries.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    static func save(_ entries: [TrainspotterDiaryEntry]) {
+        guard let data = try? JSONEncoder().encode(entries) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+}
+
+private struct TrainspotterDiaryView: View {
+    @State private var entries = TrainspotterDiaryStore.load()
+    @State private var isShowingEntryForm = false
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if entries.isEmpty {
+                    ContentUnavailableView {
+                        Label("Trainspotter Diary", systemImage: "binoculars.fill")
+                    } description: {
+                        Text("Record trains, locomotives, and sightings locally. Nothing is shared unless you choose to share it later.")
+                    } actions: {
+                        Button("Add First Sighting") {
+                            isShowingEntryForm = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                } else {
+                    List {
+                        ForEach(entries) { entry in
+                            TrainspotterEntryRow(entry: entry)
+                        }
+                        .onDelete { offsets in
+                            entries.remove(atOffsets: offsets)
+                            TrainspotterDiaryStore.save(entries)
+                        }
+                    }
+                    .scrollContentBackground(.hidden)
+                }
+            }
+            .navigationTitle("Trainspotter")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isShowingEntryForm = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Add train sighting")
+                }
+            }
+            .sheet(isPresented: $isShowingEntryForm) {
+                TrainspotterEntryForm { entry in
+                    entries.insert(entry, at: 0)
+                    TrainspotterDiaryStore.save(entries)
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+        }
+    }
+}
+
+private struct TrainspotterEntryRow: View {
+    let entry: TrainspotterDiaryEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(entry.uicNumber.isEmpty ? "Unidentified train" : entry.uicNumber)
+                    .font(.headline)
+                Spacer()
+                Text(entry.createdAt, style: .date)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if !entry.locomotive.isEmpty || !entry.formation.isEmpty {
+                Text([entry.locomotive, entry.formation].filter { !$0.isEmpty }.joined(separator: " • "))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            if !entry.station.isEmpty {
+                Label(entry.station, systemImage: "mappin")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if !entry.notes.isEmpty {
+                Text(entry.notes)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct TrainspotterEntryForm: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var uicNumber = ""
+    @State private var locomotive = ""
+    @State private var formation = ""
+    @State private var livery = ""
+    @State private var station = ""
+    @State private var notes = ""
+    let onSave: (TrainspotterDiaryEntry) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Identification") {
+                    TextField("UIC number", text: $uicNumber)
+                        .keyboardType(.numbersAndPunctuation)
+                    TextField("Locomotive details", text: $locomotive)
+                    TextField("Wagon formation", text: $formation)
+                    TextField("Livery", text: $livery)
+                }
+                Section("Context") {
+                    TextField("Station or route", text: $station)
+                    TextField("Notes", text: $notes, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+                Section {
+                    Text("Entries are saved locally. UIC camera recognition, photos, ratings, and optional sharing will be added in later steps.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("New Sighting")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(TrainspotterDiaryEntry(
+                            id: UUID(),
+                            createdAt: Date(),
+                            uicNumber: uicNumber.trimmingCharacters(in: .whitespacesAndNewlines),
+                            locomotive: locomotive.trimmingCharacters(in: .whitespacesAndNewlines),
+                            formation: formation.trimmingCharacters(in: .whitespacesAndNewlines),
+                            livery: livery.trimmingCharacters(in: .whitespacesAndNewlines),
+                            station: station.trimmingCharacters(in: .whitespacesAndNewlines),
+                            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                        ))
+                        dismiss()
+                    }
                 }
             }
         }
@@ -2926,6 +3315,43 @@ private enum MainSheetTab: String, Identifiable {
         case .log: return "book.closed.fill"
         case .search: return "magnifyingglass"
         }
+    }
+}
+
+private struct TrainNumberSearchInput: View {
+    let focusNonce: Int
+    let onSearch: (String) -> Void
+
+    @State private var text = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        TextField("Search train number", text: $text)
+            .textFieldStyle(.plain)
+            // numberPad has no native Return/Search key on iOS. This Apple
+            // keyboard includes the native action key; input is restricted to
+            // digits below so the field remains a train-number field.
+            .keyboardType(.numbersAndPunctuation)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            .focused($isFocused)
+            .onAppear {
+                isFocused = true
+            }
+            .onChange(of: focusNonce) { _, _ in
+                text = ""
+                isFocused = true
+            }
+            .onChange(of: text) { _, newValue in
+                let digitsOnly = newValue.filter(\.isNumber)
+                if digitsOnly != newValue {
+                    text = digitsOnly
+                }
+            }
+            .onSubmit {
+                onSearch(text)
+            }
+            .submitLabel(.search)
     }
 }
 
