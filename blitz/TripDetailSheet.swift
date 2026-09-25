@@ -41,8 +41,6 @@ struct TripDetailSheet: View {
     @State private var isShowingSpeedPage = false
     @State private var isSpeedPageLoading = false
     @State private var isLiveActivityRunning = false
-    @State private var liveActivityStatusText: String?
-    @State private var liveActivityDiagnosticText: String?
 
     private let dataSource = GTFSDataSource.shared
     private let secondTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -88,7 +86,7 @@ struct TripDetailSheet: View {
                 }
             }
             ToolbarSpacer(.flexible, placement: .bottomBar)
-            if !isPastTrip {
+            if !isPastTrip && GTFSDataSource.supportsInfoFer {
                 ToolbarItem(placement: .bottomBar) {
                     Button(action: {
                         if shouldSkipNextSync {
@@ -125,19 +123,25 @@ struct TripDetailSheet: View {
                 .disabled(isPastTrip)
             }
 
-            ToolbarItem(placement: .bottomBar) {
-                Button(action: {
-                    isShowingStationDelaySheet = true
-                }) {
-                    Label("Delays", systemImage: "list.bullet.rectangle")
+            if GTFSDataSource.supportsInfoFer {
+                ToolbarItem(placement: .bottomBar) {
+                    Button(action: {
+                        isShowingStationDelaySheet = true
+                    }) {
+                        Label("Delays", systemImage: "list.bullet.rectangle")
+                    }
                 }
             }
         }
         .task(id: trip.id) {
             await loadTiming()
-            await loadSegments()
             refreshLiveActivityState()
-            await loadDestinationWeather()
+            // Segments, weather, and the formation section are independent
+            // loads. Start the two detail requests together so weather never
+            // delays the schedule/timeline from appearing.
+            async let segmentsLoad: Void = loadSegments()
+            async let weatherLoad: Void = loadDestinationWeather()
+            _ = await (segmentsLoad, weatherLoad)
         }
         .onReceive(secondTimer) { value in
             now = value
@@ -170,10 +174,10 @@ struct TripDetailSheet: View {
             .presentationDetents([.fraction(0.72), .large])
             .presentationDragIndicator(.visible)
         }
-        .onChange(of: trip.ticketQRCode ?? "") { _ in
+        .onChange(of: trip.ticketQRCode ?? "") { _, _ in
             ticketCode = trip.ticketQRCode
         }
-        .onChange(of: trip.id) { _ in
+        .onChange(of: trip.id) { _, _ in
             ticketCode = trip.ticketQRCode
             exitSpeedDashboard()
         }
@@ -187,43 +191,18 @@ struct TripDetailSheet: View {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                 Section {
                     VStack(alignment: .leading, spacing: 20) {
-                        if !isPastTrip {
+                        Text(trip.sharedJourneyLeg != nil
+                             ? "Journey imported from SBB Mobile. Live delays are not connected."
+                             : GTFSDataSource.scheduleNotice + " Live delays are not connected.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if !isPastTrip && GTFSDataSource.supportsInfoFer {
                             syncFreshnessIndicator
                         }
-#if DEBUG
-                        // Keep operational detail available while developing. The
-                        // release UI communicates freshness through the indicator.
-                        if !isPastTrip, let syncStatusText {
-                            Text(syncStatusText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        }
-                        if !isPastTrip, let liveActivityStatusText {
-                            Text(liveActivityStatusText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        }
-                        if !isPastTrip, let liveActivityDiagnosticText {
-                            Text(liveActivityDiagnosticText)
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                                .textSelection(.enabled)
-                        }
-                        if !isPastTrip, let freshness = liveDelayInfo?.freshnessText {
-                            Text("Live data: \(freshness)")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-#endif
                         if !isPastTrip, let candidate = locationPhaseDetector.earlyExitCandidate(for: trip) {
                             earlyExitConfirmationCard(candidate: candidate)
                         }
-                        if !isPastTrip, let prediction = TripDelayFusionStore.shared.prediction(for: trip) {
-                            delayPredictionCard(prediction)
-                        }
-                        if !isPastTrip, let bannerText = scraperStatusText {
+                        if !isPastTrip, GTFSDataSource.supportsInfoFer, let bannerText = scraperStatusText {
                             ScraperStatusBanner(text: bannerText, isDelayed: scraperStatusIsDelayed)
                                 .padding(.horizontal, -16)
                         }
@@ -275,29 +254,6 @@ struct TripDetailSheet: View {
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func delayPredictionCard(_ prediction: TripDelayPrediction) -> some View {
-        let delayText: String = {
-            guard let delay = prediction.delayMinutes else { return "No estimate yet" }
-            if delay == 0 { return "Estimated on time" }
-            return delay > 0 ? "Estimated +\(delay)m" : "Estimated \(abs(delay))m early"
-        }()
-        return HStack(spacing: 10) {
-            Image(systemName: "location.north.line")
-                .foregroundStyle(prediction.source == .infoFerConfirmed ? .green : .orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Arrival forecast")
-                    .font(.subheadline.weight(.semibold))
-                Text("\(delayText) • \(prediction.source.rawValue)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
     }
 
     private var speedDashboard: some View {
@@ -514,7 +470,7 @@ struct TripDetailSheet: View {
         case .notDetermined:
             return "We need your permission to start measuring live speed."
         case .denied:
-            return "Location is turned off for Raily. Enable it in Settings to track speed."
+            return "Location is turned off for Blitz. Enable it in Settings to track speed."
         case .restricted:
             return "Location access is restricted by system controls."
         @unknown default:
@@ -596,10 +552,9 @@ struct TripDetailSheet: View {
             seatInfoGrid
             goodToKnowSection
             historySection
+            TripFormationSection(trip: trip)
             operatorSection
-            arrivalForecastSection
 //            trackSpeedSection
-            trainInfoSection
         }
     }
 
@@ -676,7 +631,7 @@ struct TripDetailSheet: View {
 
     private var isOvernightTrip: Bool {
         guard let departure = timing.scheduledDeparture, let arrival = timing.scheduledArrival else { return false }
-        return !Calendar.current.isDate(arrival, inSameDayAs: departure)
+        return !GTFSDataSource.calendar.isDate(arrival, inSameDayAs: departure)
     }
 
     private var shouldShowTravelSummaryRow: Bool {
@@ -774,19 +729,18 @@ struct TripDetailSheet: View {
         let trip = self.trip
         let delayInfo = liveDelayInfo
         let referenceDate = now
-        timing = await Task.detached(priority: .userInitiated) {
-            TripTimingResolver().resolve(
-                trip: trip,
-                delayInfo: delayInfo,
-                referenceDate: referenceDate
-            )
-        }.value
+        timing = TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: delayInfo,
+            referenceDate: referenceDate
+        )
     }
 
     private func loadSegments() async {
         let identifier = tripIdentifier
+        let source = GTFSDataSource.shared
         segments = await Task.detached(priority: .userInitiated) {
-            dataSource.segments(for: identifier)
+            source.segments(for: identifier)
         }.value
     }
 
@@ -881,6 +835,7 @@ struct TripDetailSheet: View {
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.timeZone = GTFSDataSource.calendar.timeZone
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
@@ -982,7 +937,7 @@ extension TripDetailSheet {
     }
 
     private var serviceDepartureDate: Date? {
-        let baseDate = Calendar.current.startOfDay(for: syncTravelDate)
+        let baseDate = GTFSDataSource.calendar.startOfDay(for: syncTravelDate)
         let segments = dataSource.segments(for: tripIdentifier)
         guard let firstSegment = segments.min(by: {
             ($0.departureSeconds ?? $0.arrivalSeconds ?? Int.max) < ($1.departureSeconds ?? $1.arrivalSeconds ?? Int.max)
@@ -1006,19 +961,16 @@ extension TripDetailSheet {
         if isLiveActivityRunning {
             LiveActivityManager.shared.endActivity(for: trip.id)
             isLiveActivityRunning = false
-            liveActivityStatusText = "Live Activity stopped"
             refreshLiveActivityState()
             return
         }
 
-        let result = LiveActivityManager.shared.startActivity(for: trip, delayInfo: liveDelayInfo)
-        liveActivityStatusText = result.message
+        _ = LiveActivityManager.shared.startActivity(for: trip, delayInfo: liveDelayInfo)
         refreshLiveActivityState()
     }
 
     private func refreshLiveActivityState() {
         isLiveActivityRunning = LiveActivityManager.shared.isActivityRunning(for: trip.id)
-        liveActivityDiagnosticText = LiveActivityManager.shared.diagnosticSummary(for: trip.id)
     }
 
     private var resolvedTrainNumber: String? {
@@ -1098,7 +1050,7 @@ private extension TripDetailSheet {
               location.horizontalAccuracy >= 0,
               location.horizontalAccuracy <= 150,
               abs(location.timestamp.timeIntervalSinceNow) <= 15 * 60,
-              let origin = coordinate(for: trip.originStopId, sequence: trip.originSequence, in: trip) else {
+              let origin = originStoredStop?.coordinate else {
             return false
         }
         let radius = max(250, location.horizontalAccuracy * 1.5)
@@ -1110,7 +1062,7 @@ private extension TripDetailSheet {
               let liveCoordinate = info.liveCoordinate,
               let fetchedAt = info.fetchedAt,
               Date().timeIntervalSince(fetchedAt) <= 15 * 60,
-              let origin = coordinate(for: trip.originStopId, sequence: trip.originSequence, in: trip) else {
+              let origin = originStoredStop?.coordinate else {
             return false
         }
         let trainDistance = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
@@ -1394,87 +1346,6 @@ private extension TripDetailSheet {
         )
     }
 
-    @ViewBuilder
-    var arrivalForecastSection: some View {
-        let history = dataSource.delayHistory(for: resolvedTrainNumber ?? trip.id)
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Arrival Forecast")
-                    .font(.system(size: 20, weight: .semibold))
-                Text(arrivalForecastSubtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: 50) {
-                ForecastStatView(title: "Late", icon: "clock", value: history.map { "\(roundedPercent($0.delayedTrips, of: $0.observedTrips))%" } ?? "--")
-                ForecastStatView(title: "Avg. delay", icon: "stopwatch", value: history.map { formattedAverageDelay($0.averageDelayMinutes) } ?? "--")
-                ForecastStatView(title: "Observed", icon: "binoculars", value: history.map { "\($0.observedTrips)" } ?? "--")
-            }
-
-            VStack(spacing: 10) {
-                ForEach(arrivalDistribution, id: \.label) { entry in
-                    HStack(spacing: 12) {
-                        Text(entry.label)
-                            .font(.system(size: 13, weight: .regular))
-                            .frame(width: 65, alignment: .leading)
-
-                        ArrivalBarView(percent: entry.percent, barColor: entry.color)
-
-                        Text("\(entry.percent)%")
-                            .font(.system(size: 13, weight: .regular))
-                            .frame(width: 30, alignment: .trailing)
-                    }
-                }
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
-        )
-    }
-
-    private var arrivalDistribution: [(label: String, percent: Int, color: Color)] {
-        guard let history = dataSource.delayHistory(for: resolvedTrainNumber ?? trip.id) else {
-            return []
-        }
-        return [
-            ("On time", percentValue(history.percentOnTime), Color.green.opacity(0.8)),
-            ("15m late", percentValue(history.percentDelay15Minutes), Color.yellow.opacity(0.8)),
-            ("30m late", percentValue(history.percentDelay30Minutes), Color.orange.opacity(0.85)),
-            ("45m+ late", percentValue(history.percentDelay45MinutesPlus), Color.orange.opacity(0.6))
-        ]
-    }
-
-    private var arrivalForecastSubtitle: String {
-        "\(trainDisplayName) performance over the last 60 days"
-    }
-
-    private func percentValue(_ value: Double) -> Int {
-        Int(value.rounded())
-    }
-
-    private func roundedPercent(_ count: Int, of total: Int) -> Int {
-        guard total > 0 else { return 0 }
-        return Int((Double(count) / Double(total) * 100).rounded())
-    }
-
-    private func formattedAverageDelay(_ value: Double) -> String {
-        let minutes = Int(value.rounded())
-        if minutes == 0 { return "0m" }
-        return minutes > 0 ? "+\(minutes)m" : "\(minutes)m"
-    }
-
-    private var trainDisplayName: String {
-        let title = trip.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let firstComponent = title.split(separator: "•").first {
-            return String(firstComponent).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return title
-    }
-
     private var historyRouteSubtitle: String {
         "\(originStationName) → \(destinationStationName)"
     }
@@ -1495,93 +1366,6 @@ private extension TripDetailSheet {
                 isPlaceholder: isSeatNumbersPlaceholder
             )
         }
-    }
-
-    @ViewBuilder
-    private var trainInfoSection: some View {
-        Button(action: openSeatEditor) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .center, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("About the Train")
-                            .font(.system(size: 20, weight: .semibold))
-                        Text("Tap to edit seats, license & traction")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    trainPowerChip
-                    Image(systemName: "chevron.right")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                if trip.agencyId == "236025" {
-                    HStack() {
-                        Spacer()
-                        Image("train")
-                            .resizable()
-                            .scaledToFill()
-                            .clipped()
-                            .frame(alignment: .leading)
-                            .padding(.trailing, -16)
-                    }
-                }
-
-                trainFactRow(
-                    title: "Type",
-                    value: trainTypeFact.text,
-                    isPlaceholder: trainTypeFact.isPlaceholder
-                )
-
-                Divider()
-
-                trainFactRow(
-                    title: "Registration",
-                    value: trainIdentifierFact.text,
-                    isPlaceholder: trainIdentifierFact.isPlaceholder
-                )
-
-                Divider()
-
-                trainFactRow(
-                    title: "Length",
-                    value: trainLengthFact.text,
-                    isPlaceholder: trainLengthFact.isPlaceholder
-                )
-
-                Divider()
-
-                trainFactRow(
-                    title: "Tonnage",
-                    value: trainTonnageFact.text,
-                    isPlaceholder: trainTonnageFact.isPlaceholder
-                )
-
-                Divider()
-
-                trainFactRow(
-                    title: "Voltage & Frequency",
-                    value: trainElectrificationFact.text,
-                    isPlaceholder: trainElectrificationFact.isPlaceholder
-                )
-
-                Divider()
-
-                trainFactRow(
-                    title: "Track Gauge",
-                    value: trainTrackGaugeFact.text,
-                    isPlaceholder: trainTrackGaugeFact.isPlaceholder
-                )
-            }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
     }
 
     private func editorInfoCard(
@@ -1707,20 +1491,12 @@ private extension TripDetailSheet {
     }
 
     private var operatorSecondaryText: String {
-        operatorLocationText ?? operatorWebsiteHost ?? "Romania"
+        operatorLocationText ?? operatorWebsiteHost ?? "Switzerland"
     }
 
     private var operatorLocationText: String? {
         OperatorBrandingCatalog.city(for: trip.agencyId)
-            ?? inferredLocationFromTimezone
             ?? operatorWebsiteHost
-    }
-
-    private var inferredLocationFromTimezone: String? {
-        guard let timezone = operatorAgencyInfo?.timezone else { return nil }
-        guard let component = timezone.split(separator: "/").last else { return nil }
-        let city = component.replacingOccurrences(of: "_", with: " ")
-        return city.isEmpty ? nil : city
     }
 
     private var operatorWebsiteString: String? {
@@ -2544,7 +2320,7 @@ private extension TripDetailSheet {
 
     private var segmentBaseDate: Date {
         let reference = timing.scheduledDeparture ?? trip.travelDate ?? syncTravelDate
-        var candidate = Calendar.current.startOfDay(for: reference)
+        var candidate = GTFSDataSource.calendar.startOfDay(for: reference)
         if reference < now,
            let firstSeconds = segments.first?.departureSeconds {
             let firstStart = candidate.addingTimeInterval(TimeInterval(firstSeconds))
@@ -3052,7 +2828,7 @@ private struct QRScannerView: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> DataScannerViewController {
         let controller = DataScannerViewController(
-            recognizedDataTypes: [.barcode(symbologies: [.QR])],
+            recognizedDataTypes: [.barcode(symbologies: [.qr])],
             qualityLevel: .balanced,
             recognizesMultipleItems: false,
             isHighFrameRateTrackingEnabled: true,
@@ -3082,7 +2858,7 @@ private struct QRScannerView: UIViewControllerRepresentable {
             for item in addedItems {
                 if case let .barcode(barcode) = item, let payload = barcode.payloadStringValue {
                     onScan(payload)
-                    try? dataScanner.stopScanning()
+                    dataScanner.stopScanning()
                     break
                 }
             }
@@ -3155,44 +2931,5 @@ private struct ScraperStatusBanner: View {
                 .fill(accentColor)
                 .frame(height: 1)
         }
-    }
-}
-
-private struct ForecastStatView: View {
-    let title: String
-    let icon: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.headline)
-                Text(value)
-                    .font(.system(size: 16, weight: .semibold))
-            }
-        }
-    }
-}
-
-private struct ArrivalBarView: View {
-    let percent: Int
-    let barColor: Color
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color(.systemGray5))
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(barColor)
-                    .frame(width: max(0, CGFloat(percent) / 100.0 * proxy.size.width))
-            }
-        }
-        .frame(height: 16)
-        .frame(maxWidth: .infinity)
     }
 }

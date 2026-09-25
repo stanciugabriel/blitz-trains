@@ -82,7 +82,7 @@ struct TripTimingResolver {
     init(
         scheduleProvider: TripScheduleProviding = GTFSDataSource.shared,
         platformProvider: StaticPlatformProviding = StaticPlatformDataSource.shared,
-        calendar: Calendar = .current
+        calendar: Calendar = GTFSDataSource.calendar
     ) {
         self.scheduleProvider = scheduleProvider
         self.platformProvider = platformProvider
@@ -131,8 +131,8 @@ struct TripTimingResolver {
             fallback: activeDelay
         )
 
-        let rawDeparture = originSchedule?.departureDate(on: baseDate) ?? originSchedule?.arrivalDate(on: baseDate)
-        let rawArrival = destinationSchedule?.arrivalDate(on: baseDate) ?? destinationSchedule?.departureDate(on: baseDate)
+        let rawDeparture = trip.sharedJourneyLeg?.departure ?? originSchedule?.departureDate(on: baseDate) ?? originSchedule?.arrivalDate(on: baseDate)
+        let rawArrival = trip.sharedJourneyLeg?.arrival ?? destinationSchedule?.arrivalDate(on: baseDate) ?? destinationSchedule?.departureDate(on: baseDate)
         let scheduledDeparture = rawDeparture
         let scheduledArrival = ScheduleDateUtils.normalizedArrival(rawArrival, relativeTo: scheduledDeparture)
         let adjustedDeparture = scheduledDeparture?.addingTimeInterval(TimeInterval(originDelay * 60))
@@ -284,6 +284,10 @@ struct TripTimingResolver {
         activeDelay: Int,
         delayInfo: DelayInfo?
     ) -> (name: String?, arrivalTime: Date?, stationsRemaining: Int) {
+        if let leg = trip.sharedJourneyLeg, trip.gtfsTripId == nil {
+            let arrival = leg.arrival.addingTimeInterval(TimeInterval(activeDelay * 60))
+            return (leg.destination.name, arrival > referenceDate ? arrival : nil, arrival > referenceDate ? 1 : 0)
+        }
         guard !stops.isEmpty else { return (nil, nil, 0) }
 
         let lower = trip.originSequence ?? stops.first?.sequence ?? 0
@@ -300,8 +304,9 @@ struct TripTimingResolver {
         var previousDate: Date?
 
         for stop in segmentStops {
-            guard let schedule = schedules[stop.id] else { continue }
-            let rawArrival = schedule.arrivalDate(on: baseDate) ?? schedule.departureDate(on: baseDate)
+            let schedule = schedules[stop.id]
+            let sharedArrival = stop.id == trip.destinationStopId ? trip.sharedJourneyLeg?.arrival : nil
+            let rawArrival = sharedArrival ?? schedule?.arrivalDate(on: baseDate) ?? schedule?.departureDate(on: baseDate)
             let delay = terminalDelay(
                 for: .arrival,
                 stop: stop,

@@ -29,6 +29,8 @@ struct BlitzApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(\.calendar, GTFSDataSource.calendar)
+                .environment(\.timeZone, GTFSDataSource.calendar.timeZone)
         }
     }
 }
@@ -45,7 +47,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     private static let defaultRegion = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 45.9432, longitude: 24.9668),
+        center: CLLocationCoordinate2D(latitude: 46.8182, longitude: 8.2275),
         span: MKCoordinateSpan(latitudeDelta: 4, longitudeDelta: 4)
     )
 
@@ -57,6 +59,8 @@ struct ContentView: View {
     @State private var trainSearchQuery: String = ""
     @State private var trips: [Trip] = TripStorage.shared.loadTrips()
     @State private var pastTrips: [Trip] = TripStorage.shared.loadPastTrips()
+    @State private var isImportingSharedJourneys = false
+    @State private var sharedImportError: String?
     @State private var liveTrainClock = Date()
     @State private var trackingRefreshRevision = 0
     @State private var hasSyncedTripsOnLaunch = false
@@ -196,6 +200,15 @@ struct ContentView: View {
                 onMissedTrainKeepTracking: dismissMissedTrainPrompt,
                 onSelectMissedTrainAlternative: selectAlternative
             )
+            .alert("Couldn’t add shared journey", isPresented: Binding(
+                get: { sharedImportError != nil },
+                set: { if !$0 { sharedImportError = nil } }
+            )) {
+                Button("Retry") { Task { await importSharedJourneys() } }
+                Button("Later", role: .cancel) { sharedImportError = nil }
+            } message: {
+                Text(sharedImportError ?? "The journey remains saved for retry.")
+            }
             .presentationDetents(detents, selection: $selectedDetent)
             .presentationBackground(Color(.systemBackground))
             .presentationBackgroundInteraction(.enabled)
@@ -287,6 +300,7 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
+            Task { await importSharedJourneys() }
             updateLocationPhaseDetection(for: selectedTrip)
             evaluateMissedTrainSuggestion(for: selectedTrip)
             // Reconcile the persisted last fix and resume future location fixes
@@ -300,6 +314,7 @@ struct ContentView: View {
 
     private var eventHandlersView: some View {
         timerHandlersView
+        .task { await importSharedJourneys() }
         .onChange(of: trips) { _, newValue in
             TripStorage.shared.saveTrips(newValue)
             updateCameraForCurrentState()
@@ -409,7 +424,7 @@ struct ContentView: View {
         guard let travelDate = trip.travelDate else {
             return segments.first(where: { $0.maxSpeed > 0 }).map { String($0.maxSpeed) } ?? "--"
         }
-        let dayStart = Calendar.current.startOfDay(for: travelDate)
+        let dayStart = GTFSDataSource.calendar.startOfDay(for: travelDate)
         let active = segments.first { segment in
             guard let start = segment.departureSeconds ?? segment.arrivalSeconds,
                   let end = segment.arrivalSeconds ?? segment.departureSeconds else { return false }
@@ -484,8 +499,58 @@ struct ContentView: View {
         #if DEBUG
         print("[ContentView] Live Activity auto-start: \(result?.message ?? "scheduled one hour before departure")")
         #endif
+        // Capture immutable timetable segments once when the trip is added;
+        // subsequent launches can render it without reopening the GTFS route.
+        if let identifier = trip.gtfsTripId {
+            Task.detached(priority: .utility) {
+                _ = GTFSDataSource.shared.segments(for: identifier)
+            }
+        }
         Task {
             await syncTrip(trip, shouldFetchMapInfo: true)
+        }
+    }
+
+    @MainActor
+    private func importSharedJourneys() async {
+        guard !isImportingSharedJourneys else { return }
+        isImportingSharedJourneys = true
+        defer { isImportingSharedJourneys = false }
+        do {
+            let inbox = try SharedJourneyInbox()
+            for file in try inbox.pending() {
+                let journey = try inbox.read(file)
+                let imported = try await Task.detached(priority: .userInitiated) {
+                    try GTFSDataSource.shared.importTrips(from: journey)
+                }.value
+                var active = trips
+                var past = pastTrips
+                var addedActive: [Trip] = []
+                for (trip, leg) in zip(imported, journey.legs) {
+                    let alreadySaved = (active + past).contains {
+                        $0.id == trip.id || ($0.title == trip.title && $0.travelDate == trip.travelDate &&
+                            $0.originStopId == trip.originStopId && $0.destinationStopId == trip.destinationStopId)
+                    }
+                    guard !alreadySaved else { continue }
+                    if leg.arrival.addingTimeInterval(20 * 60) < Date() {
+                        past.append(trip)
+                    } else {
+                        active.append(trip)
+                        addedActive.append(trip)
+                    }
+                }
+                try TripStorage.shared.persistSharedImport(active: active, past: past)
+                trips = active
+                pastTrips = past
+                try inbox.acknowledge(file)
+                if !addedActive.isEmpty {
+                    isAddTripMode = false
+                    selectedTrip = addedActive.first
+                    addedActive.forEach(syncTripAfterAdd)
+                }
+            }
+        } catch {
+            sharedImportError = error.localizedDescription
         }
     }
 
@@ -579,7 +644,7 @@ extension ContentView {
         if TripLocationDetectionPreferences.isEnabled,
            let trip = selectedTrip,
            !isAddTripMode,
-           !isSelectedTripPast {
+           !pastTrips.contains(where: { $0.id == trip.id }) {
             let phase = locationPhaseDetector.phase(for: trip)
             if phase == .arrived || phase == .exitedEarly {
                 locationProvider.disableTracking()
@@ -717,31 +782,21 @@ extension ContentView {
     }
 
     private func polylineStops(for trip: Trip) -> [StoredStop] {
+        if let stored = trip.stops, !stored.isEmpty {
+            return stored.sorted { $0.sequence < $1.sequence }
+        }
         let identifier = trip.gtfsTripId ?? trip.id
         let gtfsStops = GTFSDataSource.shared.polylineStops(for: identifier)
-        let baseStops: [StoredStop]
-        if !gtfsStops.isEmpty {
-            baseStops = gtfsStops.map(StoredStop.init(gtfsStop:))
-        } else if let stored = trip.stops {
-            baseStops = stored
-        } else {
-            baseStops = []
-        }
-        return baseStops.sorted { $0.sequence < $1.sequence }
+        return gtfsStops.map(StoredStop.init(gtfsStop:)).sorted { $0.sequence < $1.sequence }
     }
 
     private func stationStops(for trip: Trip) -> [StoredStop] {
+        if let stored = trip.stops, !stored.isEmpty {
+            return stored.sorted { $0.sequence < $1.sequence }
+        }
         let identifier = trip.gtfsTripId ?? trip.id
         let gtfsStops = GTFSDataSource.shared.stops(for: identifier)
-        let baseStops: [StoredStop]
-        if !gtfsStops.isEmpty {
-            baseStops = gtfsStops.map(StoredStop.init(gtfsStop:))
-        } else if let stored = trip.stops {
-            baseStops = stored
-        } else {
-            baseStops = []
-        }
-        return baseStops.sorted { $0.sequence < $1.sequence }
+        return gtfsStops.map(StoredStop.init(gtfsStop:)).sorted { $0.sequence < $1.sequence }
     }
 
     private func liveTrainCoordinate(
@@ -1238,7 +1293,7 @@ extension ContentView {
             includeProgressDetails: false
         )
         let referenceDate = resolvedTiming.scheduledDeparture ?? trip.travelDate ?? Date()
-        let baseDate = Calendar.current.startOfDay(for: referenceDate)
+        let baseDate = GTFSDataSource.calendar.startOfDay(for: referenceDate)
 
         let delaySeconds = TimeInterval((resolvedTiming.headerDelayMinutes ?? 0) * 60)
 
@@ -1702,7 +1757,7 @@ enum TrainType: String, Codable, CaseIterable, Identifiable, Hashable {
         "\(rawValue) • \(name)"
     }
 
-    init?(categoryCode: String) {
+    nonisolated init?(categoryCode: String) {
         let normalized = categoryCode
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .uppercased()
@@ -1762,6 +1817,7 @@ struct Trip: Identifiable, Codable, Equatable {
     let detailRoute: String?
     let gtfsTripId: String?
     let travelDate: Date?
+    let sharedJourneyLeg: SharedJourney.Leg?
     let originStopId: String?
     let originName: String?
     let destinationStopId: String?
@@ -1793,6 +1849,7 @@ struct Trip: Identifiable, Codable, Equatable {
         case detailRoute
         case gtfsTripId
         case travelDate
+        case sharedJourneyLeg
         case originStopId
         case originName
         case destinationStopId
@@ -1816,7 +1873,7 @@ struct Trip: Identifiable, Codable, Equatable {
         case infoFerGPSUnavailable
     }
 
-    init(
+    nonisolated init(
         id: String = UUID().uuidString,
         title: String,
         subtitle: String,
@@ -1825,6 +1882,7 @@ struct Trip: Identifiable, Codable, Equatable {
         detailRoute: String? = nil,
         gtfsTripId: String? = nil,
         travelDate: Date? = nil,
+        sharedJourneyLeg: SharedJourney.Leg? = nil,
         originStopId: String? = nil,
         originName: String? = nil,
         destinationStopId: String? = nil,
@@ -1855,6 +1913,7 @@ struct Trip: Identifiable, Codable, Equatable {
             detailRoute: detailRoute,
             gtfsTripId: gtfsTripId,
             travelDate: travelDate,
+            sharedJourneyLeg: sharedJourneyLeg,
             originStopId: originStopId,
             originName: originName,
             destinationStopId: destinationStopId,
@@ -1879,7 +1938,7 @@ struct Trip: Identifiable, Codable, Equatable {
         )
     }
 
-    init(
+    nonisolated init(
         id: String = UUID().uuidString,
         title: String,
         subtitle: String,
@@ -1888,6 +1947,7 @@ struct Trip: Identifiable, Codable, Equatable {
         detailRoute: String? = nil,
         gtfsTripId: String? = nil,
         travelDate: Date? = nil,
+        sharedJourneyLeg: SharedJourney.Leg? = nil,
         originStopId: String? = nil,
         originName: String? = nil,
         destinationStopId: String? = nil,
@@ -1918,6 +1978,7 @@ struct Trip: Identifiable, Codable, Equatable {
         self.detailRoute = detailRoute
         self.gtfsTripId = gtfsTripId
         self.travelDate = travelDate
+        self.sharedJourneyLeg = sharedJourneyLeg
         self.originStopId = originStopId
         self.originName = originName
         self.destinationStopId = destinationStopId
@@ -1951,6 +2012,7 @@ struct Trip: Identifiable, Codable, Equatable {
         detailRoute = try container.decodeIfPresent(String.self, forKey: .detailRoute)
         gtfsTripId = try container.decodeIfPresent(String.self, forKey: .gtfsTripId)
         travelDate = try container.decodeIfPresent(Date.self, forKey: .travelDate)
+        sharedJourneyLeg = try container.decodeIfPresent(SharedJourney.Leg.self, forKey: .sharedJourneyLeg)
         originStopId = try container.decodeIfPresent(String.self, forKey: .originStopId)
         originName = try container.decodeIfPresent(String.self, forKey: .originName)
         destinationStopId = try container.decodeIfPresent(String.self, forKey: .destinationStopId)
@@ -1984,6 +2046,7 @@ struct Trip: Identifiable, Codable, Equatable {
         try container.encodeIfPresent(detailRoute, forKey: .detailRoute)
         try container.encodeIfPresent(gtfsTripId, forKey: .gtfsTripId)
         try container.encodeIfPresent(travelDate, forKey: .travelDate)
+        try container.encodeIfPresent(sharedJourneyLeg, forKey: .sharedJourneyLeg)
         try container.encodeIfPresent(originStopId, forKey: .originStopId)
         try container.encodeIfPresent(originName, forKey: .originName)
         try container.encodeIfPresent(destinationStopId, forKey: .destinationStopId)
@@ -2018,7 +2081,7 @@ struct StoredStop: Identifiable, Codable, Equatable {
     var departureDelayMinutes: Int?
     var platform: String?
 
-    init(
+    nonisolated init(
         id: String,
         name: String,
         latitude: Double,
@@ -2097,7 +2160,7 @@ struct StoredRoutePolyline: Identifiable, Codable, Equatable {
 }
 
 extension StoredStop {
-    init(gtfsStop: GTFSStop) {
+    nonisolated init(gtfsStop: GTFSStop) {
         self.init(
             id: gtfsStop.id,
             name: gtfsStop.name,
@@ -2151,6 +2214,7 @@ extension Trip {
                 detailRoute: detailRoute,
                 gtfsTripId: gtfsTripId,
                 travelDate: travelDate,
+                sharedJourneyLeg: sharedJourneyLeg,
                 originStopId: originStopId,
                 originName: originName,
                 destinationStopId: destinationStopId,
@@ -2183,6 +2247,7 @@ extension Trip {
                 detailRoute: detailRoute,
                 gtfsTripId: gtfsTripId,
                 travelDate: travelDate,
+                sharedJourneyLeg: sharedJourneyLeg,
                 originStopId: originStopId,
                 originName: originName,
                 destinationStopId: destinationStopId,
@@ -2234,6 +2299,7 @@ extension Trip {
             detailRoute: detailRoute,
             gtfsTripId: gtfsTripId,
             travelDate: travelDate,
+            sharedJourneyLeg: sharedJourneyLeg,
             originStopId: originStopId,
             originName: originName,
             destinationStopId: destinationStopId,
@@ -2268,6 +2334,7 @@ extension Trip {
             detailRoute: detailRoute,
             gtfsTripId: gtfsTripId,
             travelDate: travelDate,
+            sharedJourneyLeg: sharedJourneyLeg,
             originStopId: originStopId,
             originName: originName,
             destinationStopId: destinationStopId,
@@ -2302,6 +2369,7 @@ extension Trip {
             detailRoute: detailRoute,
             gtfsTripId: gtfsTripId,
             travelDate: travelDate,
+            sharedJourneyLeg: sharedJourneyLeg,
             originStopId: originStopId,
             originName: originName,
             destinationStopId: destinationStopId,
@@ -2348,6 +2416,7 @@ extension Trip {
             detailRoute: detailRoute,
             gtfsTripId: gtfsTripId,
             travelDate: travelDate,
+            sharedJourneyLeg: sharedJourneyLeg,
             originStopId: originStopId,
             originName: originName,
             destinationStopId: destinationStopId,
@@ -2382,6 +2451,7 @@ extension Trip {
             detailRoute: detailRoute,
             gtfsTripId: gtfsTripId,
             travelDate: travelDate,
+            sharedJourneyLeg: sharedJourneyLeg,
             originStopId: originStopId,
             originName: originName,
             destinationStopId: destinationStopId,
@@ -2416,6 +2486,7 @@ extension Trip {
             detailRoute: detailRoute,
             gtfsTripId: gtfsTripId,
             travelDate: travelDate,
+            sharedJourneyLeg: sharedJourneyLeg,
             originStopId: originStopId,
             originName: originName,
             destinationStopId: destinationStopId,
@@ -2441,8 +2512,10 @@ extension Trip {
     }
 }
 
-#Preview {
-    ContentView()
+struct BlitzAppPreview: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
 }
 
 private struct DetailMapState {
@@ -2566,9 +2639,9 @@ struct MissedTrainAlternativesView: View {
             Group {
                 if alternatives.isEmpty {
                     ContentUnavailableView(
-                        "No alternatives found",
+                        "Operating dates unavailable",
                         systemImage: "tram.fill",
-                        description: Text("Try searching again later for departures from the same station.")
+                        description: Text(GTFSDataSource.scheduleNotice)
                     )
                 } else {
                     List(alternatives) { trip in

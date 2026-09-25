@@ -89,13 +89,13 @@ struct TripSyncStatusTests {
     }
 }
 
-struct RailyNotificationTests {
+struct BlitzNotificationTests {
     @Test func delayEventUsesConfiguredThreshold() {
         let previous = DelayInfo(delayMinutes: 5, platform: "1")
         let current = DelayInfo(delayMinutes: 10, platform: "1")
 
         #expect(
-            RailyNotificationPreferences.event(previous: previous, current: current)
+            BlitzNotificationPreferences.event(previous: previous, current: current)
                 == .delayChanged(old: 5, new: 10)
         )
     }
@@ -103,7 +103,7 @@ struct RailyNotificationTests {
     @Test func unchangedLiveSnapshotDoesNotCreateAnEvent() {
         let info = DelayInfo(delayMinutes: 8, platform: "2")
 
-        #expect(RailyNotificationPreferences.event(previous: info, current: info) == nil)
+        #expect(BlitzNotificationPreferences.event(previous: info, current: info) == nil)
     }
 }
 
@@ -369,8 +369,9 @@ struct TripTimingResolverTests {
             referenceDate: date(2026, 6, 2, hour: 23, minute: 45)
         )
 
-        #expect(timing.duration == 40 * 60)
-        #expect(timing.adjustedArrival?.timeIntervalSince(timing.adjustedDeparture ?? .distantPast) == 40 * 60)
+        let expectedDuration: TimeInterval = 40 * 60
+        #expect(timing.duration == expectedDuration)
+        #expect(timing.adjustedArrival?.timeIntervalSince(timing.adjustedDeparture ?? .distantPast) == expectedDuration)
     }
 
     private func makeTrip(travelDate: Date, stops: [StoredStop]) -> Trip {

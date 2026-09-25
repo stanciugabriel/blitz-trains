@@ -29,9 +29,12 @@ struct SheetContent: View {
     @State private var searchRequestID = UUID()
     @State private var addStep: AddTripStep = .search
     @State private var pendingTrip: Trip?
+    @State private var candidateTrips: [Trip] = []
     @State private var availableStops: [GTFSStop] = []
     @State private var selectedDate: Date = Date()
+    @State private var isSelectedDateAvailable = false
     @State private var selectedOrigin: GTFSStop?
+    @State private var selectedDestination: GTFSStop?
     @State private var originQuery: String = ""
     @State private var destinationQuery: String = ""
     @State private var tripSortKeys: [String: Date] = [:]
@@ -54,7 +57,7 @@ struct SheetContent: View {
     @State private var isShowingSettingsSheet = false
     
 
-    private let dataSource = GTFSDataSource.shared
+    private var dataSource: GTFSDataSource { GTFSDataSource.shared }
     private let pruneTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     init(
@@ -104,7 +107,6 @@ struct SheetContent: View {
                 }
                 .padding(.horizontal)
             }
-
             contentView
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -427,19 +429,22 @@ struct SheetContent: View {
     private var addInputField: some View {
         switch addStep {
         case .search:
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TrainNumberSearchInput(focusNonce: searchFocusNonce) { query in
-                    trainSearchText = query
-                    performTrainSearch(query: query)
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TrainNumberSearchInput(focusNonce: searchFocusNonce) { query in
+                        trainSearchText = query
+                        performTrainSearch(query: query)
+                    }
                 }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 14)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(.horizontal)
+
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 14)
-            .background(Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .padding(.horizontal)
         case .origin, .destination:
             let placeholder = addStep.placeholder
             let binding = bindingForCurrentInput
@@ -468,19 +473,23 @@ struct SheetContent: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Choose travel date")
                     .font(.headline)
-                DatePicker(
-                    "Travel Date",
-                    selection: $selectedDate,
-                    displayedComponents: [.date]
-                )
-                .datePickerStyle(.graphical)
-                .labelsHidden()
+                if let pendingTrip {
+                    ServiceAvailabilityCalendar(
+                        trip: pendingTrip,
+                        query: trainSearchQuery.isEmpty ? nil : trainSearchQuery,
+                        selectedDate: $selectedDate,
+                        isSelectedDateAvailable: $isSelectedDateAvailable
+                    )
+                    .id(pendingTrip.id)
+                }
             }
             .padding(.horizontal)
             .padding(.bottom)
             .background(Color(.secondarySystemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .padding(.horizontal)
+        case .results:
+            EmptyView()
         }
     }
 
@@ -494,7 +503,7 @@ struct SheetContent: View {
             }
         case .date:
             VStack(spacing: 12) {
-                Text("Next: Choose your origin station")
+                Text(dataSource.hasServiceCalendar ? "Next: Choose your origin station" : "This timetable is missing operating dates. The selected date cannot filter services yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Button {
@@ -508,19 +517,46 @@ struct SheetContent: View {
                         .foregroundStyle(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .disabled(availableStops.isEmpty)
-                .opacity(availableStops.isEmpty ? 0.5 : 1)
+                .disabled(pendingTrip == nil || !isSelectedDateAvailable)
             }
             .padding(.horizontal)
         case .origin:
-            stopListView(stops: filteredOriginStops, emptyText: "No stations match your search.") { stop in
+            stopListView(stops: filteredOriginStops, emptyText: availableStops.isEmpty ? "No departures are available on this date. Choose another date." : "No stations match your search.") { stop in
                 selectedOrigin = stop
                 destinationQuery = ""
                 addStep = .destination
             }
         case .destination:
             stopListView(stops: filteredDestinationStops, emptyText: destinationEmptyMessage) { stop in
-                finalizeTrip(with: stop)
+                selectedDestination = stop
+                addStep = .results
+            }
+        case .results:
+            remainingTripOptions
+        }
+    }
+
+    @ViewBuilder
+    private var remainingTripOptions: some View {
+        let options = dataSource.options(in: candidateTrips, originID: selectedOrigin?.id ?? "", destinationID: selectedDestination?.id ?? "")
+        if options.isEmpty {
+            SearchPlaceholderView(text: "No matching departures remain for these stations.")
+                .padding(.horizontal)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Choose a departure")
+                    .font(.headline)
+                    .padding(.horizontal)
+                List(options, id: \.id) { option in
+                    Button {
+                        guard let destination = selectedDestination else { return }
+                        finalizeTrip(with: destination, using: option)
+                    } label: {
+                        TripRowView(trip: option, displayMode: .scheduled)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .listStyle(.plain)
             }
         }
     }
@@ -582,7 +618,7 @@ struct SheetContent: View {
     @ViewBuilder
     private var searchResultsPanel: some View {
         if normalizedTrainQuery.isEmpty {
-            SearchPlaceholderView(text: "Type a train number to look up schedules.")
+            SearchPlaceholderView(text: "Type a train, operator, or station to look up schedules.")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if isSearchingTrains {
             VStack(spacing: 10) {
@@ -595,11 +631,15 @@ struct SheetContent: View {
             SearchPlaceholderView(text: "No trains found for \"\(trainSearchText)\"")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
+            Text(GTFSDataSource.scheduleNotice)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
             List(searchResults, id: \.id) { trip in
                 Button {
                     handleTrainSelection(trip)
                 } label: {
-                    TripRowView(trip: trip, displayMode: .scheduled)
+                    SearchSuggestionRow(trip: trip)
                 }
                 .buttonStyle(.plain)
             }
@@ -650,7 +690,7 @@ struct SheetContent: View {
     }
 
     private func makeTravelTiming(departureSeconds: Int, arrivalSeconds: Int) -> (travelDate: Date, departureDate: Date, arrivalDate: Date)? {
-        let calendar = Calendar.current
+        let calendar = GTFSDataSource.calendar
         let now = Date()
         let baseToday = calendar.startOfDay(for: now)
         let offsets = [0, -1, 1, -2, 2]
@@ -764,12 +804,16 @@ struct SheetContent: View {
         case .destination:
             addStep = .origin
             destinationQuery = ""
+        case .results:
+            addStep = .destination
+            selectedDestination = nil
         }
     }
 
     private func startAddFlow() {
         addStep = .search
         pendingTrip = nil
+        candidateTrips = []
         availableStops = []
         selectedDate = Date()
         selectedOrigin = nil
@@ -789,6 +833,7 @@ struct SheetContent: View {
     private func resetAddFlow() {
         addStep = .search
         pendingTrip = nil
+        candidateTrips = []
         availableStops = []
         selectedDate = Date()
         selectedOrigin = nil
@@ -827,24 +872,33 @@ struct SheetContent: View {
 
     private func handleTrainSelection(_ trip: Trip) {
         pendingTrip = trip
-        availableStops = dataSource.stops(for: trip.id)
+        isSelectedDateAvailable = false
+        candidateTrips = []
+        availableStops = dataSource.stops(for: trip.gtfsTripId ?? trip.id)
         addStep = .date
         trainSearchQuery = trainSearchText
         originQuery = ""
         destinationQuery = ""
         selectedOrigin = nil
+        selectedDestination = nil
     }
 
     private func advanceToOrigin() {
-        guard !availableStops.isEmpty else { return }
+        guard let pendingTrip, isSelectedDateAvailable else { return }
+        candidateTrips = dataSource.variants(for: pendingTrip, travelDate: selectedDate, matching: trainSearchQuery.isEmpty ? nil : trainSearchQuery)
+        availableStops = dataSource.stationChoices(in: candidateTrips)
+        selectedDestination = nil
         selectedOrigin = nil
         originQuery = ""
         addStep = .origin
     }
 
-    private func finalizeTrip(with destination: GTFSStop) {
-        guard let baseTrip = pendingTrip, let origin = selectedOrigin else { return }
-        guard destination.sequence > origin.sequence else { return }
+    private func finalizeTrip(with destination: GTFSStop, using selectedCandidate: Trip) {
+        let baseTrip = selectedCandidate
+        guard let chosenOrigin = selectedOrigin else { return }
+        availableStops = dataSource.stops(for: baseTrip.gtfsTripId ?? baseTrip.id)
+        guard let origin = availableStops.first(where: { $0.id == chosenOrigin.id }),
+              let destination = availableStops.first(where: { $0.id == destination.id && $0.sequence > origin.sequence }) else { return }
 
         let summaryTitle = baseTrip.title
         let dateText = formattedDate(selectedDate)
@@ -910,7 +964,7 @@ struct SheetContent: View {
             trainPower: baseTrip.trainPower
         )
 
-        let shouldAddToLog = Calendar.current.startOfDay(for: selectedDate) < Calendar.current.startOfDay(for: Date())
+        let shouldAddToLog = GTFSDataSource.calendar.startOfDay(for: selectedDate) < GTFSDataSource.calendar.startOfDay(for: Date())
         if shouldAddToLog {
             archiveTrips([savedTrip])
             isSelectedTripPast = false
@@ -932,6 +986,7 @@ struct SheetContent: View {
         pendingTrip = nil
         availableStops = []
         selectedOrigin = nil
+        selectedDestination = nil
         originQuery = ""
         destinationQuery = ""
         isAddTripMode = false
@@ -1026,7 +1081,7 @@ struct SheetContent: View {
                 DispatchQueue.global(qos: .userInitiated).async {
                     continuation.resume(returning: dataSource.searchTrips(
                         matching: trimmed,
-                        travelDate: selectedDate
+                        travelDate: nil
                     ))
                 }
             }
@@ -1049,6 +1104,8 @@ struct SheetContent: View {
         case .destination:
             return $destinationQuery
         case .date:
+            return .constant("")
+        case .results:
             return .constant("")
         }
     }
@@ -1095,7 +1152,7 @@ struct SheetContent: View {
 
     private func logYear(for trip: Trip) -> Int {
         let date = arrivalDateWithDelay(for: trip) ?? trip.travelDate ?? fallbackSortDate(for: trip)
-        return Calendar.current.component(.year, from: date)
+        return GTFSDataSource.calendar.component(.year, from: date)
     }
 
     private var logSummaryMetrics: LogSummaryMetrics {
@@ -1175,7 +1232,7 @@ struct SheetContent: View {
 
     private var filteredDestinationStops: [GTFSStop] {
         guard let origin = selectedOrigin else { return [] }
-        let candidates = availableStops.filter { $0.sequence > origin.sequence }
+        let candidates = dataSource.stationChoices(in: candidateTrips, after: origin.id)
         let keyword = destinationQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !keyword.isEmpty else { return candidates }
         return candidates.filter { $0.name.localizedCaseInsensitiveContains(keyword) }
@@ -1194,6 +1251,7 @@ struct SheetContent: View {
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.timeZone = GTFSDataSource.calendar.timeZone
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
         return formatter
@@ -1242,7 +1300,7 @@ struct SheetContent: View {
             referenceDate: Date(),
             includeProgressDetails: false
         ).adjustedArrival else { return nil }
-        let calendar = Calendar.current
+        let calendar = GTFSDataSource.calendar
         let arrivalDay = calendar.startOfDay(for: arrival)
         return calendar.date(byAdding: .day, value: 1, to: arrivalDay)
     }
@@ -1450,7 +1508,7 @@ struct TripRowView: View {
     @State private var derivedStops: StopPair?
     @State private var now = Date()
     @State private var liveDelayInfo: DelayInfo?
-    private let dataSource = GTFSDataSource.shared
+    private var dataSource: GTFSDataSource { GTFSDataSource.shared }
     private let secondTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let minuteTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
@@ -1816,26 +1874,26 @@ struct TripRowView: View {
         let trip = self.trip
         let delayInfo = liveDelayInfo
         let referenceDate = now
-        let resolved = await Task.detached(priority: .userInitiated) {
-            TripTimingResolver().resolve(
-                trip: trip,
-                delayInfo: delayInfo,
-                referenceDate: referenceDate,
-                includeProgressDetails: false
-            )
-        }.value
+        let resolved = TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: delayInfo,
+            referenceDate: referenceDate,
+            includeProgressDetails: false
+        )
         guard self.trip.id == trip.id else { return }
         timing = resolved
     }
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.timeZone = GTFSDataSource.calendar.timeZone
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
 
     private static let longDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.timeZone = GTFSDataSource.calendar.timeZone
         formatter.dateFormat = "EEE, d MMM"
         return formatter
     }()
@@ -2103,6 +2161,7 @@ private struct ConnectionInfo: Identifiable {
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.timeZone = GTFSDataSource.calendar.timeZone
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
@@ -2290,6 +2349,7 @@ private struct LogTripRowView: View {
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.timeZone = GTFSDataSource.calendar.timeZone
         formatter.dateFormat = "MMM d, yyyy"
         return formatter
     }()
@@ -2855,16 +2915,17 @@ private extension UIImage {
 }
 
 private struct SettingsSheet: View {
+    @AppStorage(FormationSettings.key) private var formationServer = FormationSettings.defaultServer
     @Binding var trips: [Trip]
     @Binding var pastTrips: [Trip]
     var dismissAction: () -> Void
     @State private var automaticStationDetection = TripLocationDetectionPreferences.isEnabled
     @State private var batterySavingMode = TripLocationDetectionPreferences.batterySavingEnabled
     @State private var continuousSpeedCapsule = TripLocationDetectionPreferences.continuousSpeedCapsuleEnabled
-    @State private var notifyDelayChanges = RailyNotificationPreferences.delayChangesEnabled
-    @State private var notifyPlatformChanges = RailyNotificationPreferences.platformChangesEnabled
-    @State private var notifyEarlyTrains = RailyNotificationPreferences.earlyTrainsEnabled
-    @State private var delayThreshold = RailyNotificationPreferences.delayChangeThreshold
+    @State private var notifyDelayChanges = BlitzNotificationPreferences.delayChangesEnabled
+    @State private var notifyPlatformChanges = BlitzNotificationPreferences.platformChangesEnabled
+    @State private var notifyEarlyTrains = BlitzNotificationPreferences.earlyTrainsEnabled
+    @State private var delayThreshold = BlitzNotificationPreferences.delayChangeThreshold
     @State private var missedTrainDebugUI = TripLocationDetectionPreferences.missedTrainDebugUIEnabled
     @State private var missedTrainSimulation = TripLocationDetectionPreferences.missedTrainSimulationEnabled
     @State private var isImporting = false
@@ -2881,6 +2942,21 @@ private struct SettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    TextField("192.168.0.14:3001", text: $formationServer)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityLabel("Formation server address")
+                    if FormationSettings.endpoint(formationServer) == nil {
+                        Text("Enter a valid IP address or hostname, optionally with a port.")
+                            .font(.caption).foregroundStyle(.red)
+                    }
+                } header: {
+                    Text("Train Formation")
+                } footer: {
+                    Text("Use the server’s local IP address. Port 3001 is used by default.")
+                }
                 Section {
                     settingRow(
                         title: "Automatic boarding and arrival detection",
@@ -2932,8 +3008,8 @@ private struct SettingsSheet: View {
                         isOn: $notifyDelayChanges
                     )
                     .onChange(of: notifyDelayChanges) { _, enabled in
-                        RailyNotificationPreferences.delayChangesEnabled = enabled
-                        if enabled { RailyNotificationPreferences.requestAuthorization() }
+                        BlitzNotificationPreferences.delayChangesEnabled = enabled
+                        if enabled { BlitzNotificationPreferences.requestAuthorization() }
                     }
 
                     Picker("Delay threshold", selection: $delayThreshold) {
@@ -2943,7 +3019,7 @@ private struct SettingsSheet: View {
                     }
                     .disabled(!notifyDelayChanges)
                     .onChange(of: delayThreshold) { _, value in
-                        RailyNotificationPreferences.delayChangeThreshold = value
+                        BlitzNotificationPreferences.delayChangeThreshold = value
                     }
 
                     settingRow(
@@ -2952,8 +3028,8 @@ private struct SettingsSheet: View {
                         isOn: $notifyPlatformChanges
                     )
                     .onChange(of: notifyPlatformChanges) { _, enabled in
-                        RailyNotificationPreferences.platformChangesEnabled = enabled
-                        if enabled { RailyNotificationPreferences.requestAuthorization() }
+                        BlitzNotificationPreferences.platformChangesEnabled = enabled
+                        if enabled { BlitzNotificationPreferences.requestAuthorization() }
                     }
 
                     settingRow(
@@ -2962,8 +3038,8 @@ private struct SettingsSheet: View {
                         isOn: $notifyEarlyTrains
                     )
                     .onChange(of: notifyEarlyTrains) { _, enabled in
-                        RailyNotificationPreferences.earlyTrainsEnabled = enabled
-                        if enabled { RailyNotificationPreferences.requestAuthorization() }
+                        BlitzNotificationPreferences.earlyTrainsEnabled = enabled
+                        if enabled { BlitzNotificationPreferences.requestAuthorization() }
                     }
                 } header: {
                     Text("Notifications")
@@ -2997,7 +3073,7 @@ private struct SettingsSheet: View {
                 }
 
                 Section {
-                    ShareLink(item: exportData, preview: SharePreview("Raily Trips", image: Image(systemName: "tram.fill"))) {
+                        ShareLink(item: exportData, preview: SharePreview("Blitz Trips", image: Image(systemName: "tram.fill"))) {
                         Label("Export Trips", systemImage: "square.and.arrow.up")
                     }
 
@@ -3047,7 +3123,7 @@ private struct SettingsSheet: View {
             )) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text(importError ?? "The selected file is not a valid Raily export.")
+                Text(importError ?? "The selected file is not a valid Blitz export.")
             }
         }
     }
@@ -3092,7 +3168,7 @@ private struct SettingsSheet: View {
             trips = merged.active
             pastTrips = merged.past
         } catch {
-            importError = "Choose a Raily JSON export file."
+            importError = "Choose a Blitz JSON export file."
         }
     }
 
@@ -3326,14 +3402,13 @@ private struct TrainNumberSearchInput: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        TextField("Search train number", text: $text)
+        TextField("Search train or operator", text: $text)
             .textFieldStyle(.plain)
-            // numberPad has no native Return/Search key on iOS. This Apple
-            // keyboard includes the native action key; input is restricted to
-            // digits below so the field remains a train-number field.
-            .keyboardType(.numbersAndPunctuation)
+            // Swiss train numbers are reused across operators, so allow an
+            // optional operator prefix such as "IC1 728".
+            .keyboardType(.asciiCapable)
             .autocorrectionDisabled()
-            .textInputAutocapitalization(.never)
+            .textInputAutocapitalization(.characters)
             .focused($isFocused)
             .onAppear {
                 isFocused = true
@@ -3343,15 +3418,50 @@ private struct TrainNumberSearchInput: View {
                 isFocused = true
             }
             .onChange(of: text) { _, newValue in
-                let digitsOnly = newValue.filter(\.isNumber)
-                if digitsOnly != newValue {
-                    text = digitsOnly
+                let cleaned = String(newValue.filter { $0.isLetter || $0.isNumber || $0 == " " || $0 == "-" })
+                    .uppercased()
+                if cleaned != newValue {
+                    text = cleaned
                 }
             }
             .onSubmit {
                 onSearch(text)
             }
             .submitLabel(.search)
+    }
+}
+
+private struct SearchSuggestionRow: View {
+    let trip: Trip
+
+    private var routeCode: String {
+        trip.title.split(separator: " ").first.map(String.init) ?? trip.title
+    }
+
+    private var headsign: String {
+        trip.destinationName ?? trip.subtitle
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            OperatorLogoView(
+                logoName: OperatorBrandingCatalog.branding(for: trip.agencyId).logoName,
+                size: 34
+            )
+            VStack(alignment: .leading, spacing: 3) {
+                Text(routeCode)
+                    .font(.headline)
+                Text(headsign)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 8)
     }
 }
 
@@ -3418,6 +3528,7 @@ enum AddTripStep {
     case date
     case origin
     case destination
+    case results
 
     var title: String {
         switch self {
@@ -3425,6 +3536,7 @@ enum AddTripStep {
         case .date: return "Add Date"
         case .origin: return "Add Origin"
         case .destination: return "Add Destination"
+        case .results: return "Choose Departure"
         }
     }
 
@@ -3434,13 +3546,131 @@ enum AddTripStep {
         case .origin: return "Search origin station"
         case .destination: return "Search destination station"
         case .date: return ""
+        case .results: return ""
         }
     }
 
     var showsTextField: Bool {
         switch self {
-        case .date: return false
+        case .date, .results: return false
         default: return true
         }
+    }
+}
+
+
+/// A month grid with service availability decorations and only valid selectable days.
+private struct ServiceAvailabilityCalendar: View {
+    let trip: Trip
+    let query: String?
+    @Binding var selectedDate: Date
+    @Binding var isSelectedDateAvailable: Bool
+    @State private var month: Date
+    @State private var availableDates: Set<Date> = []
+    @State private var isLoading = true
+
+    init(trip: Trip, query: String?, selectedDate: Binding<Date>, isSelectedDateAvailable: Binding<Bool>) {
+        self.trip = trip
+        self.query = query
+        self._selectedDate = selectedDate
+        self._isSelectedDateAvailable = isSelectedDateAvailable
+        self._month = State(initialValue: GTFSDataSource.calendar.dateInterval(of: .month, for: selectedDate.wrappedValue)!.start)
+    }
+
+    private var calendar: Calendar { GTFSDataSource.calendar }
+    private var dates: [Date?] {
+        let start = calendar.dateInterval(of: .month, for: month)!.start
+        let padding = (calendar.component(.weekday, from: start) - calendar.firstWeekday + 7) % 7
+        let count = calendar.range(of: .day, in: .month, for: start)!.count
+        return Array(repeating: nil, count: padding) + (0..<count).map {
+            calendar.date(byAdding: .day, value: $0, to: start)
+        }
+    }
+    private var weekdayNames: [String] {
+        let names = calendar.veryShortStandaloneWeekdaySymbols
+        let offset = calendar.firstWeekday - 1
+        return Array(names[offset...]) + Array(names[..<offset])
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Button { moveMonth(-1) } label: { Image(systemName: "chevron.left") }
+                    .accessibilityLabel("Previous month")
+                Spacer()
+                Text(month.formatted(Date.FormatStyle(calendar: calendar, timeZone: calendar.timeZone).month(.wide).year()))
+                    .font(.headline)
+                Spacer()
+                Button { moveMonth(1) } label: { Image(systemName: "chevron.right") }
+                    .accessibilityLabel("Next month")
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, 8)
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 4) {
+                ForEach(0..<7, id: \.self) { index in
+                    Text(weekdayNames[index]).font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(dates.indices, id: \.self) { index in
+                    if let date = dates[index] {
+                        let available = !isLoading && availableDates.contains(date)
+                        let selected = available && calendar.isDate(date, inSameDayAs: selectedDate)
+                        Button {
+                            selectedDate = date
+                            isSelectedDateAvailable = true
+                        } label: {
+                            VStack(spacing: 3) {
+                                Text(String(calendar.component(.day, from: date)))
+                                    .font(.body.weight(selected ? .bold : .regular))
+                                    .foregroundStyle(selected ? Color.white : (available ? Color.primary : Color.secondary.opacity(0.4)))
+                                Circle()
+                                    .fill(selected ? Color.white : Color.green)
+                                    .frame(width: 5, height: 5)
+                                    .opacity(available ? 1 : 0)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .background(selected ? Color.accentColor : Color.clear, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!available)
+                        .accessibilityLabel(date.formatted(date: .complete, time: .omitted) + (available ? ", service available" : ", service unavailable"))
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                    } else {
+                        Color.clear.frame(height: 44)
+                    }
+                }
+            }
+            HStack(spacing: 6) {
+                if isLoading {
+                    ProgressView().controlSize(.small)
+                    Text("Checking available dates…")
+                } else {
+                    Circle().fill(.green).frame(width: 5, height: 5)
+                    Text(availableDates.isEmpty ? "No services this month" : "Service available")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .task(id: month) {
+            isLoading = true
+            isSelectedDateAvailable = false
+            let requestedMonth = month
+            let task = Task.detached(priority: .userInitiated) { [trip, query] in
+                GTFSDataSource.shared.availableBoardingDates(for: trip, matching: query, month: requestedMonth)
+            }
+            let result = await task.value
+            guard !Task.isCancelled else { return }
+            availableDates = result
+            isLoading = false
+            isSelectedDateAvailable = result.contains(calendar.startOfDay(for: selectedDate))
+        }
+    }
+
+    private func moveMonth(_ offset: Int) {
+        guard let next = calendar.date(byAdding: .month, value: offset, to: month) else { return }
+        isLoading = true
+        isSelectedDateAvailable = false
+        month = next
     }
 }

@@ -245,6 +245,26 @@ final class LiveActivityManager {
 
     private func operatorName(for logoName: String) -> String {
         switch logoName {
+        case "sbb":
+            return "SBB"
+        case "bls":
+            return "BLS AG"
+        case "thurbo":
+            return "THURBO"
+        case "tpc":
+            return "TPC"
+        case "jungfrau":
+            return "Lauterbrunnen-Mürren"
+        case "szu":
+            return "SZU"
+        case "rhb":
+            return "Rhätische Bahn"
+        case "sob":
+            return "SOB"
+        case "travys":
+            return "TRAVYS"
+        case "aargau-verkehr":
+            return "Aargau Verkehr"
         case "cfr":
             return "CFR Călători"
         case "regio":

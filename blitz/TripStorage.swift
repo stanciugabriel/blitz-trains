@@ -1,5 +1,77 @@
 import Foundation
 
+struct StoredSegment: Codable, Equatable {
+    let id: Int
+    let startId: String
+    let startName: String?
+    let endId: String
+    let endName: String?
+    let departureSeconds: Int?
+    let arrivalSeconds: Int?
+    let maxSpeed: Int
+    let trainLengthMeters: Int?
+    let trainTonnage: Int?
+
+    init(_ segment: GTFSSegment) {
+        id = segment.id
+        startId = segment.startId
+        startName = segment.startName
+        endId = segment.endId
+        endName = segment.endName
+        departureSeconds = segment.departureSeconds
+        arrivalSeconds = segment.arrivalSeconds
+        maxSpeed = segment.maxSpeed
+        trainLengthMeters = segment.trainLengthMeters
+        trainTonnage = segment.trainTonnage
+    }
+
+    var gtfsSegment: GTFSSegment {
+        GTFSSegment(id: id, startId: startId, startName: startName, endId: endId,
+                    endName: endName, departureSeconds: departureSeconds,
+                    arrivalSeconds: arrivalSeconds, maxSpeed: maxSpeed,
+                    trainLengthMeters: trainLengthMeters, trainTonnage: trainTonnage)
+    }
+}
+
+/// Static schedule data is captured once when a trip is added and reused on
+/// later launches. This keeps the baked SQLite database off the UI path.
+enum TripStaticScheduleStore {
+    private static let key = "sbb.tripStaticSegments.v1"
+    private static let lock = NSLock()
+    private static var memory: [String: [StoredSegment]] = [:]
+
+    static func segments(for tripID: String) -> [GTFSSegment]? {
+        lock.lock()
+        if let value = memory[tripID] {
+            lock.unlock()
+            return value.map(\.gtfsSegment)
+        }
+        let data = UserDefaults.standard.data(forKey: key)
+        let decoded = (try? data.flatMap { try JSONDecoder().decode([String: [StoredSegment]].self, from: $0) }) ?? nil
+        if let value = decoded?[tripID] {
+            memory[tripID] = value
+            lock.unlock()
+            return value.map(\.gtfsSegment)
+        }
+        lock.unlock()
+        return nil
+    }
+
+    static func save(_ segments: [GTFSSegment], for tripID: String) {
+        let stored = segments.map(StoredSegment.init)
+        lock.lock()
+        memory[tripID] = stored
+        var all = (try? UserDefaults.standard.data(forKey: key).flatMap {
+            try JSONDecoder().decode([String: [StoredSegment]].self, from: $0)
+        }) ?? [:]
+        all[tripID] = stored
+        if let data = try? JSONEncoder().encode(all) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+        lock.unlock()
+    }
+}
+
 struct TripExportDocument: Codable {
     let schemaVersion: Int
     let exportedAt: Date
@@ -52,8 +124,8 @@ final class TripStorage {
     static let shared = TripStorage()
 
     private let defaults = UserDefaults.standard
-    private let storageKey = "savedTrips"
-    private let pastStorageKey = "pastTrips"
+    private let storageKey = "sbb.savedTrips"
+    private let pastStorageKey = "sbb.pastTrips"
     private init() {}
 
     func loadTrips() -> [Trip] {
@@ -100,6 +172,15 @@ final class TripStorage {
             print("[TripStorage] Failed to encode past trips: \(error)")
             #endif
         }
+    }
+
+    /// Encode both lists before acknowledging a shared submission. Replaying a
+    /// submission after interruption is safe because imported IDs are stable.
+    func persistSharedImport(active: [Trip], past: [Trip]) throws {
+        let activeData = try JSONEncoder().encode(active)
+        let pastData = try JSONEncoder().encode(past)
+        defaults.set(activeData, forKey: storageKey)
+        defaults.set(pastData, forKey: pastStorageKey)
     }
 
     func exportDocument() -> TripExportDocument {

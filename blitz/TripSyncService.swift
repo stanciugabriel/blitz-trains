@@ -38,7 +38,8 @@ final class TripSyncService {
     private init() {}
 
     func sync(trip: Trip, shouldFetchMapInfo: Bool) async -> TripSyncResult? {
-        guard let trainNumber = trip.resolvedTrainNumber else { return nil }
+        // The Swiss timetable has no live provider. Never send Swiss train numbers to InfoFer.
+        guard GTFSDataSource.supportsInfoFer, let trainNumber = trip.resolvedTrainNumber else { return nil }
         let previousInfo = LiveDelayStore.shared.info(for: trip.id)
 
         await InfoFerSessionManager.shared.refreshSession(for: trainNumber)

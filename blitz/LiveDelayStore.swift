@@ -1,7 +1,7 @@
 import Foundation
 import UserNotifications
 
-enum RailyNotificationPreferences {
+enum BlitzNotificationPreferences {
     private static let delayKey = "raily.notifications.delayChanges"
     private static let platformKey = "raily.notifications.platformChanges"
     private static let earlyKey = "raily.notifications.earlyTrains"
@@ -32,7 +32,7 @@ enum RailyNotificationPreferences {
     }
 }
 
-enum RailyNotificationEvent: Equatable {
+enum BlitzNotificationEvent: Equatable {
     case delayChanged(old: Int, new: Int)
     case platformChanged(old: String, new: String)
     case becameEarly(minutes: Int)
@@ -46,12 +46,12 @@ enum RailyNotificationEvent: Equatable {
     }
 }
 
-extension RailyNotificationPreferences {
+extension BlitzNotificationPreferences {
     static func event(
         previous: DelayInfo,
         current: DelayInfo,
         trip: Trip? = nil
-    ) -> RailyNotificationEvent? {
+    ) -> BlitzNotificationEvent? {
         let oldDelay = effectiveDelay(for: previous, trip: trip)
         let newDelay = effectiveDelay(for: current, trip: trip)
 
@@ -140,7 +140,7 @@ final class LiveDelayStore {
               Date().timeIntervalSince(fetchedAt) <= 20 * 60 else { return }
 
         let trip = TripStorage.shared.loadTrips().first { $0.id == tripID }
-        guard let event = RailyNotificationPreferences.event(
+        guard let event = BlitzNotificationPreferences.event(
             previous: previous,
             current: current,
             trip: trip

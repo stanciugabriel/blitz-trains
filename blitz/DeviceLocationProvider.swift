@@ -47,7 +47,7 @@ final class DeviceLocationProvider: NSObject, ObservableObject {
     }
 
     func enableTracking() {
-        guard CLLocationManager.locationServicesEnabled() else { return }
+        guard authorizationStatus != .denied, authorizationStatus != .restricted else { return }
         if authorizationStatus == .notDetermined {
             manager.requestAlwaysAuthorization()
         } else if authorizationStatus == .authorizedWhenInUse {
@@ -69,7 +69,7 @@ final class DeviceLocationProvider: NSObject, ObservableObject {
     }
 
     func enableSpeedTracking() {
-        guard CLLocationManager.locationServicesEnabled() else { return }
+        guard authorizationStatus != .denied, authorizationStatus != .restricted else { return }
         if authorizationStatus == .notDetermined {
             manager.requestAlwaysAuthorization()
         }

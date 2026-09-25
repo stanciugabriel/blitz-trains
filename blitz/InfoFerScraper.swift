@@ -312,7 +312,10 @@ final class InfoFerSessionManager {
 
     func storedCookies() -> [HTTPCookie]? {
         guard let data = UserDefaults.standard.data(forKey: cookieStoreKey),
-              let cookies = try? NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(data) as? [HTTPCookie]
+              let cookies = try? NSKeyedUnarchiver.unarchivedObject(
+                ofClasses: [NSArray.self, HTTPCookie.self],
+                from: data
+              ) as? [HTTPCookie]
         else { return nil }
         return cookies
     }

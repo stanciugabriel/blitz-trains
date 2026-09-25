@@ -1,5 +1,6 @@
 import Foundation
 import SQLite3
+import zlib
 
 struct GTFSStop: Identifiable, Equatable {
     let id: String
@@ -55,30 +56,48 @@ extension GTFSDataSource.GTFSStopSchedule {
     }
 }
 
-// Database work must not inherit the app's default MainActor isolation.
-// Callers can safely use this source from the background search queue while
-// the UI remains responsive.
-nonisolated final class GTFSDataSource {
+// The Swiss feed is read directly; GTFS trip IDs, not train numbers, are identities.
+// All SQLite work is serialized, with a separate connection for schedule search.
+nonisolated final class GTFSDataSource: @unchecked Sendable {
     static let shared = GTFSDataSource()
+    static let supportsInfoFer = false
+    static var scheduleNotice: String {
+        shared.hasServiceCalendar
+            ? "Timetable only. Services are filtered by travel date; live updates are unavailable."
+            : "Timetable only. Operating dates are unavailable in this feed; confirm your train with the operator."
+    }
+    static var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/Zurich")!
+        return calendar
+    }
 
+    private(set) var hasServiceCalendar = false
+    private enum ExceptionMask {
+        case missing
+        case invalid
+        case decoded(start: Date, days: Int, bytes: [UInt8])
+    }
+    private var exceptionMasks: [String: ExceptionMask] = [:]
+    private var calendarTables = Set<String>()
     private var database: OpaquePointer?
-    // Search runs on a separate connection because the rest of the data
-    // source uses `database` for map/timing reads on the app's main actor.
     private var searchDatabase: OpaquePointer?
-    private let searchQueue = DispatchQueue(label: "ro.openlabs.blitz.gtfs-search")
-    private let searchLimit = 25
+    private let readLock = NSRecursiveLock()
+    private let searchQueue = DispatchQueue(label: "app.raily.sbb-search")
+    private var routeCache: [String: [StopTime]] = [:]
     private var agenciesById: [String: AgencyInfo] = [:]
-    private let cacheLock = NSLock()
-    private var stopsCache: [String: [GTFSStop]] = [:]
-    private var polylineStopsCache: [String: [GTFSStop]] = [:]
-    private var segmentsCache: [String: [GTFSSegment]] = [:]
-    private var scheduleCache: [String: GTFSStopSchedule?] = [:]
-    private var delayHistoryCache: [String: TrainDelayHistory?] = [:]
 
-    private init() {
-        openDatabase()
-        openSearchDatabase()
-        loadAgencies()
+    // Injectable URL also lets tests exercise the actual adapter with a tiny GTFS fixture.
+    init(databaseURL: URL? = nil) {
+        guard let url = databaseURL ?? Self.locateDatabaseURL() else { return }
+        database = Self.open(url)
+        searchDatabase = Self.open(url)
+        calendarTables = Set(rows("SELECT name FROM sqlite_master WHERE type = 'table'", on: database).compactMap { $0[0] })
+        hasServiceCalendar = calendarTables.contains("calendar") || calendarTables.contains("calendar_dates") || calendarTables.contains("calendar_date_masks")
+        for row in rows("SELECT agency_id, agency_name, agency_url, agency_timezone FROM agency", on: database) {
+            guard let id = row[0], let name = row[1] else { continue }
+            agenciesById[id] = AgencyInfo(id: id, name: name, url: row[2], timezone: row[3])
+        }
     }
 
     deinit {
@@ -86,724 +105,513 @@ nonisolated final class GTFSDataSource {
         sqlite3_close(searchDatabase)
     }
 
-    func searchTrips(matching query: String, limit: Int? = nil, travelDate: Date? = nil) -> [Trip] {
-        searchQueue.sync {
-            searchTripsOnSearchConnection(matching: query, limit: limit, travelDate: travelDate)
+    private static func open(_ url: URL) -> OpaquePointer? {
+        var connection: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
+            sqlite3_close(connection)
+            return nil
         }
+        return connection
     }
 
-    /// Warms the static route cache without requiring a view to perform the
-    /// first map lookup synchronously during body evaluation.
-    func preloadRouteData(for tripId: String) {
-        _ = segments(for: tripId)
-        _ = stops(for: tripId)
-        _ = polylineStops(for: tripId)
+    private static func locateDatabaseURL() -> URL? {
+        if let url = Bundle.main.url(forResource: "sbb_gtfs", withExtension: "db") { return url }
+        #if DEBUG
+        let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("blitz/sbb_gtfs.db")
+        if FileManager.default.fileExists(atPath: url.path) { return url }
+        #endif
+        return nil
     }
 
-    /// Returns the bundled 60-day delay summary for a train, when the
-    /// optional train_delays table is present in the shipped database.
-    func delayHistory(for trainNumber: String) -> TrainDelayHistory? {
-        cacheLock.lock()
-        if let cached = delayHistoryCache[trainNumber] {
-            cacheLock.unlock()
-            return cached
+    private func rows(_ sql: String, _ bindings: [String] = [], on connection: OpaquePointer?) -> [[String?]] {
+        guard let connection else { return [] }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK else {
+            #if DEBUG
+            print("[GTFSDataSource] \(String(cString: sqlite3_errmsg(connection)))")
+            #endif
+            return []
         }
-        cacheLock.unlock()
-
-        let result = loadDelayHistory(for: trainNumber)
-        cacheLock.lock()
-        delayHistoryCache[trainNumber] = result
-        cacheLock.unlock()
+        defer { sqlite3_finalize(statement) }
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        for (index, value) in bindings.enumerated() {
+            sqlite3_bind_text(statement, Int32(index + 1), value, -1, transient)
+        }
+        var result: [[String?]] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            result.append((0..<sqlite3_column_count(statement)).map { index in
+                sqlite3_column_text(statement, index).map { String(cString: $0) }
+            })
+        }
         return result
-    }
-
-    private func loadDelayHistory(for trainNumber: String) -> TrainDelayHistory? {
-        guard let database else { return nil }
-        let sql = """
-        SELECT train_number, observed_trips, delayed_trips,
-               avg_delay_minutes, pct_early, pct_on_time,
-               pct_delay_15m, pct_delay_30m, pct_delay_45m_plus
-        FROM train_delays
-        WHERE train_number = ?
-        LIMIT 1
-        """
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
-            return nil
-        }
-        defer { sqlite3_finalize(statement) }
-
-        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        sqlite3_bind_text(statement, 1, trainNumber, -1, transient)
-        guard sqlite3_step(statement) == SQLITE_ROW,
-              let numberPointer = sqlite3_column_text(statement, 0) else {
-            return nil
-        }
-
-        return TrainDelayHistory(
-            trainNumber: String(cString: numberPointer),
-            observedTrips: Int(sqlite3_column_int(statement, 1)),
-            delayedTrips: Int(sqlite3_column_int(statement, 2)),
-            averageDelayMinutes: sqlite3_column_double(statement, 3),
-            percentEarly: sqlite3_column_double(statement, 4),
-            percentOnTime: sqlite3_column_double(statement, 5),
-            percentDelay15Minutes: sqlite3_column_double(statement, 6),
-            percentDelay30Minutes: sqlite3_column_double(statement, 7),
-            percentDelay45MinutesPlus: sqlite3_column_double(statement, 8)
-        )
-    }
-
-    /// Returns bundled-schedule departures from a station after the supplied
-    /// time. This is intentionally local and synchronous so missed-train
-    /// recovery still works without InfoFer connectivity.
-    func departures(from stationID: String, after date: Date, excluding trainID: String? = nil, destinationStationID: String? = nil, limit: Int = 8) -> [Trip] {
-        guard let database else { return [] }
-        let calendar = Calendar.current
-        let sql = """
-        SELECT DISTINCT first.train_number,
-               trains.category,
-               trains.operator_id,
-               destination.uic_code,
-               destination.name,
-               first.departure_time
-        FROM trip_segments first
-        INNER JOIN trains ON trains.train_number = first.train_number
-        LEFT JOIN trip_segments last ON last.train_number = first.train_number
-            AND last.sequence_id = (
-                SELECT MAX(candidate.sequence_id)
-                FROM trip_segments candidate
-                WHERE candidate.train_number = first.train_number
-            )
-        LEFT JOIN stations destination ON destination.uic_code = last.uic_end
-        WHERE first.uic_start = ?
-          AND first.departure_time IS NOT NULL
-          \(destinationStationID == nil ? "" : "AND last.uic_end = ?")
-        ORDER BY first.departure_time ASC
-        LIMIT ?
-        """
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
-            logError("Failed to prepare departures query")
-            return []
-        }
-        defer { sqlite3_finalize(statement) }
-
-        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        sqlite3_bind_text(statement, 1, stationID, -1, transient)
-        var limitBindingIndex: Int32 = 2
-        if let destinationStationID {
-            sqlite3_bind_text(statement, 2, destinationStationID, -1, transient)
-            limitBindingIndex = 3
-        }
-        // Fetch a broad window before applying the time filter below. The
-        // query is ordered for the full service day, so a small SQL limit can
-        // contain only already-departed trains when the user searches later.
-        sqlite3_bind_int(statement, limitBindingIndex, Int32(max(limit * 20, 200)))
-
-        var departures: [Trip] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
-            guard let numberPointer = sqlite3_column_text(statement, 0) else { continue }
-            let trainNumber = String(cString: numberPointer)
-            if trainNumber == trainID { continue }
-            guard let departureSeconds = sqlite3_column_text(statement, 5).flatMap({
-                parseTimeSeconds(String(cString: $0))
-            }) else { continue }
-            let stops = self.stops(for: trainNumber)
-
-            // A stop after midnight is still part of the previous GTFS
-            // service. Compare the normalized wall-clock date, rather than
-            // raw seconds after midnight, so a 26:00 stop is not mistaken for
-            // the following day's 02:00 service.
-            let scheduleTimes = stops.map { stop in
-                let schedule = stopSchedule(for: trainNumber, stopId: stop.id)
-                return schedule?.departureSeconds ?? schedule?.arrivalSeconds
-            }
-            let stationIndex = stops.firstIndex(where: { $0.id == stationID }) ?? 0
-            let serviceDayOffset = ScheduleDateUtils.serviceDayOffset(for: scheduleTimes, through: stationIndex)
-            let serviceDate = ScheduleDateUtils.serviceDate(
-                forBoardingDate: date,
-                dayOffset: serviceDayOffset,
-                calendar: calendar
-            )
-            let departureDate = serviceDate.addingTimeInterval(TimeInterval(departureSeconds))
-            guard departureDate > date else { continue }
-
-            let category = sqlite3_column_text(statement, 1).map { String(cString: $0) }
-            let agencyID = sqlite3_column_text(statement, 2).map { String(cString: $0) }
-            let destinationID = sqlite3_column_text(statement, 3).map { String(cString: $0) }
-            let destinationName = sqlite3_column_text(statement, 4).map { String(cString: $0) }
-            let originSequence = stops.first(where: { $0.id == stationID })?.sequence
-            let destinationSequence = destinationID.flatMap { id in stops.first(where: { $0.id == id })?.sequence }
-            let travelDate = serviceDate
-            let title = formattedTrainTitle(category: category, number: trainNumber)
-            departures.append(Trip(
-                id: "\(trainNumber)-\(stationID)-\(Int(date.timeIntervalSince1970))",
-                title: title,
-                subtitle: routeDescription(origin: stops.first(where: { $0.id == stationID })?.name, destination: destinationName) ?? "Route info unavailable",
-                agencyId: agencyID,
-                detailRoute: routeDescription(origin: stops.first(where: { $0.id == stationID })?.name, destination: destinationName),
-                gtfsTripId: trainNumber,
-                travelDate: travelDate,
-                originStopId: stationID,
-                originName: stops.first(where: { $0.id == stationID })?.name,
-                destinationStopId: destinationID,
-                destinationName: destinationName,
-                stops: stops.map(StoredStop.init(gtfsStop:)),
-                originSequence: originSequence,
-                destinationSequence: destinationSequence,
-                trainType: category.flatMap { TrainType(categoryCode: $0) }
-            ))
-            if departures.count >= limit { break }
-        }
-        return departures
-    }
-
-    private func searchTripsOnSearchConnection(matching query: String, limit: Int? = nil, travelDate: Date? = nil) -> [Trip] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let database = searchDatabase else { return [] }
-
-        let fetchLimit = Int32(limit ?? searchLimit)
-        let sql = """
-        WITH matched_trains AS (
-            SELECT train_number
-            FROM trains
-            WHERE train_number LIKE ? OR train_number LIKE ?
-
-            UNION
-
-            SELECT DISTINCT ts.train_number
-            FROM trip_segments ts
-            INNER JOIN stations station ON station.uic_code = ts.uic_start OR station.uic_code = ts.uic_end
-            WHERE COALESCE(station.search_index, '') LIKE ?
-        ), first_segment AS (
-            SELECT ts.train_number, ts.uic_start, ts.train_length_meters, ts.train_tonnage
-            FROM trip_segments ts
-            INNER JOIN matched_trains matched ON matched.train_number = ts.train_number
-            WHERE ts.sequence_id = (
-                SELECT MIN(first.sequence_id)
-                FROM trip_segments first
-                WHERE first.train_number = ts.train_number
-            )
-        ), last_segment AS (
-            SELECT ts.train_number, ts.uic_end
-            FROM trip_segments ts
-            INNER JOIN matched_trains matched ON matched.train_number = ts.train_number
-            WHERE ts.sequence_id = (
-                SELECT MAX(last.sequence_id)
-                FROM trip_segments last
-                WHERE last.train_number = ts.train_number
-            )
-        )
-        SELECT DISTINCT t.train_number,
-               t.category,
-               t.operator_id,
-               origin.name AS origin_name,
-               destination.name AS destination_name,
-               fs.train_length_meters,
-               fs.train_tonnage
-        FROM trains t
-        LEFT JOIN first_segment fs ON fs.train_number = t.train_number
-        LEFT JOIN stations origin ON origin.uic_code = fs.uic_start
-        LEFT JOIN last_segment ls ON ls.train_number = t.train_number
-        LEFT JOIN stations destination ON destination.uic_code = ls.uic_end
-        INNER JOIN matched_trains matched ON matched.train_number = t.train_number
-        ORDER BY t.train_number ASC
-        LIMIT ?
-        """
-
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
-            logError("Failed to prepare statement")
-            return []
-        }
-        defer { sqlite3_finalize(statement) }
-
-        // A prefix search uses the train-number index while the user is typing.
-        // Keep the contains pattern as a fallback for station/name searches and
-        // for numbers that are not stored with the exact formatting entered.
-        let pattern = "%\(trimmed)%"
-        let numericQuery = trimmed.filter { $0.isNumber }
-        let numericPattern = numericQuery.isEmpty ? pattern : "\(numericQuery)%"
-        var normalizedQuery = normalizedSearchQuery(trimmed)
-        if normalizedQuery.isEmpty {
-            normalizedQuery = trimmed.lowercased()
-        }
-        let normalizedPattern = "%\(normalizedQuery)%"
-        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        sqlite3_bind_text(statement, 1, numericPattern, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(statement, 2, pattern, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(statement, 3, normalizedPattern, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_int(statement, 4, fetchLimit)
-
-        var trips: [Trip] = []
-        var seenTrainNumbers = Set<String>()
-        while sqlite3_step(statement) == SQLITE_ROW {
-            guard let numberPointer = sqlite3_column_text(statement, 0) else { continue }
-            let trainNumber = String(cString: numberPointer)
-            // A train number can have multiple segment chains in the static
-            // data. Trip currently uses the train number as its identity, so
-            // return one representative result per number to keep SwiftUI IDs
-            // stable.
-            guard seenTrainNumbers.insert(trainNumber).inserted else { continue }
-            let category: String?
-            if let categoryPointer = sqlite3_column_text(statement, 1) {
-                let raw = String(cString: categoryPointer).trimmingCharacters(in: .whitespacesAndNewlines)
-                category = raw.isEmpty ? nil : raw
-            } else {
-                category = nil
-            }
-            let agencyId: String?
-            if let agencyPointer = sqlite3_column_text(statement, 2) {
-                let raw = String(cString: agencyPointer).trimmingCharacters(in: .whitespacesAndNewlines)
-                agencyId = raw.isEmpty ? nil : raw
-            } else {
-                agencyId = nil
-            }
-            let originName: String?
-            if let originPointer = sqlite3_column_text(statement, 3) {
-                let raw = String(cString: originPointer).trimmingCharacters(in: .whitespacesAndNewlines)
-                originName = raw.isEmpty ? nil : raw
-            } else {
-                originName = nil
-            }
-            let destinationName: String?
-            if let destinationPointer = sqlite3_column_text(statement, 4) {
-                let raw = String(cString: destinationPointer).trimmingCharacters(in: .whitespacesAndNewlines)
-                destinationName = raw.isEmpty ? nil : raw
-            } else {
-                destinationName = nil
-            }
-            let lengthMeters: Int?
-            if sqlite3_column_type(statement, 5) == SQLITE_NULL {
-                lengthMeters = nil
-            } else {
-                lengthMeters = Int(sqlite3_column_int(statement, 5))
-            }
-
-            let tonnageValue: Int?
-            if sqlite3_column_type(statement, 6) == SQLITE_NULL {
-                tonnageValue = nil
-            } else {
-                tonnageValue = Int(sqlite3_column_int(statement, 6))
-            }
-
-            let routeName = routeDescription(origin: originName, destination: destinationName)
-            let subtitle = routeName ?? "Route info unavailable"
-            let displayTitle = formattedTrainTitle(category: category, number: trainNumber)
-            let trainType = category.flatMap { TrainType(categoryCode: $0) }
-            let lengthText = formattedTrainLength(meters: lengthMeters)
-            let tonnageText = formattedTrainTonnage(tons: tonnageValue)
-            let routeStops = stops(for: trainNumber)
-            let originStop = routeStops.first
-            let destinationStop = routeStops.last
-            let selectedTravelDate = travelDate.map { Calendar.current.startOfDay(for: $0) }
-            trips.append(
-                Trip(
-                    id: trainNumber,
-                    title: displayTitle,
-                    subtitle: subtitle,
-                    agencyId: agencyId,
-                    detailRoute: routeName,
-                    gtfsTripId: trainNumber,
-                    travelDate: selectedTravelDate,
-                    originStopId: originStop?.id,
-                    originName: originStop?.name ?? originName,
-                    destinationStopId: destinationStop?.id,
-                    destinationName: destinationStop?.name ?? destinationName,
-                    stops: routeStops.map(StoredStop.init(gtfsStop:)),
-                    originSequence: originStop?.sequence,
-                    destinationSequence: destinationStop?.sequence,
-                    trainType: trainType,
-                    trainLength: lengthText,
-                    trainTonnage: tonnageText
-                )
-            )
-        }
-
-        return trips
-    }
-
-    func randomTrip() -> Trip? {
-        guard let database else { return nil }
-        let sql = """
-        WITH first_segment AS (
-            SELECT ts.train_number, ts.sequence_id, ts.uic_start, ts.train_length_meters, ts.train_tonnage
-            FROM trip_segments ts
-            INNER JOIN (
-                SELECT train_number, MIN(sequence_id) AS min_sequence
-                FROM trip_segments
-                GROUP BY train_number
-            ) grouped ON grouped.train_number = ts.train_number AND grouped.min_sequence = ts.sequence_id
-        ), last_segment AS (
-            SELECT ts.train_number, ts.sequence_id, ts.uic_end
-            FROM trip_segments ts
-            INNER JOIN (
-                SELECT train_number, MAX(sequence_id) AS max_sequence
-                FROM trip_segments
-                GROUP BY train_number
-            ) grouped ON grouped.train_number = ts.train_number AND grouped.max_sequence = ts.sequence_id
-        )
-        SELECT t.train_number,
-               t.category,
-               t.operator_id,
-               origin.name AS origin_name,
-               destination.name AS destination_name,
-               fs.train_length_meters,
-               fs.train_tonnage
-        FROM trains t
-        LEFT JOIN first_segment fs ON fs.train_number = t.train_number
-        LEFT JOIN stations origin ON origin.uic_code = fs.uic_start
-        LEFT JOIN last_segment ls ON ls.train_number = t.train_number
-        LEFT JOIN stations destination ON destination.uic_code = ls.uic_end
-        ORDER BY RANDOM()
-        LIMIT 1
-        """
-
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
-            logError("Failed to prepare random trip query")
-            return nil
-        }
-        defer { sqlite3_finalize(statement) }
-
-        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
-
-        let trainNumber = sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? UUID().uuidString
-
-        let category: String?
-        if let pointer = sqlite3_column_text(statement, 1) {
-            let raw = String(cString: pointer).trimmingCharacters(in: .whitespacesAndNewlines)
-            category = raw.isEmpty ? nil : raw
-        } else {
-            category = nil
-        }
-
-        let agencyId: String?
-        if let pointer = sqlite3_column_text(statement, 2) {
-            let raw = String(cString: pointer).trimmingCharacters(in: .whitespacesAndNewlines)
-            agencyId = raw.isEmpty ? nil : raw
-        } else {
-            agencyId = nil
-        }
-
-        let originName: String?
-        if let pointer = sqlite3_column_text(statement, 3) {
-            let raw = String(cString: pointer).trimmingCharacters(in: .whitespacesAndNewlines)
-            originName = raw.isEmpty ? nil : raw
-        } else {
-            originName = nil
-        }
-
-        let destinationName: String?
-        if let pointer = sqlite3_column_text(statement, 4) {
-            let raw = String(cString: pointer).trimmingCharacters(in: .whitespacesAndNewlines)
-            destinationName = raw.isEmpty ? nil : raw
-        } else {
-            destinationName = nil
-        }
-        let lengthValue = sqlite3_column_type(statement, 5) == SQLITE_NULL ? nil : Int(sqlite3_column_int(statement, 5))
-        let tonnageValue = sqlite3_column_type(statement, 6) == SQLITE_NULL ? nil : Int(sqlite3_column_int(statement, 6))
-
-        let routeName = routeDescription(origin: originName, destination: destinationName)
-        let subtitle = routeName ?? "Route info unavailable"
-        let displayTitle = formattedTrainTitle(category: category, number: trainNumber)
-        let trainType = category.flatMap { TrainType(categoryCode: $0) }
-        let lengthText = formattedTrainLength(meters: lengthValue)
-        let tonnageText = formattedTrainTonnage(tons: tonnageValue)
-
-        return Trip(
-            id: trainNumber,
-            title: displayTitle,
-            subtitle: subtitle,
-            agencyId: agencyId,
-            detailRoute: routeName,
-            gtfsTripId: trainNumber,
-            trainType: trainType,
-            trainLength: lengthText,
-            trainTonnage: tonnageText
-        )
     }
 
     func agencyInfo(for id: String?) -> AgencyInfo? {
         guard let id else { return nil }
-        if agenciesById.isEmpty {
-            loadAgencies()
-        }
         return agenciesById[id]
     }
 
+    func stationUIC(for stopID: String?) -> String? {
+        guard let stopID else { return nil }
+        readLock.lock()
+        defer { readLock.unlock() }
+        return rows("SELECT didok FROM stops WHERE stop_id = ? OR parent_station = ? LIMIT 1", [stopID, stopID], on: database).first?[0]
+    }
+
+    enum SharedImportError: LocalizedError {
+        case noMatch(String)
+        var errorDescription: String? {
+            switch self {
+            case let .noMatch(service):
+                return "The shared journey contains invalid trip information (\(service)). It has been kept for retry."
+            }
+        }
+    }
+
+    /// SBB's shared journey is authoritative. An exact static match can enrich
+    /// it, but missing/stale GTFS must never prevent importing a valid leg.
+    func importTrips(from journey: SharedJourney) throws -> [Trip] {
+        readLock.lock()
+        defer { readLock.unlock() }
+        guard !journey.legs.isEmpty else { throw SharedImportError.noMatch("an empty journey") }
+        return try journey.legs.map { leg in
+            let parts = leg.service.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            guard let number = parts.last, leg.arrival >= leg.departure,
+                  !leg.origin.name.isEmpty, !leg.destination.name.isEmpty else {
+                throw SharedImportError.noMatch(leg.service)
+            }
+            let line = parts.dropLast().joined().uppercased()
+            let stableID = "sbb-import:\(line):\(number):\(leg.origin.id):\(leg.destination.id):\(Int(leg.departure.timeIntervalSince1970))"
+            let routeText = "\(leg.origin.name) → \(leg.destination.name)"
+            func stationIDs(_ station: SharedJourney.Station) -> Set<String> {
+                Set(rows("SELECT DISTINCT COALESCE(NULLIF(parent_station, ''), stop_id) FROM stops WHERE didok = ?", [station.id], on: database).compactMap { $0[0] })
+            }
+            let origins = stationIDs(leg.origin)
+            let destinations = stationIDs(leg.destination)
+            let candidates = rows("""
+                SELECT t.trip_id, t.trip_short_name, r.route_short_name, r.route_desc, r.agency_id
+                FROM trips t JOIN routes r ON r.route_id = t.route_id
+                WHERE t.trip_short_name = ? AND UPPER(REPLACE(r.route_short_name, ' ', '')) = ?
+                ORDER BY t.trip_id
+                """, [number, line], on: database)
+            var matches: [Trip] = []
+            for row in candidates {
+                guard let id = row[0] else { continue }
+                let times = route(for: id)
+                guard let origin = times.first(where: { origins.contains($0.stop.id) }),
+                      let destination = times.first(where: { destinations.contains($0.stop.id) && $0.stop.sequence > origin.stop.sequence }),
+                      let departure = origin.departure, let arrival = destination.arrival else { continue }
+                let base = ScheduleDateUtils.serviceDate(forBoardingDate: leg.departure, dayOffset: departure / 86400)
+                guard operates(tripID: id, on: base) == true,
+                      abs(base.addingTimeInterval(TimeInterval(departure)).timeIntervalSince(leg.departure)) < 1,
+                      abs(base.addingTimeInterval(TimeInterval(arrival)).timeIntervalSince(leg.arrival)) < 1,
+                      let trip = makeTrip(row, travelDate: nil) else { continue }
+                matches.append(Trip(
+                    id: stableID, title: trip.title, subtitle: routeText, agencyId: trip.agencyId,
+                    detailRoute: routeText, gtfsTripId: id, travelDate: base,
+                    sharedJourneyLeg: leg,
+                    originStopId: origin.stop.id, originName: leg.origin.name,
+                    destinationStopId: destination.stop.id, destinationName: leg.destination.name,
+                    originPlatform: origin.platform, destinationPlatform: destination.platform,
+                    stops: trip.stops, originSequence: origin.stop.sequence, destinationSequence: destination.stop.sequence,
+                    trainType: trip.trainType
+                ))
+            }
+            if Set(matches.compactMap(\.agencyId)).count <= 1,
+               let match = matches.max(by: { ($0.stops?.count ?? 0) < ($1.stops?.count ?? 0) }) {
+                return match
+            }
+
+            // Keep only known terminal geometry when the static service differs.
+            // Do not borrow intermediate times/platforms from another day's run.
+            func terminal(_ station: SharedJourney.Station, sequence: Int) -> StoredStop? {
+                let row = rows("SELECT stop_lat, stop_lon FROM stops WHERE didok = ? LIMIT 1", [station.id], on: database).first
+                let latitude = station.latitude ?? row.flatMap { $0[0].flatMap(Double.init) }
+                let longitude = station.longitude ?? row.flatMap { $0[1].flatMap(Double.init) }
+                guard let latitude, let longitude else { return nil }
+                return StoredStop(id: "sbb-shared:\(station.id)", name: station.name,
+                                  latitude: latitude, longitude: longitude, sequence: sequence)
+            }
+            let terminals = [terminal(leg.origin, sequence: 0), terminal(leg.destination, sequence: 1)].compactMap { $0 }
+            let agencies = Set(candidates.compactMap { $0[4] })
+            return Trip(
+                id: stableID, title: [line, number].filter { !$0.isEmpty }.joined(separator: " "),
+                subtitle: routeText, agencyId: agencies.count == 1 ? agencies.first : nil,
+                detailRoute: routeText, travelDate: Self.calendar.startOfDay(for: leg.departure),
+                sharedJourneyLeg: leg,
+                originStopId: "sbb-shared:\(leg.origin.id)", originName: leg.origin.name,
+                destinationStopId: "sbb-shared:\(leg.destination.id)", destinationName: leg.destination.name,
+                stops: terminals, originSequence: 0, destinationSequence: 1
+            )
+        }
+    }
+
+    // No delay history, rolling stock, track speeds or track shapes are supplied.
+    func delayHistory(for trainNumber: String) -> TrainDelayHistory? { nil }
+
+    func searchTrips(matching query: String, limit: Int? = nil, travelDate: Date? = nil) -> [Trip] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return [] }
+        let requestedLimit = max(1, limit ?? 25)
+        return searchQueue.sync {
+            searchTripsOnSearchConnection(query: query, limit: requestedLimit, travelDate: travelDate)
+        }
+    }
+
+    // Called under readLock. Copy BLOB data before finalizing the SQLite statement,
+    // and cache decoded masks so station filtering never repeatedly inflates them.
+    private func exceptionMask(for service: String) -> ExceptionMask {
+        if let cached = exceptionMasks[service] { return cached }
+        let decoded = loadExceptionMask(for: service)
+        exceptionMasks[service] = decoded
+        return decoded
+    }
+
+    private func loadExceptionMask(for service: String) -> ExceptionMask {
+        guard calendarTables.contains("calendar_date_masks"), let database else { return .missing }
+        var statement: OpaquePointer?
+        let sql = "SELECT start_date, day_count, codec, exceptions FROM calendar_date_masks WHERE service_id = ?"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return .invalid }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, service, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let status = sqlite3_step(statement)
+        if status == SQLITE_DONE { return .missing }
+        guard status == SQLITE_ROW,
+              let dateText = sqlite3_column_text(statement, 0) else { return .invalid }
+        let text = String(cString: dateText)
+        guard text.count == 8, let number = Int(text) else { return .invalid }
+        let parts = DateComponents(year: number / 10000, month: (number / 100) % 100, day: number % 100)
+        guard let start = Self.calendar.date(from: parts),
+              Self.calendar.dateComponents([.year, .month, .day], from: start) == parts else { return .invalid }
+        let days = sqlite3_column_int64(statement, 1)
+        // Bound malformed input before allocating; this covers over 10,000 years.
+        guard days > 0, days <= 4_000_000 else { return .invalid }
+        let expectedSize = (Int(days) + 3) / 4
+        let size = Int(sqlite3_column_bytes(statement, 3))
+        guard size > 0, let blob = sqlite3_column_blob(statement, 3) else { return .invalid }
+        let encoded = Array(UnsafeRawBufferPointer(start: blob, count: size))
+        let bytes: [UInt8]
+        switch sqlite3_column_int(statement, 2) {
+        case 0:
+            guard encoded.count == expectedSize else { return .invalid }
+            bytes = encoded
+        case 1:
+            var output = [UInt8](repeating: 0, count: expectedSize)
+            var length = uLongf(expectedSize)
+            let result = output.withUnsafeMutableBufferPointer { destination in
+                encoded.withUnsafeBufferPointer { source in
+                    uncompress(destination.baseAddress, &length, source.baseAddress, uLong(encoded.count))
+                }
+            }
+            guard result == Z_OK, length == expectedSize else { return .invalid }
+            bytes = output
+        default:
+            return .invalid
+        }
+        return .decoded(start: start, days: Int(days), bytes: bytes)
+    }
+
+    /// nil means this feed cannot validate dates; never infer daily service from an ID.
+    func operates(tripID: String, on date: Date) -> Bool? {
+        readLock.lock()
+        defer { readLock.unlock() }
+        guard hasServiceCalendar else { return nil }
+        guard let service = rows("SELECT service_id FROM trips WHERE trip_id = ?", [tripID], on: database).first?[0] else { return false }
+        let components = Self.calendar.dateComponents([.year, .month, .day, .weekday], from: date)
+        let day = String(format: "%04d%02d%02d", components.year!, components.month!, components.day!)
+        if calendarTables.contains("calendar_dates"),
+           let exception = rows("SELECT exception_type FROM calendar_dates WHERE service_id = ? AND date = ?", [service, day], on: database).first?[0] {
+            return exception == "1"
+        }
+        switch exceptionMask(for: service) {
+        case .missing:
+            break
+        case .invalid:
+            return false
+        case let .decoded(start, days, bytes):
+            let offset = Self.calendar.dateComponents([.day], from: start, to: Self.calendar.startOfDay(for: date)).day ?? -1
+            if offset >= 0 && offset < days {
+                let exception = (bytes[offset / 4] >> (2 * (offset % 4))) & 3
+                switch exception {
+                case 1: return true
+                case 2, 3: return false
+                default: break // No override: use the weekly calendar below.
+                }
+            }
+        }
+        guard calendarTables.contains("calendar") else { return false }
+        let weekday = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][components.weekday! - 1]
+        return !rows("SELECT service_id FROM calendar WHERE service_id = ? AND start_date <= ? AND end_date >= ? AND \(weekday) = '1'", [service, day, day], on: database).isEmpty
+    }
+
+    /// Returns the concrete timetable variants behind a grouped public
+    /// suggestion. These are intentionally kept separate until the rider has
+    /// chosen the travel date and boarding/alighting stations.
+    func variants(for suggestion: Trip, travelDate: Date?, matching query: String? = nil) -> [Trip] {
+        searchQueue.sync {
+            let routeCode = suggestion.title.split(separator: " ").first.map(String.init) ?? suggestion.title
+            return searchTripsOnSearchConnection(
+                query: query ?? routeCode, limit: Int.max, travelDate: travelDate, grouped: false
+            ).filter { trip in
+                trip.agencyId == suggestion.agencyId &&
+                trip.title.split(separator: " ").first == suggestion.title.split(separator: " ").first &&
+                normalizedSearchValue(trip.destinationName) == normalizedSearchValue(suggestion.destinationName)
+            }
+        }
+    }
+
+    /// Availability for the calendar uses the same boarding-day rules as station selection.
+    /// Resolve variants once per month, not once per day or from a view body.
+    func availableBoardingDates(for suggestion: Trip, matching query: String?, month: Date) -> Set<Date> {
+        guard hasServiceCalendar,
+              let interval = Self.calendar.dateInterval(of: .month, for: month),
+              let days = Self.calendar.range(of: .day, in: .month, for: month) else { return [] }
+        let candidates = variants(for: suggestion, travelDate: nil, matching: query)
+        let services = candidates.map { trip in
+            let id = trip.gtfsTripId ?? trip.id
+            let offsets = Set(stops(for: id).dropLast().compactMap { stop in
+                stopSchedule(for: id, stopId: stop.id)?.departureSeconds.map { $0 / 86400 }
+            })
+            return (id, offsets)
+        }
+        var available = Set<Date>()
+        for day in days {
+            guard let date = Self.calendar.date(byAdding: .day, value: day - 1, to: interval.start) else { continue }
+            let runs = services.contains { id, offsets in
+                offsets.contains { offset in
+                    let serviceDate = ScheduleDateUtils.serviceDate(forBoardingDate: date, dayOffset: offset)
+                    return operates(tripID: id, on: serviceDate) == true
+                }
+            }
+            if runs { available.insert(date) }
+        }
+        return available
+    }
+
+    /// Station choices are the union across candidates, never one representative's route.
+    func stationChoices(in trips: [Trip], after originID: String? = nil) -> [GTFSStop] {
+        var choices: [String: GTFSStop] = [:]
+        for trip in trips {
+            let stops = stops(for: trip.gtfsTripId ?? trip.id)
+            func canBoard(_ stop: GTFSStop) -> Bool {
+                guard let date = trip.travelDate,
+                      let seconds = stopSchedule(for: trip.gtfsTripId ?? trip.id, stopId: stop.id)?.departureSeconds else { return true }
+                let serviceDate = ScheduleDateUtils.serviceDate(forBoardingDate: date, dayOffset: seconds / 86400)
+                return operates(tripID: trip.gtfsTripId ?? trip.id, on: serviceDate) != false
+            }
+            if let originID {
+                guard let index = stops.firstIndex(where: { $0.id == originID }), canBoard(stops[index]) else { continue }
+                for stop in stops.dropFirst(index + 1) { choices[stop.id] = stop }
+            } else {
+                for stop in stops.dropLast() where canBoard(stop) { choices[stop.id] = stop }
+            }
+        }
+        return choices.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// Resolve stations against each candidate's own sequence and display its selected leg.
+    func options(in trips: [Trip], originID: String, destinationID: String) -> [Trip] {
+        var seen = Set<String>()
+        var result: [(Int, Trip)] = []
+        for trip in trips {
+            let id = trip.gtfsTripId ?? trip.id
+            let stops = stops(for: id)
+            guard let origin = stops.first(where: { $0.id == originID }),
+                  let destination = stops.first(where: { $0.id == destinationID && $0.sequence > origin.sequence }),
+                  let departure = stopSchedule(for: id, stopId: originID)?.departureSeconds,
+                  let arrival = stopSchedule(for: id, stopId: destinationID)?.arrivalSeconds else { continue }
+            let serviceDate = trip.travelDate.map {
+                ScheduleDateUtils.serviceDate(forBoardingDate: $0, dayOffset: departure / 86400)
+            }
+            if let serviceDate, operates(tripID: id, on: serviceDate) == false { continue }
+            let key = "\(trip.agencyId ?? "")|\(trip.title)|\(departure)|\(arrival)"
+            guard seen.insert(key).inserted else { continue }
+            let leg = Trip(
+                id: trip.id, title: trip.title, subtitle: "\(origin.name) → \(destination.name)",
+                agencyId: trip.agencyId, detailRoute: "\(origin.name) → \(destination.name)",
+                gtfsTripId: id, travelDate: serviceDate,
+                originStopId: origin.id, originName: origin.name,
+                destinationStopId: destination.id, destinationName: destination.name,
+                originPlatform: platform(trainId: id, stationId: origin.id),
+                destinationPlatform: platform(trainId: id, stationId: destination.id),
+                stops: trip.stops, originSequence: origin.sequence, destinationSequence: destination.sequence,
+                trainType: trip.trainType
+            )
+            result.append((departure, leg))
+        }
+        return result.sorted { $0.0 == $1.0 ? $0.1.id < $1.1.id : $0.0 < $1.0 }.map { $0.1 }
+    }
+
+    private func searchTripsOnSearchConnection(query: String, limit: Int, travelDate: Date?, grouped: Bool = true) -> [Trip] {
+        let normalizedQuery = query.uppercased()
+        let queryParts = normalizedQuery.split(whereSeparator: { $0 == " " || $0 == "-" }).map(String.init)
+        let numberPart = queryParts.last(where: { $0.allSatisfy { $0.isNumber } })
+        let routePart = queryParts.first(where: { $0.contains(where: { $0.isLetter }) && $0.contains(where: { $0.isNumber }) })
+        let publicRouteSearch = routePart != nil && numberPart != nil
+        let numeric = query.allSatisfy { $0.isNumber }
+        let pattern = numeric ? query + "%" : "%" + query + "%"
+        let predicate: String
+        let bindings: [String]
+        if publicRouteSearch, let routePart, let numberPart {
+            predicate = "UPPER(r.route_short_name) = ? AND t.trip_short_name = ?"
+            bindings = [routePart, numberPart]
+        } else if let routePart {
+            predicate = "UPPER(r.route_short_name) = ?"
+            bindings = [routePart]
+        } else if numeric {
+            predicate = "t.trip_short_name = ?"
+            bindings = [query]
+        } else {
+            predicate = """
+                (t.trip_short_name LIKE ? OR r.route_short_name LIKE ? OR t.trip_id IN (
+                    SELECT st.trip_id FROM stops s JOIN stop_times st ON s.stop_id = st.stop_id
+                    WHERE s.stop_name LIKE ?))
+                """
+            bindings = [pattern, pattern, pattern]
+        }
+        var matches = rows("""
+            SELECT t.trip_id, t.trip_short_name, r.route_short_name, r.route_desc, r.agency_id
+            FROM trips t JOIN routes r ON r.route_id = t.route_id
+            WHERE \(predicate)
+            ORDER BY t.trip_short_name, t.trip_id
+            """, bindings, on: searchDatabase)
+        if numeric && matches.isEmpty {
+            matches = rows("""
+                SELECT t.trip_id, t.trip_short_name, r.route_short_name, r.route_desc, r.agency_id
+                FROM trips t JOIN routes r ON r.route_id = t.route_id
+                WHERE t.trip_short_name LIKE ?
+                ORDER BY t.trip_short_name, t.trip_id
+                """, [pattern], on: searchDatabase)
+        }
+        if !grouped { return matches.compactMap { makeTrip($0, travelDate: travelDate) } }
+        var resultByPublicService: [String: Trip] = [:]
+        var resultOrder: [String] = []
+        for row in matches {
+            guard let trip = makeTrip(row, travelDate: travelDate) else { continue }
+            let schedule = self.route(for: trip.gtfsTripId ?? "")
+            let headsign = trip.destinationName ?? trip.subtitle
+            // Different train numbers belong to one line/headsign suggestion.
+            let publicServiceKey = [row[4] ?? "", row[2] ?? "", normalizedSearchValue(headsign)].joined(separator: "|")
+            if let existing = resultByPublicService[publicServiceKey] {
+                let existingCount = self.route(for: existing.gtfsTripId ?? "").count
+                if schedule.count > existingCount {
+                    resultByPublicService[publicServiceKey] = trip
+                }
+            } else {
+                resultByPublicService[publicServiceKey] = trip
+                resultOrder.append(publicServiceKey)
+            }
+        }
+        return resultOrder.compactMap { resultByPublicService[$0] }.prefix(limit).map { $0 }
+    }
+
+    private func makeTrip(_ row: [String?], travelDate: Date?) -> Trip? {
+        guard let id = row[0] else { return nil }
+        let stops = stops(for: id)
+        guard let origin = stops.first, let destination = stops.last, stops.count > 1 else { return nil }
+        if let travelDate, hasServiceCalendar {
+            // Before station selection, retain any run that can be boarded on this date.
+            let times = self.route(for: id)
+            let offsets = Set(times.map { ($0.departure ?? $0.arrival ?? 0) / 86400 })
+            let runs = offsets.contains { offset in
+                let serviceDate = ScheduleDateUtils.serviceDate(forBoardingDate: travelDate, dayOffset: offset)
+                return operates(tripID: id, on: serviceDate) == true
+            }
+            guard runs else { return nil }
+        }
+        let number = row[1]?.isEmpty == false ? row[1]! : (row[2] ?? "Train")
+        let line = row[2]?.isEmpty == false ? row[2] : row[3]
+        let title = [line == number ? nil : line, number].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        let route = "\(origin.name) → \(destination.name)"
+        return Trip(
+            id: "sbb:\(id)", title: title, subtitle: route, agencyId: row[4], detailRoute: route,
+            gtfsTripId: id, travelDate: travelDate.map { Self.calendar.startOfDay(for: $0) },
+            originStopId: origin.id, originName: origin.name,
+            destinationStopId: destination.id, destinationName: destination.name,
+            stops: stops.map(StoredStop.init(gtfsStop:)),
+            originSequence: origin.sequence, destinationSequence: destination.sequence,
+            trainType: row[3].flatMap { TrainType(categoryCode: $0) }
+        )
+    }
+
+    private func normalizedSearchValue(_ value: String?) -> String {
+        (value ?? "")
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    func randomTrip() -> Trip? {
+        readLock.lock()
+        defer { readLock.unlock() }
+        let matches = rows("""
+            SELECT t.trip_id, t.trip_short_name, r.route_short_name, r.route_desc, r.agency_id
+            FROM trips t JOIN routes r ON r.route_id = t.route_id ORDER BY RANDOM() LIMIT 1
+            """, on: database)
+        return matches.first.flatMap { makeTrip($0, travelDate: Date()) }
+    }
+
+    private struct StopTime {
+        let stop: GTFSStop
+        let arrival: Int?
+        let departure: Int?
+        let platform: String?
+        let commercial: Bool
+    }
+
+    private func route(for id: String) -> [StopTime] {
+        readLock.lock()
+        defer { readLock.unlock() }
+        if let cached = routeCache[id] { return cached }
+        let result = rows("""
+            SELECT COALESCE(NULLIF(s.parent_station, ''), s.stop_id), s.stop_name,
+                   s.stop_lat, s.stop_lon, st.stop_sequence, st.arrival_time, st.departure_time,
+                   s.platform_code, st.pickup_type, st.drop_off_type
+            FROM stop_times st JOIN stops s ON s.stop_id = st.stop_id
+            WHERE st.trip_id = ? ORDER BY CAST(st.stop_sequence AS INTEGER)
+            """, [id], on: database).compactMap { row -> StopTime? in
+                guard let stopID = row[0], let name = row[1],
+                      let lat = row[2].flatMap(Double.init), let lon = row[3].flatMap(Double.init),
+                      let sequence = row[4].flatMap(Int.init) else { return nil }
+                return StopTime(stop: GTFSStop(id: stopID, name: name, sequence: sequence, latitude: lat, longitude: lon),
+                                arrival: Self.seconds(row[5]), departure: Self.seconds(row[6]),
+                                platform: row[7]?.isEmpty == false ? row[7] : nil,
+                                commercial: row[8] != "1" || row[9] != "1")
+            }
+        routeCache[id] = result
+        return result
+    }
+
+    static func seconds(_ value: String?) -> Int? {
+        guard let value else { return nil }
+        let parts = value.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 3, parts[0] >= 0, (0..<60).contains(parts[1]), (0..<60).contains(parts[2]) else { return nil }
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    }
+
+    func preloadRouteData(for tripId: String) { _ = route(for: tripId) }
+
     func stops(for tripId: String) -> [GTFSStop] {
-        cacheLock.lock()
-        if let cached = stopsCache[tripId] {
-            cacheLock.unlock()
-            return cached
-        }
-        cacheLock.unlock()
-
-        let startedAt = Date()
-        let result = loadStops(for: tripId)
-#if DEBUG
-        logSlowCacheMiss("stops", tripId: tripId, startedAt: startedAt)
-#endif
-        cacheLock.lock()
-        stopsCache[tripId] = result
-        cacheLock.unlock()
-        return result
+        let times = route(for: tripId)
+        return times.enumerated().filter { $0.element.commercial || $0.offset == 0 || $0.offset == times.count - 1 }.map { $0.element.stop }
     }
 
-    private func loadStops(for tripId: String) -> [GTFSStop] {
-        guard let database else { return [] }
-        let sql = """
-        SELECT
-            trip_segments.sequence_id,
-            trip_segments.uic_start,
-            trip_segments.uic_end,
-            trip_segments.duration_stop_seconds,
-            origin.name,
-            origin.lat,
-            origin.lon,
-            destination.name,
-            destination.lat,
-            destination.lon
-        FROM trip_segments
-        LEFT JOIN stations origin ON origin.uic_code = trip_segments.uic_start
-        LEFT JOIN stations destination ON destination.uic_code = trip_segments.uic_end
-        WHERE trip_segments.train_number = ?
-        ORDER BY trip_segments.sequence_id ASC
-        """
-
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
-            logError("Failed to prepare stops query")
-            return []
-        }
-        defer { sqlite3_finalize(statement) }
-
-        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        sqlite3_bind_text(statement, 1, tripId, -1, SQLITE_TRANSIENT)
-
-        var stops: [GTFSStop] = []
-        var appendedStationIds = Set<String>()
-        var sequenceCounter = 1
-        var appendedOrigin = false
-        var lastDestination: StopInfo?
-
-        while sqlite3_step(statement) == SQLITE_ROW {
-            let duration = sqlite3_column_int(statement, 3)
-            let originInfo = extractStopInfo(
-                from: statement,
-                idColumn: 1,
-                nameColumn: 4,
-                latColumn: 5,
-                lonColumn: 6
-            )
-            let destinationInfo = extractStopInfo(
-                from: statement,
-                idColumn: 2,
-                nameColumn: 7,
-                latColumn: 8,
-                lonColumn: 9
-            )
-
-            if !appendedOrigin, let origin = originInfo {
-                append(origin, to: &stops, appendedIds: &appendedStationIds, sequence: &sequenceCounter)
-                appendedOrigin = true
-            }
-
-            if duration > 0, let origin = originInfo {
-                append(origin, to: &stops, appendedIds: &appendedStationIds, sequence: &sequenceCounter)
-            }
-
-            if let destinationInfo {
-                lastDestination = destinationInfo
-            }
-        }
-
-        if let finalStop = lastDestination {
-            append(finalStop, to: &stops, appendedIds: &appendedStationIds, sequence: &sequenceCounter)
-        }
-
-        return stops
-    }
-
-    func polylineStops(for tripId: String) -> [GTFSStop] {
-        cacheLock.lock()
-        if let cached = polylineStopsCache[tripId] {
-            cacheLock.unlock()
-            return cached
-        }
-        cacheLock.unlock()
-
-        let startedAt = Date()
-        let result = loadPolylineStops(for: tripId)
-#if DEBUG
-        logSlowCacheMiss("polyline stops", tripId: tripId, startedAt: startedAt)
-#endif
-        cacheLock.lock()
-        polylineStopsCache[tripId] = result
-        cacheLock.unlock()
-        return result
-    }
-
-    private func loadPolylineStops(for tripId: String) -> [GTFSStop] {
-        guard let database else { return [] }
-        let sql = """
-        SELECT
-            trip_segments.uic_start,
-            trip_segments.uic_end,
-            origin.name,
-            origin.lat,
-            origin.lon,
-            destination.name,
-            destination.lat,
-            destination.lon
-        FROM trip_segments
-        LEFT JOIN stations origin ON origin.uic_code = trip_segments.uic_start
-        LEFT JOIN stations destination ON destination.uic_code = trip_segments.uic_end
-        WHERE trip_segments.train_number = ?
-        ORDER BY trip_segments.sequence_id ASC
-        """
-
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
-            logError("Failed to prepare polyline stops query")
-            return []
-        }
-        defer { sqlite3_finalize(statement) }
-
-        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        sqlite3_bind_text(statement, 1, tripId, -1, SQLITE_TRANSIENT)
-
-        var stops: [GTFSStop] = []
-        var appendedStationIds = Set<String>()
-        var sequenceCounter = 1
-
-        while sqlite3_step(statement) == SQLITE_ROW {
-            if let origin = extractStopInfo(
-                from: statement,
-                idColumn: 0,
-                nameColumn: 2,
-                latColumn: 3,
-                lonColumn: 4
-            ) {
-                append(origin, to: &stops, appendedIds: &appendedStationIds, sequence: &sequenceCounter)
-            }
-
-            if let destination = extractStopInfo(
-                from: statement,
-                idColumn: 1,
-                nameColumn: 5,
-                latColumn: 6,
-                lonColumn: 7
-            ) {
-                append(destination, to: &stops, appendedIds: &appendedStationIds, sequence: &sequenceCounter)
-            }
-        }
-
-        return stops
-    }
+    func polylineStops(for tripId: String) -> [GTFSStop] { route(for: tripId).map(\.stop) }
 
     func segments(for tripId: String) -> [GTFSSegment] {
-        cacheLock.lock()
-        if let cached = segmentsCache[tripId] {
-            cacheLock.unlock()
-            return cached
+        if let saved = TripStaticScheduleStore.segments(for: tripId), !saved.isEmpty {
+            return saved
         }
-        cacheLock.unlock()
-
-        let startedAt = Date()
-        let result = loadSegments(for: tripId)
-#if DEBUG
-        logSlowCacheMiss("segments", tripId: tripId, startedAt: startedAt)
-#endif
-        cacheLock.lock()
-        segmentsCache[tripId] = result
-        cacheLock.unlock()
+        let times = route(for: tripId)
+        let result = zip(times, times.dropFirst()).map { start, end in
+            GTFSSegment(id: start.stop.sequence, startId: start.stop.id, startName: start.stop.name,
+                        endId: end.stop.id, endName: end.stop.name,
+                        departureSeconds: start.departure, arrivalSeconds: end.arrival,
+                        maxSpeed: 0, trainLengthMeters: nil, trainTonnage: nil)
+        }
+        if !result.isEmpty { TripStaticScheduleStore.save(result, for: tripId) }
         return result
-    }
-
-    private func loadSegments(for tripId: String) -> [GTFSSegment] {
-        guard let database else { return [] }
-        let sql = """
-        SELECT
-            trip_segments.sequence_id,
-            trip_segments.uic_start,
-            trip_segments.uic_end,
-            trip_segments.departure_time,
-            trip_segments.arrival_time,
-            trip_segments.max_speed_kmh,
-            trip_segments.train_length_meters,
-            trip_segments.train_tonnage,
-            origin.name,
-            destination.name
-        FROM trip_segments
-        LEFT JOIN stations origin ON origin.uic_code = trip_segments.uic_start
-        LEFT JOIN stations destination ON destination.uic_code = trip_segments.uic_end
-        WHERE trip_segments.train_number = ?
-        ORDER BY trip_segments.sequence_id ASC
-        """
-
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
-            logError("Failed to prepare segments query")
-            return []
-        }
-        defer { sqlite3_finalize(statement) }
-
-        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        sqlite3_bind_text(statement, 1, tripId, -1, SQLITE_TRANSIENT)
-
-        var segments: [GTFSSegment] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
-            let sequence = Int(sqlite3_column_int(statement, 0))
-            guard
-                let startPointer = sqlite3_column_text(statement, 1),
-                let endPointer = sqlite3_column_text(statement, 2)
-            else { continue }
-
-            let startId = String(cString: startPointer)
-            let endId = String(cString: endPointer)
-            let departureSeconds = sqlite3_column_text(statement, 3).flatMap { parseTimeSeconds(String(cString: $0)) }
-            let arrivalSeconds = sqlite3_column_text(statement, 4).flatMap { parseTimeSeconds(String(cString: $0)) }
-            let maxSpeed: Int
-            if sqlite3_column_type(statement, 5) == SQLITE_NULL {
-                maxSpeed = 0
-            } else {
-                maxSpeed = Int(sqlite3_column_int(statement, 5))
-            }
-            let lengthValue: Int?
-            if sqlite3_column_type(statement, 6) == SQLITE_NULL {
-                lengthValue = nil
-            } else {
-                lengthValue = Int(sqlite3_column_int(statement, 6))
-            }
-
-            let tonnageValue: Int?
-            if sqlite3_column_type(statement, 7) == SQLITE_NULL {
-                tonnageValue = nil
-            } else {
-                tonnageValue = Int(sqlite3_column_int(statement, 7))
-            }
-
-            let startName = sqlite3_column_text(statement, 8).map { String(cString: $0) }
-            let endName = sqlite3_column_text(statement, 9).map { String(cString: $0) }
-
-            let segment = GTFSSegment(
-                id: sequence,
-                startId: startId,
-                startName: startName,
-                endId: endId,
-                endName: endName,
-                departureSeconds: departureSeconds,
-                arrivalSeconds: arrivalSeconds,
-                maxSpeed: maxSpeed,
-                trainLengthMeters: lengthValue,
-                trainTonnage: tonnageValue
-            )
-            segments.append(segment)
-        }
-
-        return segments
     }
 
     struct GTFSStopSchedule {
@@ -812,360 +620,23 @@ nonisolated final class GTFSDataSource {
     }
 
     func stopSchedule(for tripId: String, stopId: String) -> GTFSStopSchedule? {
-        let key = "\(tripId)|\(stopId)"
-        cacheLock.lock()
-        if let cached = scheduleCache[key] {
-            cacheLock.unlock()
-            return cached
-        }
-        cacheLock.unlock()
-
-        let startedAt = Date()
-        let result = loadStopSchedule(for: tripId, stopId: stopId)
-#if DEBUG
-        logSlowCacheMiss("schedule \(stopId)", tripId: tripId, startedAt: startedAt)
-#endif
-        cacheLock.lock()
-        scheduleCache[key] = result
-        cacheLock.unlock()
-        return result
+        guard let time = route(for: tripId).first(where: { $0.stop.id == stopId }) else { return nil }
+        return GTFSStopSchedule(arrivalSeconds: time.arrival, departureSeconds: time.departure)
     }
 
     func stopSchedules(for tripId: String, stopIds: [String]) -> [String: GTFSStopSchedule] {
-        let uniqueStopIDs = Array(Set(stopIds))
-        guard !uniqueStopIDs.isEmpty, let database else { return [:] }
-
-        var cached: [String: GTFSStopSchedule] = [:]
-        var missing: [String] = []
-        cacheLock.lock()
-        for stopID in uniqueStopIDs {
-            let key = "\(tripId)|\(stopID)"
-            if let schedule = scheduleCache[key] {
-                if let schedule { cached[stopID] = schedule }
-            } else {
-                missing.append(stopID)
-            }
+        let wanted = Set(stopIds)
+        var result: [String: GTFSStopSchedule] = [:]
+        for time in route(for: tripId) where wanted.contains(time.stop.id) && result[time.stop.id] == nil {
+            result[time.stop.id] = GTFSStopSchedule(arrivalSeconds: time.arrival, departureSeconds: time.departure)
         }
-        cacheLock.unlock()
-        guard !missing.isEmpty else { return cached }
-
-        let placeholders = Array(repeating: "?", count: missing.count).joined(separator: ",")
-        let sql = """
-        SELECT stop_id, MIN(arrival_time), MIN(departure_time)
-        FROM (
-            SELECT uic_end AS stop_id, arrival_time, NULL AS departure_time
-            FROM trip_segments
-            WHERE train_number = ? AND uic_end IN (\(placeholders))
-            UNION ALL
-            SELECT uic_start AS stop_id, NULL AS arrival_time, departure_time
-            FROM trip_segments
-            WHERE train_number = ? AND uic_start IN (\(placeholders))
-        )
-        GROUP BY stop_id
-        """
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
-            logError("Failed to prepare bulk stop schedule query")
-            return cached
-        }
-        defer { sqlite3_finalize(statement) }
-
-        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        var index: Int32 = 1
-        sqlite3_bind_text(statement, index, tripId, -1, transient)
-        index += 1
-        for stopID in missing {
-            sqlite3_bind_text(statement, index, stopID, -1, transient)
-            index += 1
-        }
-        sqlite3_bind_text(statement, index, tripId, -1, transient)
-        index += 1
-        for stopID in missing {
-            sqlite3_bind_text(statement, index, stopID, -1, transient)
-            index += 1
-        }
-
-        var loaded: [String: GTFSStopSchedule] = [:]
-        while sqlite3_step(statement) == SQLITE_ROW {
-            guard let stopPointer = sqlite3_column_text(statement, 0) else { continue }
-            let stopID = String(cString: stopPointer)
-            let arrival = sqlite3_column_text(statement, 1).flatMap {
-                parseTimeSeconds(String(cString: $0))
-            }
-            let departure = sqlite3_column_text(statement, 2).flatMap {
-                parseTimeSeconds(String(cString: $0))
-            }
-            guard arrival != nil || departure != nil else { continue }
-            loaded[stopID] = GTFSStopSchedule(arrivalSeconds: arrival, departureSeconds: departure)
-        }
-
-        cacheLock.lock()
-        for stopID in missing {
-            let key = "\(tripId)|\(stopID)"
-            scheduleCache[key] = loaded[stopID]
-        }
-        cacheLock.unlock()
-        cached.merge(loaded) { _, new in new }
-        return cached
+        return result
     }
 
-    private func loadStopSchedule(for tripId: String, stopId: String) -> GTFSStopSchedule? {
-        guard let database else { return nil }
-        let sql = """
-        SELECT
-            (
-                SELECT arrival_time
-                FROM trip_segments
-                WHERE train_number = ? AND uic_end = ?
-                ORDER BY sequence_id ASC
-                LIMIT 1
-            ) AS arrival_time,
-            (
-                SELECT departure_time
-                FROM trip_segments
-                WHERE train_number = ? AND uic_start = ?
-                ORDER BY sequence_id ASC
-                LIMIT 1
-            ) AS departure_time
-        """
-
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
-            logError("Failed to prepare stop schedule query")
-            return nil
-        }
-        defer { sqlite3_finalize(statement) }
-
-        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        sqlite3_bind_text(statement, 1, tripId, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(statement, 2, stopId, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(statement, 3, tripId, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(statement, 4, stopId, -1, SQLITE_TRANSIENT)
-
-        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
-
-        let arrivalSeconds = sqlite3_column_text(statement, 0).flatMap { parseTimeSeconds(String(cString: $0)) }
-        let departureSeconds = sqlite3_column_text(statement, 1).flatMap { parseTimeSeconds(String(cString: $0)) }
-
-        if arrivalSeconds == nil && departureSeconds == nil {
-            return nil
-        }
-
-        return GTFSStopSchedule(arrivalSeconds: arrivalSeconds, departureSeconds: departureSeconds)
+    func platform(trainId: String, stationId: String) -> String? {
+        route(for: trainId).first { $0.stop.id == stationId }?.platform
     }
 
-    private func parseTimeSeconds(_ value: String) -> Int? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        var working = trimmed
-        var dayComponent: Int = 0
-
-        if let range = working.range(of: "day") ?? working.range(of: "days") {
-            let prefix = working[..<range.lowerBound]
-            if let days = Int(prefix.trimmingCharacters(in: .whitespaces)) {
-                dayComponent = days
-            }
-            if let commaRange = working.range(of: ",") {
-                working = String(working[commaRange.upperBound...]).trimmingCharacters(in: .whitespaces)
-            } else {
-                let suffixRange = working.range(of: " ", options: [], range: range.upperBound..<working.endIndex)
-                if let suffixRange {
-                    working = String(working[suffixRange.upperBound...]).trimmingCharacters(in: .whitespaces)
-                } else {
-                    working = ""
-                }
-            }
-        }
-
-        let parts = working.split(separator: ":")
-        guard parts.count == 3,
-              let hours = Int(parts[0]),
-              let minutes = Int(parts[1]),
-              let seconds = Int(parts[2])
-        else { return dayComponent > 0 ? dayComponent * 24 * 3600 : nil }
-
-        let baseSeconds = hours * 3600 + minutes * 60 + seconds
-        return baseSeconds + dayComponent * 24 * 3600
-    }
-
-#if DEBUG
-    private func logSlowCacheMiss(_ resource: String, tripId: String, startedAt: Date) {
-        let elapsed = Date().timeIntervalSince(startedAt)
-        guard elapsed >= 0.05 else { return }
-        print("[GTFSDataSource] slow cache miss \(resource) for \(tripId): \(Int(elapsed * 1000))ms")
-    }
-#endif
-
-    private struct StopInfo {
-        let id: String
-        let name: String
-        let latitude: Double
-        let longitude: Double
-    }
-
-    private func extractStopInfo(
-        from statement: OpaquePointer?,
-        idColumn: Int32,
-        nameColumn: Int32,
-        latColumn: Int32,
-        lonColumn: Int32
-    ) -> StopInfo? {
-        guard
-            let idPointer = sqlite3_column_text(statement, idColumn),
-            let namePointer = sqlite3_column_text(statement, nameColumn)
-        else { return nil }
-
-        let identifier = String(cString: idPointer).trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = String(cString: namePointer).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !identifier.isEmpty, !name.isEmpty else { return nil }
-
-        guard sqlite3_column_type(statement, latColumn) != SQLITE_NULL,
-              sqlite3_column_type(statement, lonColumn) != SQLITE_NULL else { return nil }
-
-        return StopInfo(
-            id: identifier,
-            name: name,
-            latitude: sqlite3_column_double(statement, latColumn),
-            longitude: sqlite3_column_double(statement, lonColumn)
-        )
-    }
-
-    private func append(
-        _ info: StopInfo,
-        to stops: inout [GTFSStop],
-        appendedIds: inout Set<String>,
-        sequence: inout Int
-    ) {
-        guard !appendedIds.contains(info.id) else { return }
-        stops.append(
-            GTFSStop(
-                id: info.id,
-                name: info.name,
-                sequence: sequence,
-                latitude: info.latitude,
-                longitude: info.longitude
-            )
-        )
-        appendedIds.insert(info.id)
-        sequence += 1
-    }
-
-    private func normalizedSearchQuery(_ value: String) -> String {
-        value
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-    }
-
-    private func formattedTrainTitle(category: String?, number: String) -> String {
-        guard let category = category?.trimmingCharacters(in: .whitespacesAndNewlines), !category.isEmpty else {
-            return number
-        }
-        return "\(category) \(number)"
-    }
-
-    private func formattedTrainLength(meters: Int?) -> String? {
-        guard let meters, meters > 0 else { return nil }
-        return "\(meters) m"
-    }
-
-    private func formattedTrainTonnage(tons: Int?) -> String? {
-        guard let tons, tons > 0 else { return nil }
-        return "\(tons) t"
-    }
-
-    private func routeDescription(origin: String?, destination: String?) -> String? {
-        let sanitizedOrigin = sanitizedStationName(origin)
-        let sanitizedDestination = sanitizedStationName(destination)
-
-        if let origin = sanitizedOrigin, let destination = sanitizedDestination {
-            return "\(origin) → \(destination)"
-        }
-
-        return sanitizedOrigin ?? sanitizedDestination
-    }
-
-    private func sanitizedStationName(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
-            return nil
-        }
-        return trimmed
-    }
-
-    private func openDatabase() {
-        guard database == nil else { return }
-        guard let url = locateDatabaseURL() else {
-            logError("Unable to locate static_data.sqlite")
-            return
-        }
-
-        if sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) != SQLITE_OK {
-            logError("Unable to open static_data.sqlite at \(url.path)")
-            sqlite3_close(database)
-            database = nil
-        }
-    }
-
-    private func openSearchDatabase() {
-        guard searchDatabase == nil, let url = locateDatabaseURL() else { return }
-
-        if sqlite3_open_v2(url.path, &searchDatabase, SQLITE_OPEN_READONLY, nil) != SQLITE_OK {
-            logError("Unable to open search connection for static_data.sqlite at \(url.path)")
-            sqlite3_close(searchDatabase)
-            searchDatabase = nil
-        }
-    }
-
-    private func loadAgencies() {
-        guard let database, agenciesById.isEmpty else { return }
-        let sql = "SELECT agency_id, agency_name, agency_url, agency_timezone FROM agencies"
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
-            logError("Failed to prepare agencies query")
-            return
-        }
-        defer { sqlite3_finalize(statement) }
-
-        var lookup: [String: AgencyInfo] = [:]
-        while sqlite3_step(statement) == SQLITE_ROW {
-            guard let idPointer = sqlite3_column_text(statement, 0) else { continue }
-            let id = String(cString: idPointer)
-            let name: String
-            if let namePointer = sqlite3_column_text(statement, 1) {
-                let raw = String(cString: namePointer).trimmingCharacters(in: .whitespacesAndNewlines)
-                name = raw.isEmpty ? "Operator" : raw
-            } else {
-                name = "Operator"
-            }
-            let rawURL = sqlite3_column_text(statement, 2).map { String(cString: $0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            let urlString = rawURL?.isEmpty == false ? rawURL : nil
-            let rawTimezone = sqlite3_column_text(statement, 3).map { String(cString: $0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            let timezone = rawTimezone?.isEmpty == false ? rawTimezone : nil
-            lookup[id] = AgencyInfo(id: id, name: name, url: urlString, timezone: timezone)
-        }
-
-        agenciesById = lookup
-    }
-
-    private func locateDatabaseURL() -> URL? {
-        if let bundleURL = Bundle.main.url(forResource: "static_data", withExtension: "sqlite") {
-            return bundleURL
-        }
-        #if DEBUG
-        let fileManager = FileManager.default
-        let cwd = URL(fileURLWithPath: fileManager.currentDirectoryPath)
-        let candidate = cwd.appendingPathComponent("blitz/static_data.sqlite")
-        if fileManager.fileExists(atPath: candidate.path) {
-            return candidate
-        }
-        #endif
-        return nil
-    }
-
-    private func logError(_ message: String) {
-        #if DEBUG
-        print("[GTFSDataSource] \(message)")
-        #endif
-    }
+    /// Automatic alternative recommendations are not implemented for this feed.
+    func departures(from stationID: String, after date: Date, excluding trainID: String? = nil, destinationStationID: String? = nil, limit: Int = 8) -> [Trip] { [] }
 }
