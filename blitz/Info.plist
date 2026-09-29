@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Blitz connects to your formation server to show train coaches and platform sectors.</string>
+	<string>Blitz connects to your local train services to show formation, live times, and platform changes.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

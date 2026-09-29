@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 import zlib
 
-struct GTFSStop: Identifiable, Equatable {
+nonisolated struct GTFSStop: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
     let sequence: Int
@@ -18,21 +18,6 @@ struct GTFSSegment: Identifiable, Equatable {
     let endName: String?
     let departureSeconds: Int?
     let arrivalSeconds: Int?
-    let maxSpeed: Int
-    let trainLengthMeters: Int?
-    let trainTonnage: Int?
-}
-
-struct TrainDelayHistory: Equatable {
-    let trainNumber: String
-    let observedTrips: Int
-    let delayedTrips: Int
-    let averageDelayMinutes: Double
-    let percentEarly: Double
-    let percentOnTime: Double
-    let percentDelay15Minutes: Double
-    let percentDelay30Minutes: Double
-    let percentDelay45MinutesPlus: Double
 }
 
 extension GTFSDataSource {
@@ -60,12 +45,6 @@ extension GTFSDataSource.GTFSStopSchedule {
 // All SQLite work is serialized, with a separate connection for schedule search.
 nonisolated final class GTFSDataSource: @unchecked Sendable {
     static let shared = GTFSDataSource()
-    static let supportsInfoFer = false
-    static var scheduleNotice: String {
-        shared.hasServiceCalendar
-            ? "Timetable only. Services are filtered by travel date; live updates are unavailable."
-            : "Timetable only. Operating dates are unavailable in this feed; confirm your train with the operator."
-    }
     static var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Zurich")!
@@ -85,6 +64,10 @@ nonisolated final class GTFSDataSource: @unchecked Sendable {
     private let readLock = NSRecursiveLock()
     private let searchQueue = DispatchQueue(label: "app.raily.sbb-search")
     private var routeCache: [String: [StopTime]] = [:]
+    private var geometryCache: [String: GTFSRouteGeometry] = [:]
+    private var supportsShapes = false
+    private var transferTimeCache: [String: Int] = [:]
+    private var headsignCache: [String: String] = [:]
     private var agenciesById: [String: AgencyInfo] = [:]
 
     // Injectable URL also lets tests exercise the actual adapter with a tiny GTFS fixture.
@@ -94,6 +77,11 @@ nonisolated final class GTFSDataSource: @unchecked Sendable {
         searchDatabase = Self.open(url)
         calendarTables = Set(rows("SELECT name FROM sqlite_master WHERE type = 'table'", on: database).compactMap { $0[0] })
         hasServiceCalendar = calendarTables.contains("calendar") || calendarTables.contains("calendar_dates") || calendarTables.contains("calendar_date_masks")
+        let tripColumns = Set(rows("PRAGMA table_info(trips)", on: database).compactMap { $0[1] })
+        let stopTimeColumns = Set(rows("PRAGMA table_info(stop_times)", on: database).compactMap { $0[1] })
+        let shapeColumns = Set(rows("PRAGMA table_info(shapes)", on: database).compactMap { $0[1] })
+        supportsShapes = tripColumns.contains("shape_id") && stopTimeColumns.contains("shape_dist_traveled") &&
+            Set(["shape_id", "shape_pt_lat", "shape_pt_lon", "shape_pt_sequence", "shape_dist_traveled"]).isSubset(of: shapeColumns)
         for row in rows("SELECT agency_id, agency_name, agency_url, agency_timezone FROM agency", on: database) {
             guard let id = row[0], let name = row[1] else { continue }
             agenciesById[id] = AgencyInfo(id: id, name: name, url: row[2], timezone: row[3])
@@ -115,10 +103,10 @@ nonisolated final class GTFSDataSource: @unchecked Sendable {
     }
 
     private static func locateDatabaseURL() -> URL? {
-        if let url = Bundle.main.url(forResource: "sbb_gtfs", withExtension: "db") { return url }
+        if let url = Bundle.main.url(forResource: "mini_feed", withExtension: "sqlite") { return url }
         #if DEBUG
         let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent("blitz/sbb_gtfs.db")
+            .appendingPathComponent("blitz/mini_feed.sqlite")
         if FileManager.default.fileExists(atPath: url.path) { return url }
         #endif
         return nil
@@ -175,6 +163,9 @@ nonisolated final class GTFSDataSource: @unchecked Sendable {
         readLock.lock()
         defer { readLock.unlock() }
         guard !journey.legs.isEmpty else { throw SharedImportError.noMatch("an empty journey") }
+        let journeyID = journey.legs.map { leg in
+            "\(leg.origin.id)>\(leg.destination.id)@\(Int(leg.departure.timeIntervalSince1970))"
+        }.joined(separator: "|")
         return try journey.legs.map { leg in
             let parts = leg.service.split(whereSeparator: { $0.isWhitespace }).map(String.init)
             guard let number = parts.last, leg.arrival >= leg.departure,
@@ -210,7 +201,7 @@ nonisolated final class GTFSDataSource: @unchecked Sendable {
                 matches.append(Trip(
                     id: stableID, title: trip.title, subtitle: routeText, agencyId: trip.agencyId,
                     detailRoute: routeText, gtfsTripId: id, travelDate: base,
-                    sharedJourneyLeg: leg,
+                    sharedJourneyLeg: leg, sharedJourneyID: journeyID,
                     originStopId: origin.stop.id, originName: leg.origin.name,
                     destinationStopId: destination.stop.id, destinationName: leg.destination.name,
                     originPlatform: origin.platform, destinationPlatform: destination.platform,
@@ -239,16 +230,13 @@ nonisolated final class GTFSDataSource: @unchecked Sendable {
                 id: stableID, title: [line, number].filter { !$0.isEmpty }.joined(separator: " "),
                 subtitle: routeText, agencyId: agencies.count == 1 ? agencies.first : nil,
                 detailRoute: routeText, travelDate: Self.calendar.startOfDay(for: leg.departure),
-                sharedJourneyLeg: leg,
+                sharedJourneyLeg: leg, sharedJourneyID: journeyID,
                 originStopId: "sbb-shared:\(leg.origin.id)", originName: leg.origin.name,
                 destinationStopId: "sbb-shared:\(leg.destination.id)", destinationName: leg.destination.name,
                 stops: terminals, originSequence: 0, destinationSequence: 1
             )
         }
     }
-
-    // No delay history, rolling stock, track speeds or track shapes are supplied.
-    func delayHistory(for trainNumber: String) -> TrainDelayHistory? { nil }
 
     func searchTrips(matching query: String, limit: Int? = nil, travelDate: Date? = nil) -> [Trip] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -558,6 +546,7 @@ nonisolated final class GTFSDataSource: @unchecked Sendable {
         let departure: Int?
         let platform: String?
         let commercial: Bool
+        let shapeDistance: Double?
     }
 
     private func route(for id: String) -> [StopTime] {
@@ -567,7 +556,8 @@ nonisolated final class GTFSDataSource: @unchecked Sendable {
         let result = rows("""
             SELECT COALESCE(NULLIF(s.parent_station, ''), s.stop_id), s.stop_name,
                    s.stop_lat, s.stop_lon, st.stop_sequence, st.arrival_time, st.departure_time,
-                   s.platform_code, st.pickup_type, st.drop_off_type
+                   s.platform_code, st.pickup_type, st.drop_off_type,
+                   \(supportsShapes ? "st.shape_dist_traveled" : "NULL")
             FROM stop_times st JOIN stops s ON s.stop_id = st.stop_id
             WHERE st.trip_id = ? ORDER BY CAST(st.stop_sequence AS INTEGER)
             """, [id], on: database).compactMap { row -> StopTime? in
@@ -577,7 +567,8 @@ nonisolated final class GTFSDataSource: @unchecked Sendable {
                 return StopTime(stop: GTFSStop(id: stopID, name: name, sequence: sequence, latitude: lat, longitude: lon),
                                 arrival: Self.seconds(row[5]), departure: Self.seconds(row[6]),
                                 platform: row[7]?.isEmpty == false ? row[7] : nil,
-                                commercial: row[8] != "1" || row[9] != "1")
+                                commercial: row[8] != "1" || row[9] != "1",
+                                shapeDistance: row[10].flatMap(Double.init))
             }
         routeCache[id] = result
         return result
@@ -591,6 +582,36 @@ nonisolated final class GTFSDataSource: @unchecked Sendable {
     }
 
     func preloadRouteData(for tripId: String) { _ = route(for: tripId) }
+
+    /// Loaded off the UI thread; the bounded cache also remembers missing shapes.
+    func routeGeometry(for tripId: String) -> GTFSRouteGeometry {
+        readLock.lock()
+        defer { readLock.unlock() }
+        if let cached = geometryCache[tripId] { return cached }
+        let times = route(for: tripId)
+        var points: [GTFSRouteGeometry.Point] = []
+        if supportsShapes {
+            let values = rows("""
+                SELECT shape_pt_lat, shape_pt_lon, shape_dist_traveled FROM shapes
+                WHERE shape_id = (SELECT shape_id FROM trips WHERE trip_id = ?)
+                ORDER BY CAST(shape_pt_sequence AS INTEGER)
+                """, [tripId], on: database)
+            let decoded = values.compactMap { row -> GTFSRouteGeometry.Point? in
+                guard let latitude = row[0].flatMap(Double.init),
+                      let longitude = row[1].flatMap(Double.init),
+                      let distance = row[2].flatMap(Double.init) else { return nil }
+                return .init(latitude: latitude, longitude: longitude, distance: distance)
+            }
+            // Never join across a corrupt/missing shape point.
+            if decoded.count == values.count { points = decoded }
+        }
+        var distances: [Int: Double] = [:]
+        for time in times { distances[time.stop.sequence] = time.shapeDistance }
+        let geometry = GTFSRouteGeometry(stops: times.map(\.stop), points: points, stopDistances: distances)
+        if geometryCache.count >= 128, let key = geometryCache.keys.first { geometryCache.removeValue(forKey: key) }
+        geometryCache[tripId] = geometry
+        return geometry
+    }
 
     func stops(for tripId: String) -> [GTFSStop] {
         let times = route(for: tripId)
@@ -607,8 +628,7 @@ nonisolated final class GTFSDataSource: @unchecked Sendable {
         let result = zip(times, times.dropFirst()).map { start, end in
             GTFSSegment(id: start.stop.sequence, startId: start.stop.id, startName: start.stop.name,
                         endId: end.stop.id, endName: end.stop.name,
-                        departureSeconds: start.departure, arrivalSeconds: end.arrival,
-                        maxSpeed: 0, trainLengthMeters: nil, trainTonnage: nil)
+                        departureSeconds: start.departure, arrivalSeconds: end.arrival)
         }
         if !result.isEmpty { TripStaticScheduleStore.save(result, for: tripId) }
         return result
@@ -635,6 +655,52 @@ nonisolated final class GTFSDataSource: @unchecked Sendable {
 
     func platform(trainId: String, stationId: String) -> String? {
         route(for: trainId).first { $0.stop.id == stationId }?.platform
+    }
+
+    func headsign(for tripID: String) -> String? {
+        readLock.lock()
+        defer { readLock.unlock() }
+        if let cached = headsignCache[tripID] { return cached.isEmpty ? nil : cached }
+        let value = rows("SELECT trip_headsign FROM trips WHERE trip_id = ? LIMIT 1", [tripID], on: database)
+            .first?[0]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        headsignCache[tripID] = value
+        return value.isEmpty ? nil : value
+    }
+
+    func platform(forStopID stopID: String) -> String? {
+        readLock.lock()
+        defer { readLock.unlock() }
+        return rows("SELECT platform_code FROM stops WHERE stop_id = ? LIMIT 1", [stopID], on: database)
+            .first?[0].flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    func minimumTransferSeconds(from fromStopID: String, to toStopID: String) -> Int? {
+        readLock.lock()
+        defer { readLock.unlock() }
+        guard calendarTables.contains("transfers") else { return nil }
+        let cacheKey = "\(fromStopID)|\(toStopID)"
+        if let cached = transferTimeCache[cacheKey] { return cached >= 0 ? cached : nil }
+        func identifiers(for stopID: String) -> [String] {
+            let parent = rows("SELECT parent_station FROM stops WHERE stop_id = ? LIMIT 1", [stopID], on: database).first?[0]
+            let values = [stopID, parent].compactMap { $0 }
+            return Array(Set(values + values.compactMap { value in
+                value.hasPrefix("Parent") ? String(value.dropFirst("Parent".count)) : nil
+            }))
+        }
+        for from in identifiers(for: fromStopID) {
+            for to in identifiers(for: toStopID) {
+                guard let value = rows("""
+                    SELECT min_transfer_time FROM transfers
+                    WHERE from_stop_id = ? AND to_stop_id = ? AND transfer_type = '2'
+                    ORDER BY CAST(min_transfer_time AS INTEGER) DESC LIMIT 1
+                    """, [from, to], on: database).first?[0],
+                      let seconds = Int(value) else { continue }
+                transferTimeCache[cacheKey] = seconds
+                return seconds
+            }
+        }
+        transferTimeCache[cacheKey] = -1
+        return nil
     }
 
     /// Automatic alternative recommendations are not implemented for this feed.

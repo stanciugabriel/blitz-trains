@@ -136,6 +136,8 @@ final class LiveDelayStore {
 
     private func scheduleNotifications(for tripID: String, previous: DelayInfo?, current: DelayInfo) {
         guard let previous,
+              let previousFetchedAt = previous.fetchedAt,
+              Date().timeIntervalSince(previousFetchedAt) <= 20 * 60,
               let fetchedAt = current.fetchedAt,
               Date().timeIntervalSince(fetchedAt) <= 20 * 60 else { return }
 

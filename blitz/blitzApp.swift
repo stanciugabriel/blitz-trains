@@ -63,7 +63,7 @@ struct ContentView: View {
     @State private var sharedImportError: String?
     @State private var liveTrainClock = Date()
     @State private var trackingRefreshRevision = 0
-    @State private var hasSyncedTripsOnLaunch = false
+    @State private var mapRouteGeometries: [String: GTFSRouteGeometry] = [:]
     @State private var missedTrainPrompt: MissedTrainPrompt?
     @State private var dismissedMissedTrainPromptIDs: Set<String> = []
     @State private var missedTrainOriginal: Trip?
@@ -73,7 +73,6 @@ struct ContentView: View {
     @State private var usesGlobeMapStyle = false
     @State private var isSpeedCapsuleRevealed = false
     @State private var speedCapsuleHideTask: Task<Void, Never>?
-    @State private var speedLimitSegments: [GTFSSegment] = []
     @StateObject private var locationProvider = DeviceLocationProvider()
     @StateObject private var locationPhaseDetector = TripLocationPhaseDetector()
     // The detail sheet owns its own one-second countdown timeline. The map
@@ -139,8 +138,8 @@ struct ContentView: View {
             .padding(.trailing, 16)
         }
         .overlay(alignment: .top) {
-            if let trip = activeMapTrip {
-                mapSpeedCapsule(for: trip)
+            if activeMapTrip != nil {
+                mapSpeedCapsule()
                     .padding(.top, 52)
                     .padding(.horizontal, 76)
             }
@@ -195,7 +194,7 @@ struct ContentView: View {
                 isShowingMissedTrainAlternatives: $isShowingMissedTrainAlternatives,
                 missedTrainAlternatives: missedTrainAlternatives,
                 locationPhaseDetector: locationPhaseDetector,
-                onTripAdded: syncTripAfterAdd,
+                onTripAdded: prepareTripAfterAdd,
                 onMissedTrainFindAlternatives: findMissedTrainAlternatives,
                 onMissedTrainKeepTracking: dismissMissedTrainPrompt,
                 onSelectMissedTrainAlternative: selectAlternative
@@ -236,8 +235,6 @@ struct ContentView: View {
         .onChange(of: selectedTrip) { _, newValue in
             isSpeedCapsuleRevealed = false
             speedCapsuleHideTask?.cancel()
-            speedLimitSegments = []
-            preloadRouteData(for: newValue)
             if newValue != nil {
                 DispatchQueue.main.async {
                     selectedDetent = .medium
@@ -251,6 +248,9 @@ struct ContentView: View {
             updateLocationPhaseDetection(for: newValue)
             updateTrackingState(using: currentDetailState?.trackingResult)
             updateCameraForCurrentState()
+            if let trip = newValue, trips.contains(where: { $0.id == trip.id }) {
+                Task { await SBBLiveTripService.shared.refresh(trips: [trip]) }
+            }
         }
     }
 
@@ -259,6 +259,7 @@ struct ContentView: View {
         .onChange(of: locationProvider.lastLocation?.timestamp) { _, _ in
             updateLocationPhaseDetection(for: selectedTrip)
             evaluateMissedTrainSuggestion(for: selectedTrip)
+            refreshRunningLiveActivities()
         }
         .onReceive(NotificationCenter.default.publisher(for: .tripLocationDetectionPreferenceChanged)) { _ in
             updateLocationPhaseDetection(for: selectedTrip)
@@ -268,13 +269,12 @@ struct ContentView: View {
             locationPhaseDetector.removeExpired()
             MissedTrainPromptStore.prune()
             updateCameraForCurrentState(animated: false)
-            preloadRouteData(for: selectedTrip)
             updateLocationPhaseDetection(for: selectedTrip)
             evaluateMissedTrainSuggestion(for: selectedTrip)
             // A SwiftUI task may not rerun when the app returns from suspension
             // with the same selected trip, so explicitly restart reconciliation.
             updateTrackingState(using: currentDetailState?.trackingResult)
-            syncTripsOnLaunchIfNeeded()
+            Task { await SBBLiveTripService.shared.refresh(trips: trips) }
         }
     }
 
@@ -288,7 +288,9 @@ struct ContentView: View {
             evaluateMissedTrainSuggestion(for: selectedTrip)
         }
         .onReceive(liveActivityRefreshTimer) { _ in
+            LiveActivityManager.shared.startScheduledActivities(for: trips)
             refreshRunningLiveActivities()
+            Task { await SBBLiveTripService.shared.refresh(trips: trips) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .liveDelayInfoUpdated)) { notification in
             guard let tripID = notification.object as? String else { return }
@@ -309,14 +311,31 @@ struct ContentView: View {
             LiveActivityManager.shared.startScheduledActivities()
             LiveActivityManager.shared.scheduleNextAutomaticStart()
             refreshRunningLiveActivities()
+            Task { await SBBLiveTripService.shared.refresh(trips: trips) }
         }
     }
 
     private var eventHandlersView: some View {
         timerHandlersView
         .task { await importSharedJourneys() }
+        .task(id: mapRouteIdentifiers) {
+            let identifiers = mapRouteIdentifiers
+            let loaded = await Task.detached(priority: .userInitiated) {
+                var result: [String: GTFSRouteGeometry] = [:]
+                for identifier in identifiers {
+                    result[identifier] = GTFSDataSource.shared.routeGeometry(for: identifier)
+                }
+                return result
+            }.value
+            guard !Task.isCancelled, identifiers == mapRouteIdentifiers else { return }
+            mapRouteGeometries = loaded
+            updateCameraForCurrentState(animated: false)
+        }
         .onChange(of: trips) { _, newValue in
             TripStorage.shared.saveTrips(newValue)
+            LiveActivityManager.shared.scheduleNextAutomaticStart(for: newValue)
+            refreshRunningLiveActivities()
+            Task { await SBBLiveTripService.shared.refresh(trips: newValue) }
             updateCameraForCurrentState()
         }
         .onChange(of: trips) { oldValue, newValue in
@@ -325,7 +344,12 @@ struct ContentView: View {
             locationPhaseDetector.remove(tripIDs: removedIDs)
             TripDelayFusionStore.shared.remove(tripIDs: removedIDs)
             oldValue
-                .filter { !activeIDs.contains($0.id) }
+                .filter { oldTrip in
+                    !activeIDs.contains(oldTrip.id) &&
+                    (oldTrip.sharedJourneyID == nil || !newValue.contains(where: {
+                        $0.sharedJourneyID == oldTrip.sharedJourneyID
+                    }))
+                }
                 .forEach { LiveActivityManager.shared.endActivity(for: $0.id) }
         }
         .onChange(of: pastTrips) { _, newValue in
@@ -350,9 +374,8 @@ struct ContentView: View {
         TripLocationDetectionPreferences.continuousSpeedCapsuleEnabled || isSpeedCapsuleRevealed
     }
 
-    private func mapSpeedCapsule(for trip: Trip) -> some View {
-        let speedLimit = mapSpeedLimitValue(for: trip)
-        return Button(action: revealSpeedCapsule) {
+    private func mapSpeedCapsule() -> some View {
+        Button(action: revealSpeedCapsule) {
             HStack(spacing: 8) {
                 Image(systemName: "speedometer")
                     .font(.subheadline.weight(.semibold))
@@ -372,13 +395,6 @@ struct ContentView: View {
                                 .font(.subheadline.weight(.semibold))
                         }
                     }
-                    Text("•")
-                        .foregroundStyle(.secondary)
-                        Text("Limit \(speedLimit) km/h")
-                        .font(.subheadline.weight(.medium).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .contentTransition(.numericText())
-                        .animation(.snappy(duration: 0.25), value: speedLimit)
                 } else {
                     Text("Speed")
                         .font(.subheadline.weight(.semibold))
@@ -396,16 +412,8 @@ struct ContentView: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(showsSpeedCapsuleDetails ? "Current speed and speed limit" : "Show current speed and speed limit")
-        .accessibilityValue(showsSpeedCapsuleDetails ? (hasCurrentSpeedFix ? "\(mapSpeedDisplayValue) kilometres per hour, limit \(speedLimit)" : "Acquiring GPS speed, limit \(speedLimit)") : "Hidden to save battery")
-        .task(id: trip.id) {
-            let identifier = trip.gtfsTripId ?? trip.id
-            let loaded = await Task.detached(priority: .utility) {
-                GTFSDataSource.shared.segments(for: identifier)
-            }.value
-            guard activeMapTrip?.id == trip.id else { return }
-            speedLimitSegments = loaded
-        }
+        .accessibilityLabel(showsSpeedCapsuleDetails ? "Current speed" : "Show current speed")
+        .accessibilityValue(showsSpeedCapsuleDetails ? (hasCurrentSpeedFix ? "\(mapSpeedDisplayValue) kilometres per hour" : "Acquiring GPS speed") : "Hidden to save battery")
     }
 
     private var mapSpeedDisplayValue: String {
@@ -416,26 +424,6 @@ struct ContentView: View {
     private var hasCurrentSpeedFix: Bool {
         guard let speed = locationProvider.currentSpeed else { return false }
         return speed >= 0 && speed.isFinite
-    }
-
-    private func mapSpeedLimitValue(for trip: Trip) -> String {
-        let segments = speedLimitSegments
-        guard !segments.isEmpty else { return "--" }
-        guard let travelDate = trip.travelDate else {
-            return segments.first(where: { $0.maxSpeed > 0 }).map { String($0.maxSpeed) } ?? "--"
-        }
-        let dayStart = GTFSDataSource.calendar.startOfDay(for: travelDate)
-        let active = segments.first { segment in
-            guard let start = segment.departureSeconds ?? segment.arrivalSeconds,
-                  let end = segment.arrivalSeconds ?? segment.departureSeconds else { return false }
-            let startDate = dayStart.addingTimeInterval(TimeInterval(start))
-            let normalizedEnd = end < start ? end + Int(ScheduleDateUtils.dayInterval) : end
-            let endDate = dayStart.addingTimeInterval(TimeInterval(normalizedEnd))
-            return liveTrainClock >= startDate && liveTrainClock <= endDate
-        }
-        let fallback = active ?? segments.first(where: { $0.maxSpeed > 0 })
-        guard let speed = fallback?.maxSpeed, speed > 0 else { return "--" }
-        return String(speed)
     }
 
     private func revealSpeedCapsule() {
@@ -472,29 +460,15 @@ struct ContentView: View {
         return "\(tripID)-\(showsUser)-\(detectedPhase)"
     }
 
-    private func preloadRouteData(for trip: Trip?) {
-        guard let trip else { return }
-        let identifier = trip.gtfsTripId ?? trip.id
-        Task.detached(priority: .utility) {
-            GTFSDataSource.shared.preloadRouteData(for: identifier)
-        }
+    private var mapRouteIdentifiers: [String] {
+        Set((trips + [selectedTrip].compactMap { $0 }).compactMap(\.gtfsTripId)).sorted()
     }
 
-    private func syncTripsOnLaunchIfNeeded() {
-        guard !hasSyncedTripsOnLaunch else { return }
-        hasSyncedTripsOnLaunch = true
-
-        let launchTrips = trips
-        guard !launchTrips.isEmpty else { return }
-
-        Task {
-            for trip in launchTrips {
-                await syncTrip(trip, shouldFetchMapInfo: false)
-            }
-        }
+    private func routeGeometry(for trip: Trip) -> GTFSRouteGeometry? {
+        trip.gtfsTripId.flatMap { mapRouteGeometries[$0] }
     }
 
-    private func syncTripAfterAdd(_ trip: Trip) {
+    private func prepareTripAfterAdd(_ trip: Trip) {
         let result = LiveActivityManager.shared.startOrSchedule(for: trip)
         #if DEBUG
         print("[ContentView] Live Activity auto-start: \(result?.message ?? "scheduled one hour before departure")")
@@ -505,9 +479,6 @@ struct ContentView: View {
             Task.detached(priority: .utility) {
                 _ = GTFSDataSource.shared.segments(for: identifier)
             }
-        }
-        Task {
-            await syncTrip(trip, shouldFetchMapInfo: true)
         }
     }
 
@@ -526,12 +497,25 @@ struct ContentView: View {
                 var active = trips
                 var past = pastTrips
                 var addedActive: [Trip] = []
+                var addedTrips: [Trip] = []
                 for (trip, leg) in zip(imported, journey.legs) {
-                    let alreadySaved = (active + past).contains {
+                    let matchesSavedTrip: (Trip) -> Bool = {
                         $0.id == trip.id || ($0.title == trip.title && $0.travelDate == trip.travelDate &&
                             $0.originStopId == trip.originStopId && $0.destinationStopId == trip.destinationStopId)
                     }
-                    guard !alreadySaved else { continue }
+                    if let index = active.firstIndex(where: matchesSavedTrip) {
+                        if active[index].sharedJourneyID == nil {
+                            active[index].sharedJourneyID = trip.sharedJourneyID
+                        }
+                        continue
+                    }
+                    if let index = past.firstIndex(where: matchesSavedTrip) {
+                        if past[index].sharedJourneyID == nil {
+                            past[index].sharedJourneyID = trip.sharedJourneyID
+                        }
+                        continue
+                    }
+                    addedTrips.append(trip)
                     if leg.arrival.addingTimeInterval(20 * 60) < Date() {
                         past.append(trip)
                     } else {
@@ -540,13 +524,14 @@ struct ContentView: View {
                     }
                 }
                 try TripStorage.shared.persistSharedImport(active: active, past: past)
+                addedTrips.forEach(TripDebugLog.added)
                 trips = active
                 pastTrips = past
                 try inbox.acknowledge(file)
                 if !addedActive.isEmpty {
                     isAddTripMode = false
                     selectedTrip = addedActive.first
-                    addedActive.forEach(syncTripAfterAdd)
+                    addedActive.forEach(prepareTripAfterAdd)
                 }
             }
         } catch {
@@ -555,7 +540,9 @@ struct ContentView: View {
     }
 
     private func refreshRunningLiveActivities() {
+        var refreshed = Set<String>()
         for trip in trips where LiveActivityManager.shared.isActivityRunning(for: trip.id) {
+            guard refreshed.insert(trip.sharedJourneyID ?? trip.id).inserted else { continue }
             LiveActivityManager.shared.updateActivity(
                 for: trip,
                 delayInfo: LiveDelayStore.shared.info(for: trip.id)
@@ -570,20 +557,6 @@ struct ContentView: View {
             for: trip,
             delayInfo: LiveDelayStore.shared.info(for: tripID)
         )
-    }
-
-    private func syncTrip(_ trip: Trip, shouldFetchMapInfo: Bool) async {
-        guard let result = await TripSyncService.shared.sync(
-            trip: trip,
-            shouldFetchMapInfo: shouldFetchMapInfo
-        ) else { return }
-
-        if let index = trips.firstIndex(where: { $0.id == trip.id }) {
-            trips[index] = result.trip
-        }
-        if selectedTrip?.id == trip.id {
-            selectedTrip = result.trip
-        }
     }
 
 }
@@ -688,33 +661,17 @@ extension ContentView {
         let trip = state.trip
         let orderedStops = state.orderedStops
         let stoppingStops = state.stoppingStops
-        let scrapedRouteSegments = routePolylineSegments(for: trip)
-        if !scrapedRouteSegments.isEmpty {
-            ForEach(Array(scrapedRouteSegments.enumerated()), id: \.offset) { _, segment in
-                MapPolyline(coordinates: segment)
-                    .stroke(
-                        .gray.opacity(0.5),
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [6, 6])
-                    )
-            }
+        let coordinates = routeCoordinates(for: trip) ?? []
+        if coordinates.count > 1 {
+            MapPolyline(coordinates: coordinates)
+                .stroke(
+                    .gray.opacity(0.5),
+                    style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [6, 6])
+                )
 
-            if let segment = preciseUserSegmentCoordinates(for: trip) {
+            if let segment = segmentCoordinates(for: trip, orderedStops: orderedStops) {
                 MapPolyline(coordinates: segment)
                     .stroke(.blue, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-            }
-        } else {
-            let coordinates = orderedStops.map { $0.coordinate }
-            if coordinates.count > 1 {
-                MapPolyline(coordinates: coordinates)
-                    .stroke(
-                        .gray.opacity(0.5),
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [6, 6])
-                    )
-
-                if let segment = segmentCoordinates(for: trip, orderedStops: orderedStops) {
-                    MapPolyline(coordinates: segment)
-                        .stroke(.blue, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                }
             }
         }
 
@@ -750,8 +707,8 @@ extension ContentView {
     }
 
     private func routeCoordinates(for trip: Trip) -> [CLLocationCoordinate2D]? {
-        if let coordinates = flattenedRoutePolylineCoordinates(for: trip), coordinates.count > 1 {
-            return coordinates
+        if let geometry = routeGeometry(for: trip), geometry.stops.count > 1 {
+            return geometry.coordinates()
         }
         let stops = polylineStops(for: trip)
         if stops.count > 1 {
@@ -761,24 +718,8 @@ extension ContentView {
     }
 
     private func userSegmentCoordinates(for trip: Trip) -> [CLLocationCoordinate2D]? {
-        if let preciseSegment = preciseUserSegmentCoordinates(for: trip) {
-            return preciseSegment
-        }
         let stops = polylineStops(for: trip)
-        let segmentStops = userSegmentStops(for: trip, stops: stops)
-        if segmentStops.count > 1 {
-            return segmentStops.map { $0.coordinate }
-        }
-        return straightLineCoordinates(for: trip)
-    }
-
-    private func userSegmentStops(for trip: Trip, stops: [StoredStop]) -> [StoredStop] {
-        guard !stops.isEmpty else { return [] }
-        guard let range = highlightedRange(for: trip, orderedStops: stops) else { return stops }
-        let lower = max(range.lowerBound, 0)
-        let upper = min(range.upperBound, stops.count - 1)
-        guard lower <= upper else { return stops }
-        return Array(stops[lower...upper])
+        return segmentCoordinates(for: trip, orderedStops: stops) ?? straightLineCoordinates(for: trip)
     }
 
     private func polylineStops(for trip: Trip) -> [StoredStop] {
@@ -833,12 +774,9 @@ extension ContentView {
 
         guard !timeline.isEmpty else { return nil }
 
-        let routeCoordinates = flattenedRoutePolylineCoordinates(for: trip)
-        let trackingRouteCoordinates = routeCoordinates ?? timelineRouteCoordinates(from: timeline)
         guard let fallback = interpolatedCoordinate(
             entries: timeline,
             referenceDate: referenceDate,
-            routeCoordinates: routeCoordinates
         ) else {
             return nil
         }
@@ -873,16 +811,9 @@ extension ContentView {
                 )
             }
             let showsTrainMarker = referenceDate >= serviceDeparture && referenceDate <= serviceArrival
-            let gpsCoordinate = showsTrainMarker ? gpsAnchoredLiveTrainCoordinate(
-                for: trip,
-                entries: timeline,
-                referenceDate: referenceDate,
-                routeCoordinates: trackingRouteCoordinates
-            ) : nil
-            let trainCoordinate = gpsCoordinate ?? fallback
             return LiveTrainCoordinateResult(
-                coordinate: trainCoordinate,
-                mode: gpsCoordinate == nil ? .interpolation : .gps,
+                coordinate: fallback,
+                mode: .interpolation,
                 showsUserLocation: false,
                 showsLiveTrainMarker: showsTrainMarker
             )
@@ -917,15 +848,9 @@ extension ContentView {
                 // rider is still travelling to the station and avoids using
                 // the rider's phone location as a proxy for the train.
                 if referenceDate < boardingDate {
-                    let gpsCoordinate = referenceDate >= serviceDeparture ? gpsAnchoredLiveTrainCoordinate(
-                        for: trip,
-                        entries: timeline,
-                        referenceDate: referenceDate,
-                        routeCoordinates: trackingRouteCoordinates
-                    ) : nil
                     return LiveTrainCoordinateResult(
-                        coordinate: gpsCoordinate ?? fallback,
-                        mode: gpsCoordinate == nil ? .interpolation : .gps,
+                        coordinate: fallback,
+                        mode: .interpolation,
                         showsUserLocation: false,
                         showsLiveTrainMarker: true
                     )
@@ -946,15 +871,9 @@ extension ContentView {
                 // If there is no device fix yet, retain the train marker as
                 // secondary context until the next location callback.
 
-                let gpsCoordinate = referenceDate >= serviceDeparture ? gpsAnchoredLiveTrainCoordinate(
-                    for: trip,
-                    entries: timeline,
-                    referenceDate: referenceDate,
-                    routeCoordinates: trackingRouteCoordinates
-                ) : nil
                 return LiveTrainCoordinateResult(
-                    coordinate: gpsCoordinate ?? fallback,
-                    mode: gpsCoordinate == nil ? .interpolation : .gps,
+                    coordinate: fallback,
+                    mode: .interpolation,
                     showsUserLocation: false,
                     showsLiveTrainMarker: referenceDate <= serviceArrival
                 )
@@ -972,16 +891,9 @@ extension ContentView {
         }
 
         if referenceDate <= serviceArrival {
-            let gpsCoordinate = referenceDate >= serviceDeparture ? gpsAnchoredLiveTrainCoordinate(
-                for: trip,
-                entries: timeline,
-                referenceDate: referenceDate,
-                routeCoordinates: trackingRouteCoordinates
-            ) : nil
-            let trainCoordinate = gpsCoordinate ?? fallback
             return LiveTrainCoordinateResult(
-                coordinate: trainCoordinate,
-                mode: gpsCoordinate == nil ? .interpolation : .gps,
+                coordinate: fallback,
+                mode: .interpolation,
                 showsUserLocation: false,
                 showsLiveTrainMarker: true
             )
@@ -1001,24 +913,15 @@ extension ContentView {
               let trip,
               let location = locationProvider.lastLocation else { return }
 
-        let route = flattenedRoutePolylineCoordinates(for: trip)
-            ?? polylineStops(for: trip).map(\.coordinate)
-        let trustedTrainCoordinate = LiveDelayStore.shared.info(for: trip.id)?.liveCoordinate.map {
-            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-        }
-        locationPhaseDetector.update(
-            trip: trip,
-            location: location,
-            route: route,
-            trustedTrainCoordinate: trustedTrainCoordinate
-        )
-        let infoFer = LiveDelayStore.shared.info(for: trip.id)
-        let timing = TripTimingResolver().resolve(trip: trip, delayInfo: infoFer, referenceDate: location.timestamp)
+        let route = polylineStops(for: trip).map(\.coordinate)
+        locationPhaseDetector.update(trip: trip, location: location, route: route)
+        let liveInfo = LiveDelayStore.shared.info(for: trip.id)
+        let timing = TripTimingResolver().resolve(trip: trip, delayInfo: liveInfo, referenceDate: location.timestamp)
         TripDelayFusionStore.shared.update(
             trip: trip,
             progress: locationPhaseDetector.progress(for: trip),
             timing: timing,
-            infoFer: infoFer,
+            liveInfo: liveInfo,
             now: location.timestamp
         )
     }
@@ -1047,20 +950,17 @@ extension ContentView {
         guard let departure = timing.adjustedDeparture,
               liveTrainClock >= departure else { return }
 
-        // Schedule time alone is not proof that the rider left. If the rider
-        // is still at the origin, wait for evidence that the train actually
-        // left. Phone GPS is authoritative for the rider; trusted InfoFer GPS
-        // is secondary evidence about the train itself and must never be used
-        // as a proxy for the rider's location.
-        if isFreshlyAtOrigin(trip), !hasConfirmedTrainDeparture(for: trip) {
+        // Schedule time alone cannot prove the train has left while the rider
+        // is still at the origin, so keep the suggestion suppressed there.
+        if isFreshlyAtOrigin(trip) {
 #if DEBUG
             missedTrainDiagnosticText = "Missed train: train still appears to be at origin"
 #endif
             return
         }
 
-        // A rider away from the origin can be prompted as soon as the
-        // adjusted departure has passed, even if InfoFer has not refreshed.
+        // A rider away from the origin can be prompted once the adjusted
+        // departure has passed.
         missedTrainPrompt = MissedTrainPrompt(
             id: trip.id,
             trainTitle: trip.title,
@@ -1081,24 +981,6 @@ extension ContentView {
         }
         let radius = max(250, location.horizontalAccuracy * 1.5)
         return location.distance(from: CLLocation(latitude: origin.latitude, longitude: origin.longitude)) <= radius
-    }
-
-    private func hasConfirmedTrainDeparture(for trip: Trip) -> Bool {
-        if locationPhaseDetector.phase(for: trip) == .boarded {
-            return true
-        }
-
-        guard let info = LiveDelayStore.shared.info(for: trip.id),
-              let liveCoordinate = info.liveCoordinate,
-              let fetchedAt = info.fetchedAt,
-              Date().timeIntervalSince(fetchedAt) <= 15 * 60,
-              let origin = coordinate(for: trip.originStopId, sequence: trip.originSequence, in: trip) else {
-            return false
-        }
-
-        let trainDistance = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
-            .distance(from: CLLocation(latitude: liveCoordinate.latitude, longitude: liveCoordinate.longitude))
-        return trainDistance > 750
     }
 
     private func findMissedTrainAlternatives(for prompt: MissedTrainPrompt) {
@@ -1173,7 +1055,7 @@ extension ContentView {
             missedTrainDiagnosticText = "Missed train: waiting for departure"
             return
         }
-        if isFreshlyAtOrigin(trip), !hasConfirmedTrainDeparture(for: trip) {
+        if isFreshlyAtOrigin(trip) {
             missedTrainDiagnosticText = "Missed train: train still appears to be at origin"
             return
         }
@@ -1227,6 +1109,7 @@ extension ContentView {
             trainTonnage: alternative.trainTonnage
         )
         trips.append(selected)
+        TripDebugLog.added(selected)
         selectedTrip = selected
         isShowingMissedTrainAlternatives = false
         missedTrainPrompt = nil
@@ -1369,26 +1252,16 @@ extension ContentView {
 
     private func interpolatedCoordinate(
         entries: [MapSegmentEntry],
-        referenceDate: Date,
-        routeCoordinates: [CLLocationCoordinate2D]? = nil
+        referenceDate: Date
     ) -> CLLocationCoordinate2D? {
         guard let first = entries.first, let last = entries.last else { return nil }
 
         if referenceDate <= first.startDate {
-            return routeCoordinates?.first ?? first.startCoordinate
+            return first.startCoordinate
         }
 
         if referenceDate >= last.endDate {
-            return routeCoordinates?.last ?? last.endCoordinate
-        }
-
-        if let routeCoordinates, routeCoordinates.count > 1 {
-            let totalDuration = last.endDate.timeIntervalSince(first.startDate)
-            if totalDuration > 0 {
-                let elapsed = referenceDate.timeIntervalSince(first.startDate)
-                let progress = max(0, min(elapsed / totalDuration, 1))
-                return coordinateAlongPolyline(routeCoordinates, progress: progress)
-            }
+            return last.endCoordinate
         }
 
         for entry in entries {
@@ -1410,142 +1283,6 @@ extension ContentView {
         }
 
         return last.endCoordinate
-    }
-
-    private func gpsAnchoredLiveTrainCoordinate(
-        for trip: Trip,
-        entries: [MapSegmentEntry],
-        referenceDate: Date,
-        routeCoordinates: [CLLocationCoordinate2D]?
-    ) -> CLLocationCoordinate2D? {
-        guard let liveCoordinate = LiveDelayStore.shared.info(for: trip.id)?.liveCoordinate else { return nil }
-        let gpsCoordinate = CLLocationCoordinate2D(
-            latitude: liveCoordinate.latitude,
-            longitude: liveCoordinate.longitude
-        )
-        guard
-            let fetchedAt = liveCoordinate.fetchedAt,
-            let first = entries.first,
-            let last = entries.last,
-            let routeCoordinates,
-            routeCoordinates.count > 1
-        else {
-            return gpsCoordinate
-        }
-
-        let totalDuration = last.endDate.timeIntervalSince(first.startDate)
-        guard totalDuration > 0 else { return gpsCoordinate }
-
-        let anchoredProgress = progressAlongPolyline(routeCoordinates, nearestTo: gpsCoordinate)
-        let elapsedProgress = referenceDate.timeIntervalSince(fetchedAt) / totalDuration
-        return coordinateAlongPolyline(
-            routeCoordinates,
-            progress: anchoredProgress + elapsedProgress
-        ) ?? gpsCoordinate
-    }
-
-    private func timelineRouteCoordinates(from entries: [MapSegmentEntry]) -> [CLLocationCoordinate2D]? {
-        guard let first = entries.first else { return nil }
-        var coordinates = [first.startCoordinate]
-        coordinates.append(contentsOf: entries.map(\.endCoordinate))
-        return coordinates.count > 1 ? coordinates : nil
-    }
-
-    private func progressAlongPolyline(
-        _ coordinates: [CLLocationCoordinate2D],
-        nearestTo coordinate: CLLocationCoordinate2D
-    ) -> Double {
-        guard coordinates.count > 1 else { return 0 }
-
-        let origin = coordinates[0]
-        let targetPoint = mapPoint(coordinate, relativeTo: origin)
-        var totalLength: CLLocationDistance = 0
-        var nearestDistance = Double.greatestFiniteMagnitude
-        var nearestLengthAlongRoute: CLLocationDistance = 0
-
-        for index in 1..<coordinates.count {
-            let start = mapPoint(coordinates[index - 1], relativeTo: origin)
-            let end = mapPoint(coordinates[index], relativeTo: origin)
-            let segment = CGPoint(x: end.x - start.x, y: end.y - start.y)
-            let segmentLength = hypot(segment.x, segment.y)
-            guard segmentLength > 0 else { continue }
-
-            let target = CGPoint(x: targetPoint.x - start.x, y: targetPoint.y - start.y)
-            let projection = max(0, min((target.x * segment.x + target.y * segment.y) / (segmentLength * segmentLength), 1))
-            let projectedPoint = CGPoint(
-                x: start.x + segment.x * projection,
-                y: start.y + segment.y * projection
-            )
-            let distanceToProjection = hypot(targetPoint.x - projectedPoint.x, targetPoint.y - projectedPoint.y)
-            if distanceToProjection < nearestDistance {
-                nearestDistance = distanceToProjection
-                nearestLengthAlongRoute = totalLength + segmentLength * projection
-            }
-
-            totalLength += segmentLength
-        }
-
-        guard totalLength > 0 else { return 0 }
-        return max(0, min(nearestLengthAlongRoute / totalLength, 1))
-    }
-
-    private func mapPoint(
-        _ coordinate: CLLocationCoordinate2D,
-        relativeTo origin: CLLocationCoordinate2D
-    ) -> CGPoint {
-        let originPoint = MKMapPoint(origin)
-        let point = MKMapPoint(coordinate)
-        return CGPoint(x: point.x - originPoint.x, y: point.y - originPoint.y)
-    }
-
-    private func coordinateAlongPolyline(
-        _ coordinates: [CLLocationCoordinate2D],
-        progress: Double
-    ) -> CLLocationCoordinate2D? {
-        guard let first = coordinates.first, let last = coordinates.last else { return nil }
-        guard coordinates.count > 1 else { return first }
-
-        let clamped = max(0, min(progress, 1))
-        if clamped <= 0 { return first }
-        if clamped >= 1 { return last }
-
-        var segmentLengths: [CLLocationDistance] = []
-        var totalLength: CLLocationDistance = 0
-
-        for index in 1..<coordinates.count {
-            let length = distanceBetween(coordinates[index - 1], coordinates[index])
-            segmentLengths.append(length)
-            totalLength += length
-        }
-
-        guard totalLength > 0 else { return first }
-
-        let targetLength = totalLength * clamped
-        var coveredLength: CLLocationDistance = 0
-
-        for index in segmentLengths.indices {
-            let segmentLength = segmentLengths[index]
-            let nextCoveredLength = coveredLength + segmentLength
-            if targetLength <= nextCoveredLength {
-                let segmentProgress = segmentLength > 0 ? (targetLength - coveredLength) / segmentLength : 0
-                return interpolateCoordinate(
-                    from: coordinates[index],
-                    to: coordinates[index + 1],
-                    progress: segmentProgress
-                )
-            }
-            coveredLength = nextCoveredLength
-        }
-
-        return last
-    }
-
-    private func distanceBetween(
-        _ lhs: CLLocationCoordinate2D,
-        _ rhs: CLLocationCoordinate2D
-    ) -> CLLocationDistance {
-        CLLocation(latitude: lhs.latitude, longitude: lhs.longitude)
-            .distance(from: CLLocation(latitude: rhs.latitude, longitude: rhs.longitude))
     }
 
     private func interpolateCoordinate(
@@ -1570,52 +1307,15 @@ extension ContentView {
         return trip.stops?.sorted(by: { $0.sequence < $1.sequence }).first?.coordinate
     }
 
-    private func routePolylineSegments(for trip: Trip) -> [[CLLocationCoordinate2D]] {
-        trip.routePolylines?
-            .map(\.coordinates)
-            .filter { $0.count > 1 } ?? []
-    }
-
-    private func flattenedRoutePolylineCoordinates(for trip: Trip) -> [CLLocationCoordinate2D]? {
-        let segments = routePolylineSegments(for: trip)
-        guard !segments.isEmpty else { return nil }
-        return segments.flatMap { $0 }
-    }
-
-    private func preciseUserSegmentCoordinates(for trip: Trip) -> [CLLocationCoordinate2D]? {
-        guard let coordinates = flattenedRoutePolylineCoordinates(for: trip), coordinates.count > 1 else { return nil }
-        guard
-            let origin = coordinate(for: trip.originStopId, sequence: trip.originSequence, in: trip),
-            let destination = coordinate(for: trip.destinationStopId, sequence: trip.destinationSequence, in: trip)
-        else { return nil }
-
-        let originIndex = nearestCoordinateIndex(to: origin, in: coordinates)
-        let destinationIndex = nearestCoordinateIndex(to: destination, in: coordinates)
-        let lower = min(originIndex, destinationIndex)
-        let upper = max(originIndex, destinationIndex)
-        guard lower < upper else { return nil }
-        return Array(coordinates[lower...upper])
-    }
-
-    private func nearestCoordinateIndex(
-        to target: CLLocationCoordinate2D,
-        in coordinates: [CLLocationCoordinate2D]
-    ) -> Int {
-        coordinates.indices.min { lhs, rhs in
-            coordinateDistanceSquared(coordinates[lhs], target) < coordinateDistanceSquared(coordinates[rhs], target)
-        } ?? 0
-    }
-
-    private func coordinateDistanceSquared(_ lhs: CLLocationCoordinate2D, _ rhs: CLLocationCoordinate2D) -> Double {
-        let latitudeDelta = lhs.latitude - rhs.latitude
-        let longitudeDelta = lhs.longitude - rhs.longitude
-        return latitudeDelta * latitudeDelta + longitudeDelta * longitudeDelta
-    }
-
     private func segmentCoordinates(for trip: Trip, orderedStops: [StoredStop]) -> [CLLocationCoordinate2D]? {
         guard let range = highlightedRange(for: trip, orderedStops: orderedStops) else { return nil }
         let segmentSlice = orderedStops[range]
         guard segmentSlice.count > 1 else { return nil }
+        if let geometry = routeGeometry(for: trip),
+           let first = segmentSlice.first, let last = segmentSlice.last {
+            let coordinates = geometry.coordinates(fromSequence: first.sequence, toSequence: last.sequence)
+            if coordinates.count > 1 { return coordinates }
+        }
         return segmentSlice.map { $0.coordinate }
     }
 
@@ -1630,6 +1330,9 @@ extension ContentView {
     }
 
     private func indexForStop(id: String?, sequence: Int?, in stops: [StoredStop], fallback: Int) -> Int {
+        if let sequence, let index = stops.firstIndex(where: { $0.sequence == sequence && (id == nil || $0.id == id) }) {
+            return index
+        }
         if let id, let index = stops.firstIndex(where: { $0.id == id }) {
             return index
         }
@@ -1818,6 +1521,7 @@ struct Trip: Identifiable, Codable, Equatable {
     let gtfsTripId: String?
     let travelDate: Date?
     let sharedJourneyLeg: SharedJourney.Leg?
+    var sharedJourneyID: String?
     let originStopId: String?
     let originName: String?
     let destinationStopId: String?
@@ -1837,8 +1541,6 @@ struct Trip: Identifiable, Codable, Equatable {
     let trainTonnage: String?
     let trainIdentifier: String?
     let trainPower: TrainPowerType?
-    let routePolylines: [StoredRoutePolyline]?
-    let infoFerGPSUnavailable: Bool
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -1850,6 +1552,7 @@ struct Trip: Identifiable, Codable, Equatable {
         case gtfsTripId
         case travelDate
         case sharedJourneyLeg
+        case sharedJourneyID
         case originStopId
         case originName
         case destinationStopId
@@ -1869,8 +1572,6 @@ struct Trip: Identifiable, Codable, Equatable {
         case trainTonnage
         case trainIdentifier
         case trainPower
-        case routePolylines
-        case infoFerGPSUnavailable
     }
 
     nonisolated init(
@@ -1883,6 +1584,7 @@ struct Trip: Identifiable, Codable, Equatable {
         gtfsTripId: String? = nil,
         travelDate: Date? = nil,
         sharedJourneyLeg: SharedJourney.Leg? = nil,
+        sharedJourneyID: String? = nil,
         originStopId: String? = nil,
         originName: String? = nil,
         destinationStopId: String? = nil,
@@ -1900,9 +1602,7 @@ struct Trip: Identifiable, Codable, Equatable {
         trainLength: String? = nil,
         trainTonnage: String? = nil,
         trainIdentifier: String? = nil,
-        trainPower: TrainPowerType? = nil,
-        routePolylines: [StoredRoutePolyline]? = nil,
-        infoFerGPSUnavailable: Bool = false
+        trainPower: TrainPowerType? = nil
     ) {
         self.init(
             id: id,
@@ -1914,6 +1614,7 @@ struct Trip: Identifiable, Codable, Equatable {
             gtfsTripId: gtfsTripId,
             travelDate: travelDate,
             sharedJourneyLeg: sharedJourneyLeg,
+            sharedJourneyID: sharedJourneyID,
             originStopId: originStopId,
             originName: originName,
             destinationStopId: destinationStopId,
@@ -1932,9 +1633,7 @@ struct Trip: Identifiable, Codable, Equatable {
             trainLength: trainLength,
             trainTonnage: trainTonnage,
             trainIdentifier: trainIdentifier,
-            trainPower: trainPower,
-            routePolylines: routePolylines,
-            infoFerGPSUnavailable: infoFerGPSUnavailable
+            trainPower: trainPower
         )
     }
 
@@ -1948,6 +1647,7 @@ struct Trip: Identifiable, Codable, Equatable {
         gtfsTripId: String? = nil,
         travelDate: Date? = nil,
         sharedJourneyLeg: SharedJourney.Leg? = nil,
+        sharedJourneyID: String? = nil,
         originStopId: String? = nil,
         originName: String? = nil,
         destinationStopId: String? = nil,
@@ -1966,9 +1666,7 @@ struct Trip: Identifiable, Codable, Equatable {
         trainLength: String? = nil,
         trainTonnage: String? = nil,
         trainIdentifier: String? = nil,
-        trainPower: TrainPowerType? = nil,
-        routePolylines: [StoredRoutePolyline]? = nil,
-        infoFerGPSUnavailable: Bool = false
+        trainPower: TrainPowerType? = nil
     ) {
         self.id = id
         self.title = title
@@ -1979,6 +1677,7 @@ struct Trip: Identifiable, Codable, Equatable {
         self.gtfsTripId = gtfsTripId
         self.travelDate = travelDate
         self.sharedJourneyLeg = sharedJourneyLeg
+        self.sharedJourneyID = sharedJourneyID
         self.originStopId = originStopId
         self.originName = originName
         self.destinationStopId = destinationStopId
@@ -1998,8 +1697,6 @@ struct Trip: Identifiable, Codable, Equatable {
         self.trainTonnage = trainTonnage
         self.trainIdentifier = trainIdentifier
         self.trainPower = trainPower
-        self.routePolylines = routePolylines
-        self.infoFerGPSUnavailable = infoFerGPSUnavailable
     }
 
     init(from decoder: Decoder) throws {
@@ -2013,6 +1710,7 @@ struct Trip: Identifiable, Codable, Equatable {
         gtfsTripId = try container.decodeIfPresent(String.self, forKey: .gtfsTripId)
         travelDate = try container.decodeIfPresent(Date.self, forKey: .travelDate)
         sharedJourneyLeg = try container.decodeIfPresent(SharedJourney.Leg.self, forKey: .sharedJourneyLeg)
+        sharedJourneyID = try container.decodeIfPresent(String.self, forKey: .sharedJourneyID)
         originStopId = try container.decodeIfPresent(String.self, forKey: .originStopId)
         originName = try container.decodeIfPresent(String.self, forKey: .originName)
         destinationStopId = try container.decodeIfPresent(String.self, forKey: .destinationStopId)
@@ -2032,8 +1730,6 @@ struct Trip: Identifiable, Codable, Equatable {
         trainTonnage = try container.decodeIfPresent(String.self, forKey: .trainTonnage)
         trainIdentifier = try container.decodeIfPresent(String.self, forKey: .trainIdentifier)
         trainPower = try container.decodeIfPresent(TrainPowerType.self, forKey: .trainPower)
-        routePolylines = try container.decodeIfPresent([StoredRoutePolyline].self, forKey: .routePolylines)
-        infoFerGPSUnavailable = try container.decodeIfPresent(Bool.self, forKey: .infoFerGPSUnavailable) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -2047,6 +1743,7 @@ struct Trip: Identifiable, Codable, Equatable {
         try container.encodeIfPresent(gtfsTripId, forKey: .gtfsTripId)
         try container.encodeIfPresent(travelDate, forKey: .travelDate)
         try container.encodeIfPresent(sharedJourneyLeg, forKey: .sharedJourneyLeg)
+        try container.encodeIfPresent(sharedJourneyID, forKey: .sharedJourneyID)
         try container.encodeIfPresent(originStopId, forKey: .originStopId)
         try container.encodeIfPresent(originName, forKey: .originName)
         try container.encodeIfPresent(destinationStopId, forKey: .destinationStopId)
@@ -2066,8 +1763,6 @@ struct Trip: Identifiable, Codable, Equatable {
         try container.encodeIfPresent(trainTonnage, forKey: .trainTonnage)
         try container.encodeIfPresent(trainIdentifier, forKey: .trainIdentifier)
         try container.encodeIfPresent(trainPower, forKey: .trainPower)
-        try container.encodeIfPresent(routePolylines, forKey: .routePolylines)
-        try container.encode(infoFerGPSUnavailable, forKey: .infoFerGPSUnavailable)
     }
 }
 
@@ -2136,29 +1831,6 @@ func stopsForRide(
     return Array(orderedStops[originIndex...destinationIndex])
 }
 
-struct StoredRoutePoint: Codable, Equatable {
-    let latitude: Double
-    let longitude: Double
-
-    var coordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
-    }
-}
-
-struct StoredRoutePolyline: Identifiable, Codable, Equatable {
-    let id: UUID
-    let points: [StoredRoutePoint]
-
-    init(id: UUID = UUID(), points: [StoredRoutePoint]) {
-        self.id = id
-        self.points = points
-    }
-
-    var coordinates: [CLLocationCoordinate2D] {
-        points.map(\.coordinate)
-    }
-}
-
 extension StoredStop {
     nonisolated init(gtfsStop: GTFSStop) {
         self.init(
@@ -2172,112 +1844,7 @@ extension StoredStop {
 }
 
 extension Trip {
-    var resolvedTrainNumber: String? {
-        let titleComponents = title.split(separator: " ")
-        if let last = titleComponents.last {
-            let digits = last.filter(\.isNumber)
-            if !digits.isEmpty {
-                return String(digits)
-            }
-        }
 
-        if let code = gtfsTripId, !code.isEmpty {
-            return code
-        }
-
-        return nil
-    }
-
-    var webcamBoardSideHint: CFRWebcamBoardSide {
-        let destinationText = [destinationName, subtitle, detailRoute]
-            .compactMap { $0 }
-            .joined(separator: " ")
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
-
-        if destinationText.contains("bucharest") || destinationText.contains("bucuresti") {
-            return .arrivals
-        }
-
-        return .departures
-    }
-
-    func updatingPlatform(_ platform: String?, for side: CFRWebcamBoardSide) -> Trip {
-        switch side {
-        case .arrivals:
-            return Trip(
-                id: id,
-                title: title,
-                subtitle: subtitle,
-                agencyId: agencyId,
-                detailDate: detailDate,
-                detailRoute: detailRoute,
-                gtfsTripId: gtfsTripId,
-                travelDate: travelDate,
-                sharedJourneyLeg: sharedJourneyLeg,
-                originStopId: originStopId,
-                originName: originName,
-                destinationStopId: destinationStopId,
-                destinationName: destinationName,
-                originPlatform: originPlatform,
-                destinationPlatform: sanitizedPlatform(platform),
-                delayMinutes: delayMinutes,
-                detailDistance: detailDistance,
-                stops: stops,
-                originSequence: originSequence,
-                destinationSequence: destinationSequence,
-                seatCar: seatCar,
-                seatNumbers: seatNumbers,
-                ticketQRCode: ticketQRCode,
-                trainType: trainType,
-                trainLength: trainLength,
-                trainTonnage: trainTonnage,
-                trainIdentifier: trainIdentifier,
-                trainPower: trainPower,
-                routePolylines: routePolylines,
-                infoFerGPSUnavailable: infoFerGPSUnavailable
-            )
-        case .departures:
-            return Trip(
-                id: id,
-                title: title,
-                subtitle: subtitle,
-                agencyId: agencyId,
-                detailDate: detailDate,
-                detailRoute: detailRoute,
-                gtfsTripId: gtfsTripId,
-                travelDate: travelDate,
-                sharedJourneyLeg: sharedJourneyLeg,
-                originStopId: originStopId,
-                originName: originName,
-                destinationStopId: destinationStopId,
-                destinationName: destinationName,
-                originPlatform: sanitizedPlatform(platform),
-                destinationPlatform: destinationPlatform,
-                delayMinutes: delayMinutes,
-                detailDistance: detailDistance,
-                stops: stops,
-                originSequence: originSequence,
-                destinationSequence: destinationSequence,
-                seatCar: seatCar,
-                seatNumbers: seatNumbers,
-                ticketQRCode: ticketQRCode,
-                trainType: trainType,
-                trainLength: trainLength,
-                trainTonnage: trainTonnage,
-                trainIdentifier: trainIdentifier,
-                trainPower: trainPower,
-                routePolylines: routePolylines,
-                infoFerGPSUnavailable: infoFerGPSUnavailable
-            )
-        }
-    }
-
-    private func sanitizedPlatform(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let trimmed, !trimmed.isEmpty, trimmed != "-" else { return nil }
-        return trimmed
-    }
 }
 
 extension Trip {
@@ -2300,6 +1867,7 @@ extension Trip {
             gtfsTripId: gtfsTripId,
             travelDate: travelDate,
             sharedJourneyLeg: sharedJourneyLeg,
+            sharedJourneyID: sharedJourneyID,
             originStopId: originStopId,
             originName: originName,
             destinationStopId: destinationStopId,
@@ -2318,9 +1886,7 @@ extension Trip {
             trainLength: trainLength,
             trainTonnage: trainTonnage,
             trainIdentifier: trainIdentifier,
-            trainPower: trainPower,
-            routePolylines: routePolylines,
-            infoFerGPSUnavailable: infoFerGPSUnavailable
+            trainPower: trainPower
         )
     }
 
@@ -2335,6 +1901,7 @@ extension Trip {
             gtfsTripId: gtfsTripId,
             travelDate: travelDate,
             sharedJourneyLeg: sharedJourneyLeg,
+            sharedJourneyID: sharedJourneyID,
             originStopId: originStopId,
             originName: originName,
             destinationStopId: destinationStopId,
@@ -2353,9 +1920,7 @@ extension Trip {
             trainLength: trainLength,
             trainTonnage: trainTonnage,
             trainIdentifier: trainIdentifier,
-            trainPower: trainPower,
-            routePolylines: routePolylines,
-            infoFerGPSUnavailable: infoFerGPSUnavailable
+            trainPower: trainPower
         )
     }
 
@@ -2370,6 +1935,7 @@ extension Trip {
             gtfsTripId: gtfsTripId,
             travelDate: travelDate,
             sharedJourneyLeg: sharedJourneyLeg,
+            sharedJourneyID: sharedJourneyID,
             originStopId: originStopId,
             originName: originName,
             destinationStopId: destinationStopId,
@@ -2388,9 +1954,7 @@ extension Trip {
             trainLength: trainLength,
             trainTonnage: trainTonnage,
             trainIdentifier: trainIdentifier,
-            trainPower: trainPower,
-            routePolylines: routePolylines,
-            infoFerGPSUnavailable: infoFerGPSUnavailable
+            trainPower: trainPower
         )
     }
 
@@ -2417,6 +1981,7 @@ extension Trip {
             gtfsTripId: gtfsTripId,
             travelDate: travelDate,
             sharedJourneyLeg: sharedJourneyLeg,
+            sharedJourneyID: sharedJourneyID,
             originStopId: originStopId,
             originName: originName,
             destinationStopId: destinationStopId,
@@ -2435,81 +2000,13 @@ extension Trip {
             trainLength: trainLength,
             trainTonnage: trainTonnage,
             trainIdentifier: trainIdentifier,
-            trainPower: trainPower,
-            routePolylines: routePolylines,
-            infoFerGPSUnavailable: infoFerGPSUnavailable
+            trainPower: trainPower
         )
     }
 
-    func updatingRoutePolylines(_ polylines: [StoredRoutePolyline]) -> Trip {
-        Trip(
-            id: id,
-            title: title,
-            subtitle: subtitle,
-            agencyId: agencyId,
-            detailDate: detailDate,
-            detailRoute: detailRoute,
-            gtfsTripId: gtfsTripId,
-            travelDate: travelDate,
-            sharedJourneyLeg: sharedJourneyLeg,
-            originStopId: originStopId,
-            originName: originName,
-            destinationStopId: destinationStopId,
-            destinationName: destinationName,
-            originPlatform: originPlatform,
-            destinationPlatform: destinationPlatform,
-            delayMinutes: delayMinutes,
-            detailDistance: detailDistance,
-            stops: stops,
-            originSequence: originSequence,
-            destinationSequence: destinationSequence,
-            seatCar: seatCar,
-            seatNumbers: seatNumbers,
-            ticketQRCode: ticketQRCode,
-            trainType: trainType,
-            trainLength: trainLength,
-            trainTonnage: trainTonnage,
-            trainIdentifier: trainIdentifier,
-            trainPower: trainPower,
-            routePolylines: polylines,
-            infoFerGPSUnavailable: infoFerGPSUnavailable
-        )
-    }
 
-    func updatingInfoFerGPSUnavailable(_ unavailable: Bool) -> Trip {
-        Trip(
-            id: id,
-            title: title,
-            subtitle: subtitle,
-            agencyId: agencyId,
-            detailDate: detailDate,
-            detailRoute: detailRoute,
-            gtfsTripId: gtfsTripId,
-            travelDate: travelDate,
-            sharedJourneyLeg: sharedJourneyLeg,
-            originStopId: originStopId,
-            originName: originName,
-            destinationStopId: destinationStopId,
-            destinationName: destinationName,
-            originPlatform: originPlatform,
-            destinationPlatform: destinationPlatform,
-            delayMinutes: delayMinutes,
-            detailDistance: detailDistance,
-            stops: stops,
-            originSequence: originSequence,
-            destinationSequence: destinationSequence,
-            seatCar: seatCar,
-            seatNumbers: seatNumbers,
-            ticketQRCode: ticketQRCode,
-            trainType: trainType,
-            trainLength: trainLength,
-            trainTonnage: trainTonnage,
-            trainIdentifier: trainIdentifier,
-            trainPower: trainPower,
-            routePolylines: routePolylines,
-            infoFerGPSUnavailable: unavailable
-        )
-    }
+
+
 }
 
 struct BlitzAppPreview: PreviewProvider {
@@ -2639,9 +2136,9 @@ struct MissedTrainAlternativesView: View {
             Group {
                 if alternatives.isEmpty {
                     ContentUnavailableView(
-                        "Operating dates unavailable",
+                        "No alternatives found",
                         systemImage: "tram.fill",
-                        description: Text(GTFSDataSource.scheduleNotice)
+                        description: Text("No alternative trains were found for this journey.")
                     )
                 } else {
                     List(alternatives) { trip in

@@ -2,93 +2,6 @@ import Foundation
 import Testing
 @testable import blitz
 
-struct InfoFerScraperMapTests {
-    @Test func acceptsLastGPSPositionWithMarkerHTMLMessage() {
-        let html = """
-        var lastGpsPositionLatitude = 44.7128032;
-        var lastGpsPositionLongitude = 26.0193224;
-        var markerHtml=`
-        <span>Sta&#x21B;ia precedent&#x103;: <b>Ploie&#x219;ti Vest</b></span>
-        <br />
-        <span>Urmeaz&#x103; sta&#x21B;ia: <b>Bucure&#x219;ti Nord</b></span>
-        <br />
-        <div class="my-1 p-1 alert alert-success">
-            Ultima pozi&#x21B;ie GPS la 19:21
-        </div>`;
-        """
-
-        let coordinate = InfoFerScraper.shared.parseTrustedLiveCoordinate(from: html, travelDate: Date())
-
-        #expect(coordinate != nil)
-        #expect(coordinate?.latitude == 44.7128032)
-        #expect(coordinate?.longitude == 26.0193224)
-        #expect(coordinate?.fetchedAt != nil)
-        #expect(coordinate?.sourceText?.contains("Ultima poziție GPS la 19:21") == true)
-        #expect(InfoFerScraper.shared.containsEstimatedCFRPosition(in: html) == false)
-    }
-
-    @Test func rejectsCFRReportedPositionWithoutExplicitGPSCoordinates() {
-        let html = """
-        var theoreticalGpsPositionLatitude = 45.1234;
-        var theoreticalGpsPositionLongitude = 25.9876;
-        var markerHtml=`
-        <div class="my-1 p-1 alert alert-success">
-            RAPORTAT de personalul CFR la 10:05
-        </div>`;
-        """
-
-        let coordinate = InfoFerScraper.shared.parseTrustedLiveCoordinate(from: html, travelDate: Date())
-
-        #expect(coordinate == nil)
-    }
-
-    @Test func rejectsEstimatedCFRPositionEvenWhenCoordinatesExist() {
-        let html = """
-        var lastGpsPositionLatitude = 44.7128032;
-        var lastGpsPositionLongitude = 26.0193224;
-        var markerHtml=`
-        <div class="my-1 p-1 alert alert-warning">
-            Pozi&#x21B;ie ESTIMAT&#x102; pe baza raport&#x103;rii CFR
-        </div>`;
-        """
-
-        let coordinate = InfoFerScraper.shared.parseTrustedLiveCoordinate(from: html, travelDate: Date())
-
-        #expect(coordinate == nil)
-        #expect(InfoFerScraper.shared.containsEstimatedCFRPosition(in: html) == true)
-    }
-
-    @Test func rejectsCoordinatesWithoutTrustedPositionMessage() {
-        let html = """
-        var lastGpsPositionLatitude = 44.7128032;
-        var lastGpsPositionLongitude = 26.0193224;
-        var markerHtml=`
-        <span>Sta&#x21B;ia precedent&#x103;: <b>Ploie&#x219;ti Vest</b></span>
-        <br />
-        <span>Urmeaz&#x103; sta&#x21B;ia: <b>Bucure&#x219;ti Nord</b></span>`;
-        """
-
-        let coordinate = InfoFerScraper.shared.parseTrustedLiveCoordinate(from: html, travelDate: Date())
-
-        #expect(coordinate == nil)
-    }
-}
-
-struct TripSyncStatusTests {
-    @Test func liveDelayOrMapDataIsUpdated() {
-        #expect(TripSyncStatus.resolve(hasDelayEvidence: true, hasMapEvidence: false, hasPreviousSnapshot: true) == .updated)
-        #expect(TripSyncStatus.resolve(hasDelayEvidence: false, hasMapEvidence: true, hasPreviousSnapshot: false) == .mapOnly)
-    }
-
-    @Test func emptyRefreshWithCacheIsStale() {
-        #expect(TripSyncStatus.resolve(hasDelayEvidence: false, hasMapEvidence: false, hasPreviousSnapshot: true) == .stale)
-    }
-
-    @Test func emptyInitialRefreshIsUnavailable() {
-        #expect(TripSyncStatus.resolve(hasDelayEvidence: false, hasMapEvidence: false, hasPreviousSnapshot: false) == .unavailable)
-    }
-}
-
 struct BlitzNotificationTests {
     @Test func delayEventUsesConfiguredThreshold() {
         let previous = DelayInfo(delayMinutes: 5, platform: "1")
@@ -113,6 +26,27 @@ struct TripTimingResolverTests {
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         return calendar
     }()
+
+    @Test func savedServiceDateDoesNotResolveToPreviousDaysActiveRun() {
+        let trip = makeTrip(
+            travelDate: date(2026, 6, 3),
+            stops: [
+                stop(id: "ORA", name: "Oradea", sequence: 1),
+                stop(id: "RDU", name: "Raduti", sequence: 2)
+            ]
+        )
+        let schedules = MockScheduleProvider([
+            "IR1|ORA": .init(arrivalSeconds: nil, departureSeconds: seconds(hour: 8, minute: 0)),
+            "IR1|RDU": .init(arrivalSeconds: seconds(hour: 18, minute: 0), departureSeconds: nil)
+        ])
+
+        let timing = TripTimingResolver(scheduleProvider: schedules, calendar: calendar).resolve(
+            trip: trip, delayInfo: nil, referenceDate: date(2026, 6, 2, hour: 12)
+        )
+
+        expectDate(timing.scheduledDeparture, equals: date(2026, 6, 3, hour: 8))
+        #expect(timing.phase == .preDeparture)
+    }
 
     @Test func stationLevelDelaysOverrideHeaderDelay() {
         let base = date(2026, 6, 2)
@@ -141,6 +75,21 @@ struct TripTimingResolverTests {
         expectDate(timing.adjustedArrival, equals: date(2026, 6, 2, hour: 9, minute: 57))
         #expect(timing.departureStatusText == "7m late")
         #expect(timing.arrivalStatusText == "3m early")
+    }
+
+    @Test func newLiveDelayOverridesPreviouslyStoredStopDelay() {
+        let trip = makeTrip(travelDate: date(2026, 6, 2), stops: [
+            stop(id: "ORA", name: "Oradea", sequence: 1, departureDelay: 12),
+            stop(id: "RDU", name: "Raduti", sequence: 2, arrivalDelay: 15)
+        ])
+        let live = DelayInfo(delayMinutes: 0, platform: nil, stationDelays: [
+            StationDelay(stationName: "Oradea", arrivalDelayMinutes: nil, departureDelayMinutes: 2, platform: nil),
+            StationDelay(stationName: "Raduti", arrivalDelayMinutes: 0, departureDelayMinutes: nil, platform: nil)
+        ])
+        let timing = TripTimingResolver(scheduleProvider: MockScheduleProvider([:]), calendar: calendar)
+            .resolve(trip: trip, delayInfo: live)
+        #expect(timing.originDelayMinutes == 2)
+        #expect(timing.destinationDelayMinutes == 0)
     }
 
     @Test func liveStationDelaysAndPlatformApplyWhenStoredStopsAreEmpty() {
@@ -441,18 +390,18 @@ struct TripTimingResolverTests {
 }
 
 struct TripDelayFusionTests {
-    @Test func infoFerDelayTakesPriorityOverGPSEstimate() {
+    @Test func liveConfirmedDelayTakesPriorityOverGPSEstimate() {
         let departure = Date(timeIntervalSince1970: 1_000_000)
         let arrival = departure.addingTimeInterval(3_600)
         let timing = makeResolvedTiming(departure: departure, arrival: arrival)
         let prediction = TripDelayPrediction(
             predictedArrival: arrival.addingTimeInterval(12 * 60),
             delayMinutes: 12,
-            source: .infoFerConfirmed,
+            source: .liveConfirmed,
             updatedAt: departure
         )
 
-        #expect(prediction.source == .infoFerConfirmed)
+        #expect(prediction.source == .liveConfirmed)
         #expect(prediction.delayMinutes == 12)
         _ = timing
     }
@@ -460,7 +409,7 @@ struct TripDelayFusionTests {
     @Test func gpsEstimateIsClearlyMarkedAsEstimated() {
         let progress = TripGPSProgress(fraction: 0.5, recordedAt: Date())
         #expect(progress.fraction == 0.5)
-        // The production store assigns `.gpsEstimated` only when no InfoFer
+        // The production store assigns `.gpsEstimated` only when no live
         // delay exists; this assertion documents the public source contract.
         #expect(TripDelayPredictionSource.gpsEstimated.rawValue == "GPS estimated")
     }

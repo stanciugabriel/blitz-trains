@@ -168,18 +168,6 @@ struct SheetContent: View {
             searchTask?.cancel()
             logAddedToastTask?.cancel()
         }
-        .alert(item: $missedTrainPrompt) { prompt in
-            Alert(
-                title: Text("Did you miss \(prompt.trainTitle)?"),
-                message: Text("Your train has departed and there is no boarding confirmation yet. You can look for another train without changing this trip."),
-                primaryButton: .default(Text("Find another train")) {
-                    onMissedTrainFindAlternatives(prompt)
-                },
-                secondaryButton: .cancel(Text("Keep tracking")) {
-                    onMissedTrainKeepTracking(prompt)
-                }
-            )
-        }
         .sheet(item: $activeConnectionInfo) { info in
             ConnectionDetailSheet(info: info) {
                 activeConnectionInfo = nil
@@ -364,12 +352,6 @@ struct SheetContent: View {
                     LogSummaryCard(metrics: logSummaryMetrics)
                         .padding(.horizontal)
                         .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 12, trailing: 0))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-
-                    LogDelaySummaryCard(metrics: logDelaySummaryMetrics)
-                        .padding(.horizontal)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 12, trailing: 0))
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
 
@@ -631,10 +613,6 @@ struct SheetContent: View {
             SearchPlaceholderView(text: "No trains found for \"\(trainSearchText)\"")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            Text(GTFSDataSource.scheduleNotice)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal)
             List(searchResults, id: \.id) { trip in
                 Button {
                     handleTrainSelection(trip)
@@ -653,6 +631,7 @@ struct SheetContent: View {
         defer { isGeneratingRandomTrip = false }
         guard let newTrip = generateRandomActiveTrip() else { return }
         trips.append(newTrip)
+        TripDebugLog.added(newTrip)
         isSelectedTripPast = false
         selectedTrip = newTrip
         isAddTripMode = false
@@ -966,7 +945,9 @@ struct SheetContent: View {
 
         let shouldAddToLog = GTFSDataSource.calendar.startOfDay(for: selectedDate) < GTFSDataSource.calendar.startOfDay(for: Date())
         if shouldAddToLog {
+            let alreadyInLog = pastTrips.contains { $0.id == savedTrip.id }
             archiveTrips([savedTrip])
+            if !alreadyInLog { TripDebugLog.added(savedTrip) }
             isSelectedTripPast = false
             selectedTrip = nil
             selectedMainTab = .log
@@ -975,6 +956,7 @@ struct SheetContent: View {
         } else {
             if !trips.contains(where: { $0.id == savedTrip.id }) {
                 trips.append(savedTrip)
+                TripDebugLog.added(savedTrip)
             }
 
             isSelectedTripPast = false
@@ -1186,36 +1168,6 @@ struct SheetContent: View {
         )
     }
 
-    private var logDelaySummaryMetrics: LogDelaySummaryMetrics {
-        var delayedTrips = 0
-        var earlyTrips = 0
-        var onTimeTrips = 0
-        var totalLateMinutes = 0
-        var worstDelayMinutes = 0
-
-        for trip in pastTrips {
-            let delay = arrivalDelayMinutes(for: trip)
-            if delay > 0 {
-                delayedTrips += 1
-                totalLateMinutes += delay
-                worstDelayMinutes = max(worstDelayMinutes, delay)
-            } else if delay < 0 {
-                earlyTrips += 1
-            } else {
-                onTimeTrips += 1
-            }
-        }
-
-        return LogDelaySummaryMetrics(
-            tripCount: pastTrips.count,
-            delayedTrips: delayedTrips,
-            earlyTrips: earlyTrips,
-            onTimeTrips: onTimeTrips,
-            totalLateMinutes: totalLateMinutes,
-            worstDelayMinutes: worstDelayMinutes
-        )
-    }
-
     private func fallbackSortDate(for trip: Trip) -> Date {
         if let date = trip.travelDate {
             return date
@@ -1372,15 +1324,6 @@ struct SheetContent: View {
             referenceDate: Date(),
             includeProgressDetails: false
         ).adjustedDeparture
-    }
-
-    private func arrivalDelayMinutes(for trip: Trip) -> Int {
-        TripTimingResolver().resolve(
-            trip: trip,
-            delayInfo: LiveDelayStore.shared.info(for: trip.id),
-            referenceDate: Date(),
-            includeProgressDetails: false
-        ).destinationDelayMinutes
     }
 
     private func tripDuration(for trip: Trip) -> TimeInterval? {
@@ -2435,64 +2378,6 @@ private struct LogSummaryMetrics {
     }
 }
 
-private struct LogDelaySummaryMetrics {
-    let tripCount: Int
-    let delayedTrips: Int
-    let earlyTrips: Int
-    let onTimeTrips: Int
-    let totalLateMinutes: Int
-    let worstDelayMinutes: Int
-
-    var delayedShareText: String {
-        percentageText(for: delayedTrips)
-    }
-
-    var earlyShareText: String {
-        percentageText(for: earlyTrips)
-    }
-
-    var onTimeShareText: String {
-        percentageText(for: onTimeTrips)
-    }
-
-    var averageLateText: String {
-        guard delayedTrips > 0 else { return "—" }
-        return "\(Int((Double(totalLateMinutes) / Double(delayedTrips)).rounded()))m"
-    }
-
-    var totalDelayText: String {
-        guard totalLateMinutes > 0 else { return "—" }
-        return formattedDuration(minutes: totalLateMinutes)
-    }
-
-    var worstDelayText: String {
-        guard worstDelayMinutes > 0 else { return "—" }
-        return "+\(worstDelayMinutes)m"
-    }
-
-    private func percentageText(for count: Int) -> String {
-        guard tripCount > 0 else { return "0%" }
-        let percent = Int((Double(count) / Double(tripCount) * 100).rounded())
-        return "\(percent)%"
-    }
-
-    private func formattedDuration(minutes: Int) -> String {
-        if minutes >= 24 * 60 {
-            let days = minutes / (24 * 60)
-            let hours = (minutes % (24 * 60)) / 60
-            return hours > 0 ? "\(days)d \(hours)h" : "\(days)d"
-        }
-
-        if minutes >= 60 {
-            let hours = minutes / 60
-            let remainingMinutes = minutes % 60
-            return remainingMinutes > 0 ? "\(hours)h \(remainingMinutes)m" : "\(hours)h"
-        }
-
-        return "\(minutes)m"
-    }
-}
-
 private struct LogSummaryCard: View {
     let metrics: LogSummaryMetrics
 
@@ -2526,69 +2411,6 @@ private struct LogSummaryCard: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
         )
-    }
-}
-
-private struct LogDelaySummaryCard: View {
-    let metrics: LogDelaySummaryMetrics
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Delay Pattern")
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
-                    Text("Arrival outcomes across past rides")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "clock.badge.exclamationmark.fill")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.orange)
-            }
-
-            HStack(spacing: 8) {
-                DelayOutcomePill(title: "Late", value: metrics.delayedShareText, color: .red)
-                DelayOutcomePill(title: "On Time", value: metrics.onTimeShareText, color: .green)
-                DelayOutcomePill(title: "Early", value: metrics.earlyShareText, color: .blue)
-            }
-
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
-                LogSummaryTile(title: "Late Rides", value: "\(metrics.delayedTrips)", icon: "exclamationmark.triangle.fill", tint: .red)
-                LogSummaryTile(title: "Avg Late", value: metrics.averageLateText, icon: "clock.arrow.circlepath", tint: .orange)
-                LogSummaryTile(title: "Total Delay", value: metrics.totalDelayText, icon: "sum", tint: .red)
-                LogSummaryTile(title: "Worst Delay", value: metrics.worstDelayText, icon: "clock.badge.exclamationmark.fill", tint: .red)
-            }
-        }
-        .padding(16)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.18), lineWidth: 1)
-        )
-    }
-}
-
-private struct DelayOutcomePill: View {
-    let title: String
-    let value: String
-    let color: Color
-
-    var body: some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
-            Text(title)
-                .font(.caption2.weight(.semibold))
-                .textCase(.uppercase)
-        }
-        .foregroundStyle(color)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(color.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -2922,10 +2744,6 @@ private struct SettingsSheet: View {
     @State private var automaticStationDetection = TripLocationDetectionPreferences.isEnabled
     @State private var batterySavingMode = TripLocationDetectionPreferences.batterySavingEnabled
     @State private var continuousSpeedCapsule = TripLocationDetectionPreferences.continuousSpeedCapsuleEnabled
-    @State private var notifyDelayChanges = BlitzNotificationPreferences.delayChangesEnabled
-    @State private var notifyPlatformChanges = BlitzNotificationPreferences.platformChangesEnabled
-    @State private var notifyEarlyTrains = BlitzNotificationPreferences.earlyTrainsEnabled
-    @State private var delayThreshold = BlitzNotificationPreferences.delayChangeThreshold
     @State private var missedTrainDebugUI = TripLocationDetectionPreferences.missedTrainDebugUIEnabled
     @State private var missedTrainSimulation = TripLocationDetectionPreferences.missedTrainSimulationEnabled
     @State private var isImporting = false
@@ -2976,8 +2794,8 @@ private struct SettingsSheet: View {
                         TripLocationDetectionPreferences.batterySavingEnabled = enabled
                     }
                     settingRow(
-                        title: "Always show speed and limit",
-                        description: "Keeps both values visible in the glass capsule. Turn this off to reveal them only for two minutes after tapping, which uses less battery.",
+                        title: "Always show speed",
+                        description: "Keeps your GPS speed visible in the glass capsule. Turn this off to reveal it for two minutes after tapping, which uses less battery.",
                         isOn: $continuousSpeedCapsule
                     )
                     .onChange(of: continuousSpeedCapsule) { _, enabled in
@@ -3003,52 +2821,6 @@ private struct SettingsSheet: View {
 
                 Section {
                     settingRow(
-                        title: "Delay changes",
-                        description: "Alert when the delay changes by at least the selected threshold.",
-                        isOn: $notifyDelayChanges
-                    )
-                    .onChange(of: notifyDelayChanges) { _, enabled in
-                        BlitzNotificationPreferences.delayChangesEnabled = enabled
-                        if enabled { BlitzNotificationPreferences.requestAuthorization() }
-                    }
-
-                    Picker("Delay threshold", selection: $delayThreshold) {
-                        Text("5 minutes").tag(5)
-                        Text("10 minutes").tag(10)
-                        Text("15 minutes").tag(15)
-                    }
-                    .disabled(!notifyDelayChanges)
-                    .onChange(of: delayThreshold) { _, value in
-                        BlitzNotificationPreferences.delayChangeThreshold = value
-                    }
-
-                    settingRow(
-                        title: "Platform changes",
-                        description: "Alert when a confirmed platform changes.",
-                        isOn: $notifyPlatformChanges
-                    )
-                    .onChange(of: notifyPlatformChanges) { _, enabled in
-                        BlitzNotificationPreferences.platformChangesEnabled = enabled
-                        if enabled { BlitzNotificationPreferences.requestAuthorization() }
-                    }
-
-                    settingRow(
-                        title: "Train becomes early",
-                        description: "Alert when live data changes from on time or late to early. This is off by default.",
-                        isOn: $notifyEarlyTrains
-                    )
-                    .onChange(of: notifyEarlyTrains) { _, enabled in
-                        BlitzNotificationPreferences.earlyTrainsEnabled = enabled
-                        if enabled { BlitzNotificationPreferences.requestAuthorization() }
-                    }
-                } header: {
-                    Text("Notifications")
-                } footer: {
-                    Text("Alerts are sent only after a previous live snapshot exists and a meaningful change is detected.")
-                }
-
-                Section {
-                    settingRow(
                         title: "Missed-train debug UI",
                         description: "Shows the development status capsule explaining why a missed-train prompt is or is not ready.",
                         isOn: $missedTrainDebugUI
@@ -3065,6 +2837,10 @@ private struct SettingsSheet: View {
                     .onChange(of: missedTrainSimulation) { _, enabled in
                         TripLocationDetectionPreferences.missedTrainSimulationEnabled = enabled
                     }
+
+                    #if DEBUG
+                    LiveActivityPreviewControls()
+                    #endif
 
                 } header: {
                     Text("Experimental")

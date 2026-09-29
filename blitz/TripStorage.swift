@@ -1,5 +1,13 @@
 import Foundation
 
+enum TripDebugLog {
+    nonisolated static func added(_ trip: Trip) {
+        #if DEBUG
+        print("[Trip] Added GTFS trip_id: \(trip.gtfsTripId ?? "<unmatched>")")
+        #endif
+    }
+}
+
 struct StoredSegment: Codable, Equatable {
     let id: Int
     let startId: String
@@ -8,9 +16,6 @@ struct StoredSegment: Codable, Equatable {
     let endName: String?
     let departureSeconds: Int?
     let arrivalSeconds: Int?
-    let maxSpeed: Int
-    let trainLengthMeters: Int?
-    let trainTonnage: Int?
 
     init(_ segment: GTFSSegment) {
         id = segment.id
@@ -20,16 +25,12 @@ struct StoredSegment: Codable, Equatable {
         endName = segment.endName
         departureSeconds = segment.departureSeconds
         arrivalSeconds = segment.arrivalSeconds
-        maxSpeed = segment.maxSpeed
-        trainLengthMeters = segment.trainLengthMeters
-        trainTonnage = segment.trainTonnage
     }
 
     var gtfsSegment: GTFSSegment {
         GTFSSegment(id: id, startId: startId, startName: startName, endId: endId,
                     endName: endName, departureSeconds: departureSeconds,
-                    arrivalSeconds: arrivalSeconds, maxSpeed: maxSpeed,
-                    trainLengthMeters: trainLengthMeters, trainTonnage: trainTonnage)
+                    arrivalSeconds: arrivalSeconds)
     }
 }
 
@@ -197,10 +198,13 @@ final class TripStorage {
         let existingPast = loadPastTrips()
         let activeKeys = Set(existingActive.map(stableKey(for:)))
         let pastKeys = Set(existingPast.map(stableKey(for:)))
-        let active = existingActive + document.activeTrips.filter { !activeKeys.contains(stableKey(for: $0)) }
-        let past = existingPast + document.pastTrips.filter { !pastKeys.contains(stableKey(for: $0)) }
+        let addedActive = document.activeTrips.filter { !activeKeys.contains(stableKey(for: $0)) }
+        let addedPast = document.pastTrips.filter { !pastKeys.contains(stableKey(for: $0)) }
+        let active = existingActive + addedActive
+        let past = existingPast + addedPast
         saveTrips(active)
         savePastTrips(past)
+        (addedActive + addedPast).forEach(TripDebugLog.added)
         return (active, past)
     }
 

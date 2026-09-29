@@ -109,12 +109,9 @@ struct TripTimingResolver {
 
         let originSchedule = originId.flatMap { scheduleProvider.stopSchedule(for: tripIdentifier, stopId: $0) }
         let destinationSchedule = destinationId.flatMap { scheduleProvider.stopSchedule(for: tripIdentifier, stopId: $0) }
-        let baseDate = serviceBaseDate(
-            for: travelDate,
-            originSchedule: originSchedule,
-            destinationSchedule: destinationSchedule,
-            referenceDate: referenceDate
-        )
+        // A saved GTFS trip stores its selected service date. Choosing a
+        // nearby daily run can make tomorrow's trip look active today.
+        let baseDate = calendar.startOfDay(for: travelDate)
 
         let originDelay = terminalDelay(
             for: .departure,
@@ -195,50 +192,6 @@ struct TripTimingResolver {
         )
     }
 
-    private func serviceBaseDate(
-        for travelDate: Date,
-        originSchedule: GTFSDataSource.GTFSStopSchedule?,
-        destinationSchedule: GTFSDataSource.GTFSStopSchedule?,
-        referenceDate: Date
-    ) -> Date {
-        let storedBase = calendar.startOfDay(for: travelDate)
-        let candidateBases = [-1, 0, 1].compactMap {
-            calendar.date(byAdding: .day, value: $0, to: storedBase)
-        }
-
-        let candidates = candidateBases.compactMap { base -> (base: Date, departure: Date, arrival: Date?)? in
-            guard let departure = originSchedule?.departureDate(on: base) ?? originSchedule?.arrivalDate(on: base) else {
-                return nil
-            }
-            let rawArrival = destinationSchedule?.arrivalDate(on: base) ?? destinationSchedule?.departureDate(on: base)
-            let arrival = ScheduleDateUtils.normalizedArrival(rawArrival, relativeTo: departure)
-            return (base, departure, arrival)
-        }
-
-        if let activeService = candidates
-            .filter({
-                guard let arrival = $0.arrival else { return false }
-                return referenceDate >= $0.departure.addingTimeInterval(-5 * 60)
-                    && referenceDate <= arrival.addingTimeInterval(60 * 60)
-            })
-            .min(by: { lhs, rhs in
-                guard let lhsArrival = lhs.arrival, let rhsArrival = rhs.arrival else {
-                    return lhs.departure < rhs.departure
-                }
-                return lhsArrival < rhsArrival
-            }) {
-            return activeService.base
-        }
-
-        if let nearestUpcoming = candidates
-            .filter({ $0.departure >= referenceDate.addingTimeInterval(-5 * 60) })
-            .min(by: { $0.departure < $1.departure }) {
-            return nearestUpcoming.base
-        }
-
-        return storedBase
-    }
-
     private func phase(referenceDate: Date, departure: Date?, arrival: Date?) -> TripPhase {
         guard let departure else { return .preDeparture }
         if let arrival, referenceDate >= arrival {
@@ -257,13 +210,6 @@ struct TripTimingResolver {
         delayInfo: DelayInfo?,
         fallback: Int
     ) -> Int {
-        switch event {
-        case .departure:
-            if let value = stop?.departureDelayMinutes { return value }
-        case .arrival:
-            if let value = stop?.arrivalDelayMinutes { return value }
-        }
-
         if let stationDelay = stationDelay(for: stopName ?? stop?.name, in: delayInfo) {
             switch event {
             case .departure:
@@ -271,6 +217,13 @@ struct TripTimingResolver {
             case .arrival:
                 if let value = stationDelay.arrivalDelayMinutes { return value }
             }
+        }
+
+        switch event {
+        case .departure:
+            if let value = stop?.departureDelayMinutes { return value }
+        case .arrival:
+            if let value = stop?.arrivalDelayMinutes { return value }
         }
 
         return fallback

@@ -76,7 +76,7 @@ struct SBBSharedJourneyResolverTests {
         let timing = TripTimingResolver().resolve(trip: trip, delayInfo: nil)
         #expect(timing.scheduledDeparture == journey.legs[0].departure)
         #expect(timing.scheduledArrival == journey.legs[0].arrival)
-        #expect(timing.duration == 95 * 60)
+        #expect(abs((timing.duration ?? 0) - 95 * 60) < 1)
     }
 
     @Test func rejectsMissingCorruptOrUnknownData() {

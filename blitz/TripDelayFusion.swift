@@ -1,7 +1,7 @@
 import Foundation
 
 enum TripDelayPredictionSource: String, Codable {
-    case infoFerConfirmed = "InfoFer confirmed"
+    case liveConfirmed = "Live confirmed"
     case gpsEstimated = "GPS estimated"
     case awaitingNextStationUpdate = "Awaiting next station update"
 }
@@ -16,7 +16,7 @@ struct TripDelayPrediction: Equatable, Codable {
 final class TripDelayFusionStore {
     static let shared = TripDelayFusionStore()
 
-    private static let infoFerFreshnessWindow: TimeInterval = 15 * 60
+    private static let liveFreshnessWindow: TimeInterval = 15 * 60
 
     private let key = "raily.tripDetection.delayPredictions"
     private var predictions: [String: TripDelayPrediction]
@@ -32,12 +32,12 @@ final class TripDelayFusionStore {
 
     func prediction(for trip: Trip) -> TripDelayPrediction? {
         guard let prediction = predictions[stateKey(for: trip)] else { return nil }
-        guard prediction.source == .infoFerConfirmed else { return prediction }
+        guard prediction.source == .liveConfirmed else { return prediction }
 
-        // A persisted InfoFer estimate must not remain authoritative forever.
+        // A persisted live estimate must not remain authoritative forever.
         // Once it is stale, expose a neutral state until GPS progress or a
         // new station update supplies better evidence.
-        guard Date().timeIntervalSince(prediction.updatedAt) <= Self.infoFerFreshnessWindow else {
+        guard Date().timeIntervalSince(prediction.updatedAt) <= Self.liveFreshnessWindow else {
             return TripDelayPrediction(
                 predictedArrival: nil,
                 delayMinutes: nil,
@@ -52,24 +52,24 @@ final class TripDelayFusionStore {
         trip: Trip,
         progress: TripGPSProgress?,
         timing: ResolvedTripTiming,
-        infoFer: DelayInfo?,
+        liveInfo: DelayInfo?,
         now: Date = Date()
     ) {
         let tripKey = stateKey(for: trip)
-        let freshInfoFer: DelayInfo? = {
-            guard let infoFer,
-                  let fetchedAt = infoFer.fetchedAt,
-                  now.timeIntervalSince(fetchedAt) <= Self.infoFerFreshnessWindow else {
+        let freshLiveInfo: DelayInfo? = {
+            guard let liveInfo,
+                  let fetchedAt = liveInfo.fetchedAt,
+                  now.timeIntervalSince(fetchedAt) <= Self.liveFreshnessWindow else {
                 return nil
             }
-            return infoFer
+            return liveInfo
         }()
 
-        if let confirmedDelay = freshInfoFer?.delayMinutes {
+        if let confirmedDelay = freshLiveInfo?.delayMinutes {
             predictions[tripKey] = TripDelayPrediction(
                 predictedArrival: timing.adjustedArrival,
                 delayMinutes: confirmedDelay,
-                source: .infoFerConfirmed,
+                source: .liveConfirmed,
                 updatedAt: now
             )
         } else if let progress, let scheduledDeparture = timing.scheduledDeparture,

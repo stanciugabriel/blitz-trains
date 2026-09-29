@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 import SQLite3
 import Testing
 @testable import blitz
@@ -63,11 +64,50 @@ struct SBBDataSourceTests {
         let segments = source.segments(for: "service-a")
         #expect(segments.map(\.id) == [1, 2, 10])
         #expect(segments.last?.arrivalSeconds == 25 * 3600 + 10 * 60)
-        #expect(segments.allSatisfy { $0.maxSpeed == 0 && $0.trainLengthMeters == nil && $0.trainTonnage == nil })
         let schedules = source.stopSchedules(for: "service-a", stopIds: ["station-a", "station-d"])
         #expect(schedules["station-d"]?.arrivalSeconds == 90600)
-        #expect(source.delayHistory(for: "101") == nil)
         #expect(source.departures(from: "station-a", after: Date()).isEmpty)
+    }
+
+    @Test func sharedJourneyLegsKeepTheirConnectionIdentity() throws {
+        let (source, url) = try fixture()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let departure = Date(timeIntervalSince1970: 1_000_000)
+        let zurich = SharedJourney.Station(id: "8503000", name: "Zürich HB")
+        let bern = SharedJourney.Station(id: "8507000", name: "Bern")
+        let lausanne = SharedJourney.Station(id: "8501120", name: "Lausanne")
+        let journey = SharedJourney(legs: [
+            .init(origin: zurich, destination: bern, departure: departure,
+                  arrival: departure.addingTimeInterval(60 * 60), service: "IC1 101"),
+            .init(origin: bern, destination: lausanne,
+                  departure: departure.addingTimeInterval(70 * 60),
+                  arrival: departure.addingTimeInterval(130 * 60), service: "IC1 102")
+        ])
+        let trips = try source.importTrips(from: journey)
+        #expect(trips.count == 2)
+        #expect(trips[0].sharedJourneyID != nil)
+        #expect(trips[0].sharedJourneyID == trips[1].sharedJourneyID)
+        #expect(trips[0].updatingSeatInfo(car: "4", seats: ["12"], trainType: nil,
+                                         trainLength: nil, trainTonnage: nil,
+                                         trainIdentifier: nil, trainPower: nil).sharedJourneyID == trips[0].sharedJourneyID)
+    }
+
+    @Test func transferMinimumUsesActualStopPairAndParentFallback() throws {
+        let (_, url) = try fixture()
+        defer { try? FileManager.default.removeItem(at: url) }
+        var db: OpaquePointer?
+        #expect(sqlite3_open(url.path, &db) == SQLITE_OK)
+        let sql = """
+        CREATE TABLE transfers(from_stop_id TEXT, to_stop_id TEXT, transfer_type TEXT, min_transfer_time TEXT);
+        INSERT INTO transfers VALUES('a1', 'b1', '2', '240');
+        INSERT INTO transfers VALUES('station-a', 'station-d', '2', '420');
+        """
+        #expect(sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK)
+        sqlite3_close(db)
+        let source = GTFSDataSource(databaseURL: url)
+        #expect(source.minimumTransferSeconds(from: "a1", to: "b1") == 240)
+        #expect(source.minimumTransferSeconds(from: "a1", to: "d1") == 420)
+        #expect(source.minimumTransferSeconds(from: "b1", to: "d1") == nil)
     }
 
     @Test func bundledSwissDatabaseLoadsRealServices() {
@@ -81,6 +121,67 @@ struct SBBDataSourceTests {
             let variants = source.variants(for: zurich, travelDate: nil, matching: "12768")
             #expect(variants.contains { $0.originName == "Zürich Triemli" && $0.destinationName == "Zürich HB" })
         }
+    }
+
+    @Test func shapeGeometryUsesNumericOrderAndClipsAtSelectedStops() throws {
+        let (_, url) = try fixture()
+        defer { try? FileManager.default.removeItem(at: url) }
+        var db: OpaquePointer?
+        #expect(sqlite3_open(url.path, &db) == SQLITE_OK)
+        let sql = """
+        ALTER TABLE trips ADD COLUMN shape_id TEXT;
+        ALTER TABLE stop_times ADD COLUMN shape_dist_traveled REAL;
+        CREATE TABLE shapes(shape_id TEXT, shape_pt_lat REAL, shape_pt_lon REAL, shape_pt_sequence TEXT, shape_dist_traveled REAL);
+        UPDATE trips SET shape_id = CASE trip_id WHEN 'service-a' THEN 'curve' ELSE 'missing' END;
+        UPDATE stop_times SET shape_dist_traveled = CASE stop_sequence WHEN '1' THEN 0 WHEN '2' THEN 15 WHEN '10' THEN 30 ELSE 40 END;
+        INSERT INTO shapes VALUES
+          ('curve',47.38,8.54,'1',0),
+          ('curve',47.5,8.0,'2',10),
+          ('curve',46.95,7.44,'10',20),
+          ('curve',46.8,7.2,'11',30),
+          ('curve',46.52,6.63,'12',40);
+        """
+        #expect(sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK)
+        sqlite3_close(db)
+        let source = GTFSDataSource(databaseURL: url)
+        let geometry = source.routeGeometry(for: "service-a")
+        #expect(geometry.hasShape)
+        #expect(geometry.stops.count == 4) // Noncommercial checkpoint stays in geometry.
+        #expect(source.stops(for: "service-a").count == 3)
+        #expect(geometry.coordinates().map(\.longitude) == [8.54, 8.0, 7.44, 7.2, 6.63])
+        let leg = geometry.coordinates(fromSequence: 2, toSequence: 10)
+        #expect(leg.count == 3)
+        #expect(abs((leg.first?.longitude ?? 0) - 7.72) < 0.00001)
+        #expect(leg.last?.longitude == 7.2)
+        let missing = source.routeGeometry(for: "service-b")
+        #expect(!missing.hasShape)
+        #expect(missing.coordinates().count == 2)
+        #expect(source.routeGeometry(for: "unknown").coordinates().isEmpty)
+    }
+
+    @Test func missingShapeSchemaKeepsStationGeometry() throws {
+        let (source, url) = try fixture()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let geometry = source.routeGeometry(for: "service-a")
+        #expect(!geometry.hasShape)
+        #expect(geometry.coordinates().count == 4)
+        #expect(geometry.coordinates(fromSequence: 2, toSequence: 11).map(\.longitude) == [7.44, 7.2, 6.63])
+    }
+
+    @Test func bundledMiniFeedHasShapesAndPreservesStationIdentity() throws {
+        #expect(Bundle.main.url(forResource: "mini_feed", withExtension: "sqlite") != nil)
+        #expect(Bundle.main.url(forResource: "sbb_gtfs", withExtension: "db") == nil)
+        let source = GTFSDataSource.shared
+        let trip = try #require(source.searchTrips(matching: "IC1 728").first { $0.destinationName == "Genève-Aéroport" })
+        let identifier = try #require(trip.gtfsTripId)
+        let geometry = source.routeGeometry(for: identifier)
+        #expect(geometry.hasShape)
+        #expect(geometry.coordinates().count > geometry.stops.count)
+        let origin = try #require(geometry.stops.first)
+        #expect(origin.id.hasPrefix("Parent"))
+        #expect(source.stationUIC(for: origin.id) != nil)
+        #expect(source.stopSchedule(for: identifier, stopId: origin.id)?.departureSeconds != nil)
+        #expect(source.platform(trainId: identifier, stationId: origin.id) != nil)
     }
 
     @Test func publicServiceVariantsCollapseToLongestRoute() {
@@ -103,7 +204,7 @@ struct SBBDataSourceTests {
             #expect(Bool(false))
             return
         }
-        let variants = GTFSDataSource.shared.variants(for: airport, travelDate: Date(), matching: "IC1 728")
+        let variants = GTFSDataSource.shared.variants(for: airport, travelDate: nil, matching: "IC1 728")
         #expect(!variants.isEmpty)
         #expect(variants.allSatisfy { $0.title == "IC1 728" && $0.destinationName == "Genève-Aéroport" })
         #expect(variants.allSatisfy { $0.originName == "St. Gallen" })
@@ -214,6 +315,5 @@ struct SBBDataSourceTests {
         #expect(GTFSDataSource.seconds("26:05:00") == 93900)
         #expect(GTFSDataSource.seconds("12:60:00") == nil)
         #expect(GTFSDataSource.seconds(nil) == nil)
-        #expect(GTFSDataSource.supportsInfoFer == false)
     }
 }

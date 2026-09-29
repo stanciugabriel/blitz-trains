@@ -164,7 +164,17 @@ nonisolated struct FormationResponse: Codable, Sendable {
         let shortAttributes = parseShortAttributes(shortString)
         var sectors: [Int: [FormationSectorSlice]] = [:]
         var track: String?
-        let vehicles = consist.formationVehicles.sorted { $0.position < $1.position }.map { vehicle in
+        let lastVehiclePosition = consist.formationVehicles.map(\.position).max()
+        let unitVehicles = consist.formationVehicles.map { (position: $0.position, evn: $0.vehicleIdentifier?.evn) }
+        let orderedVehicles = consist.formationVehicles.sorted { $0.position < $1.position }
+        let artworks = orderedVehicles.map { vehicle in
+            FormationArtworkCatalog.select(
+                evn: vehicle.vehicleIdentifier?.evn,
+                typeCodeName: vehicle.vehicleIdentifier?.typeCodeName,
+                hasAsset: { _ in false }
+            )
+        }
+        let vehicles = orderedVehicles.enumerated().map { index, vehicle in
             let properties = vehicle.vehicleProperties
             let stop = vehicle.formationVehicleAtScheduledStops?.first { matches($0.stopPoint) }
             if track == nil { track = stop?.track }
@@ -205,52 +215,50 @@ nonisolated struct FormationResponse: Codable, Sendable {
                 for value in parsed.classes where !classes.contains(value) { classes.append(value) }
                 for feature in parsed.features { addFeature(feature) }
             }
-            // Swiss type codes use a lower-case `t` for a driving/control cab
-            // (for example Bt4-K, Bt(2E)Fam, and At). A `t` inside a parenthesized
-            // suffix is part of that suffix and does not identify the cab.
-            var parenthesisDepth = 0
-            let hasControlCab = typeName.contains { character in
-                if character == "(" { parenthesisDepth += 1; return false }
-                if character == ")" { parenthesisDepth = max(0, parenthesisDepth - 1); return false }
-                return character == "t" && parenthesisDepth == 0
-            }
-            // The API uses number 0 both for true locomotives and for
-            // unnumbered passenger/control cars. The type code is therefore
-            // the authoritative locomotive marker; `t` only marks a cab.
-            let evnParts = vehicle.vehicleIdentifier?.evn?.split(separator: " ").map(String.init) ?? []
-            let isRe460 = typeName == "Re460" || evnParts.contains("460")
-            let isLocomotiveType = isRe460 || typeName.hasPrefix("Re") || typeName == "LK"
+            let artwork = artworks[index]
             let position: String
-            if isLocomotiveType {
+            if artwork.isLocomotive {
                 position = "Loco"
             } else if let number = vehicle.number, number > 0 {
                 position = "Car \(number)"
             } else {
                 position = "Car \(vehicle.position)"
             }
-            // In SBB EVNs the first digit of the vehicle series alternates the
-            // cab orientation (150x/350x face right, 250x/450x face left).
-            // Fall back to the consist's physical order when no EVN is given.
+            // End cabs face outward; interior adjacent cabs meet nose to nose.
+            // Other EMU cabs face out of their unit.
             let facesRight: Bool = {
-                guard let evn = vehicle.vehicleIdentifier?.evn else { return vehicle.position % 2 == 0 }
-                let parts = evn.split(separator: " ")
-                guard parts.count > 2, let first = parts[2].first, let digit = first.wholeNumberValue else {
-                    return vehicle.position % 2 == 0
+                if let layoutDirection = FormationArtworkCatalog.controlCabFacesRight(
+                    at: index, among: artworks
+                ) {
+                    return layoutDirection
                 }
-                return digit % 2 == 1
+                if artwork.isCab && !artwork.isLocomotive,
+                   let unitDirection = FormationArtworkCatalog.unitCabFacesRight(
+                       evn: vehicle.vehicleIdentifier?.evn,
+                       position: vehicle.position,
+                       among: unitVehicles
+                   ) {
+                    return unitDirection
+                }
+                let parts = vehicle.vehicleIdentifier?.evn?.split(whereSeparator: \.isWhitespace) ?? []
+                if parts.count > 2, parts[2].count == 4,
+                   let first = parts[2].first?.wholeNumberValue, (1...4).contains(first) {
+                    return first % 2 == 1
+                }
+                return artwork.isCab && vehicle.position == lastVehiclePosition
             }()
             return FormationVehicle(id: vehicle.position, position: position,
-                classes: classes, type: typeName,
-                evn: vehicle.vehicleIdentifier?.evn, isCab: hasControlCab || isLocomotiveType,
-                artworkName: isRe460 ? "re460" : nil,
-                mirrorsArtwork: !isRe460,
+                classes: classes, type: FormationArtworkCatalog.displayType(
+                    evn: vehicle.vehicleIdentifier?.evn, typeCodeName: vehicle.vehicleIdentifier?.typeCodeName),
+                evn: vehicle.vehicleIdentifier?.evn, isCab: artwork.isCab,
+                isLocomotive: artwork.isLocomotive,
                 facesRight: facesRight, isLocked: properties?.closed == true,
                 features: features,
                 firstClassSeats: properties?.number1class,
                 secondClassSeats: properties?.number2class,
                 bikeSeats: properties?.numberBikeHooks,
                 wheelchairSeats: properties?.accessibilityProperties?.numberWheelchairSpaces,
-                operatorName: "SBB")
+                operatorName: operatorName)
         }
         return PlatformFormation(vehicles: vehicles, track: track, sectors: sectors.isEmpty ? nil : sectors)
     }
@@ -322,6 +330,187 @@ nonisolated struct FormationResponse: Codable, Sendable {
     }
 }
 
+enum FormationArtworkCatalog {
+    struct Selection {
+        let name: String
+        let rightName: String?
+        let isLocomotive: Bool
+        let isCab: Bool
+        let mirrorsArtwork: Bool
+
+        init(name: String, rightName: String? = nil, isLocomotive: Bool, isCab: Bool, mirrorsArtwork: Bool) {
+            self.name = name
+            self.rightName = rightName
+            self.isLocomotive = isLocomotive
+            self.isCab = isCab
+            self.mirrorsArtwork = mirrorsArtwork
+        }
+
+        func assetName(facesRight: Bool) -> String {
+            facesRight ? rightName ?? name : name
+        }
+    }
+
+    private static let electricLocomotives: Set<String> = [
+        "610", "193", "420", "421", "430", "450", "460", "474", "482", "484", "494",
+        "620", "465", "475", "485", "486", "187"
+    ]
+    private static let emus: Set<String> = [
+        "550", "500", "510", "514", "501", "502", "503", "511", "512", "520", "521",
+        "522", "523", "524", "526", "528", "531", "532", "533", "591", "560", "561", "562", "540"
+    ]
+    private static let flirtModels: Set<String> = ["521", "522", "523", "524", "526", "528"]
+    private static let singleDeckCars: Set<String> = [
+        "10-75", "10-90", "10-95", "19-90", "20-43", "20-90", "20-95", "21-73",
+        "21-75", "21-95", "29-43", "50-91", "59-00", "81-95", "82-90", "88-94",
+        "89-70", "93-61"
+    ]
+    private static let singleDeckControlCars: Set<String> = ["28-94", "80-33", "82-33"]
+    private static let doubleDeckCars: Set<String> = ["16-94", "26-33", "26-73", "26-94", "36-33", "66-94", "86-94"]
+    private static let doubleDeckControlCars: Set<String> = ["39-43", "86-33"]
+
+    static func displayType(evn: String?, typeCodeName: String?) -> String {
+        if let model = modelCode(from: evn), flirtModels.contains(model) {
+            return "RABe \(model)"
+        }
+        guard let typeCodeName, !typeCodeName.isEmpty else { return "Vehicle" }
+        var label = ""
+        var parenthesisDepth = 0
+        for character in typeCodeName {
+            if character == "(" {
+                parenthesisDepth += 1
+            } else if character == ")" {
+                parenthesisDepth = max(0, parenthesisDepth - 1)
+            } else if parenthesisDepth == 0 {
+                label.append(character)
+            }
+        }
+        return label.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func modelCode(from evn: String?) -> String? {
+        guard let evn else { return nil }
+        let parts = evn.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard parts.count > 2 else { return nil }
+        let field = parts[2].count == 1 && parts[2].allSatisfy(\.isNumber) && parts.count > 3
+            ? parts[3] : parts[2]
+        if field.count == 4, field.allSatisfy(\.isNumber) {
+            let series = String(field.suffix(3))
+            if electricLocomotives.contains(series) || emus.contains(series) { return series }
+        }
+        return field
+    }
+
+    private static func emuUnitKey(from evn: String?) -> String? {
+        guard let evn,
+              let model = modelCode(from: evn), emus.contains(model) else { return nil }
+        let parts = evn.split(whereSeparator: \.isWhitespace)
+        guard parts.count >= 4,
+              let serial = parts.last?.split(separator: "-").first,
+              serial.allSatisfy(\.isNumber) else { return nil }
+        return "\(parts[0])-\(parts[1])-\(model)-\(serial)"
+    }
+
+    static func unitCabFacesRight(
+        evn: String?, position: Int,
+        among vehicles: [(position: Int, evn: String?)]
+    ) -> Bool? {
+        guard let key = emuUnitKey(from: evn) else { return nil }
+        let positions = vehicles.compactMap { emuUnitKey(from: $0.evn) == key ? $0.position : nil }
+        guard positions.count > 1, let last = positions.max() else { return nil }
+        return position == last
+    }
+
+    static func controlCabFacesRight(at index: Int, among artworks: [Selection]) -> Bool? {
+        guard artworks.indices.contains(index), artworks[index].isCab,
+              !artworks[index].isLocomotive else { return nil }
+        if index == artworks.startIndex { return false }
+        if index == artworks.index(before: artworks.endIndex) { return true }
+        func isControlCab(_ neighbor: Int) -> Bool {
+            artworks.indices.contains(neighbor) && artworks[neighbor].isCab
+                && !artworks[neighbor].isLocomotive
+        }
+        if isControlCab(index + 1) { return true }
+        if isControlCab(index - 1) { return false }
+        return nil
+    }
+
+    static func select(evn: String?, typeCodeName: String?, hasAsset: (String) -> Bool) -> Selection {
+        let model = modelCode(from: evn)
+        let type = typeCodeName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let isLocomotive = model.map(electricLocomotives.contains) == true
+            || type.hasPrefix("Re") || type == "LK"
+
+        let isEMU = model.map(emus.contains) == true
+        let isDoubleDeck: Bool = {
+            if let model {
+                if doubleDeckCars.contains(model) || doubleDeckControlCars.contains(model) { return true }
+                if singleDeckCars.contains(model) || singleDeckControlCars.contains(model) || emus.contains(model) { return false }
+            }
+            let upperType = type.uppercased()
+            return upperType.contains("DOSTO") || upperType.contains("IC2000") || upperType.hasPrefix("DD")
+        }()
+        let hasControlCab: Bool = {
+            guard !type.isEmpty else {
+                return model.map { singleDeckControlCars.contains($0) || doubleDeckControlCars.contains($0) } == true
+            }
+            // Lowercase t marks a control cab, except within parenthesized suffixes.
+            var depth = 0
+            for character in type {
+                if character == "(" { depth += 1 }
+                else if character == ")" { depth = max(0, depth - 1) }
+                else if character == "t" && depth == 0 { return true }
+            }
+            return false
+        }()
+
+        // Specific artwork takes priority. A left/right pair picks the matching
+        // image; an -f image faces left by default and may be mirrored. An
+        // unsuffixed image is used as supplied in either position.
+        if let model {
+            let left = "\(model)-left"
+            let right = "\(model)-right"
+            if hasAsset(left) && hasAsset(right) {
+                return Selection(name: left, rightName: right, isLocomotive: isLocomotive,
+                                 isCab: isLocomotive || hasControlCab, mirrorsArtwork: false)
+            }
+            let flippable = "\(model)-f"
+            if hasAsset(flippable) {
+                return Selection(name: flippable, isLocomotive: isLocomotive,
+                                 isCab: isLocomotive || hasControlCab, mirrorsArtwork: true)
+            }
+            if hasAsset(model) {
+                return Selection(name: model, isLocomotive: isLocomotive,
+                                 isCab: isLocomotive || hasControlCab, mirrorsArtwork: false)
+            }
+        }
+
+        if let model, flirtModels.contains(model),
+           hasAsset("flirt-c-f"), hasAsset("flirt-cc-f") {
+            return Selection(name: hasControlCab ? "flirt-cc-f" : "flirt-c-f",
+                             isLocomotive: false, isCab: hasControlCab, mirrorsArtwork: true)
+        }
+
+        // The existing Re460 artwork is unsuffixed and keeps its lettering.
+        if model == "460" || type == "Re460" {
+            return Selection(name: "re460", isLocomotive: true, isCab: true, mirrorsArtwork: false)
+        }
+        if isLocomotive {
+            return Selection(name: "el-default", isLocomotive: true, isCab: true, mirrorsArtwork: true)
+        }
+
+        let name: String
+        if isDoubleDeck {
+            name = hasControlCab ? "ddcc-default" : "dd-default"
+        } else if isEMU && hasControlCab && hasAsset("emuc-default") {
+            name = "emuc-default"
+        } else {
+            name = hasControlCab ? "cc-default" : "c-default"
+        }
+        return Selection(name: name, isLocomotive: false, isCab: hasControlCab, mirrorsArtwork: true)
+    }
+}
+
 struct TripFormationSection: View {
     let trip: Trip
     @AppStorage(FormationSettings.key) private var server = FormationSettings.defaultServer
@@ -342,16 +531,15 @@ struct TripFormationSection: View {
                 let number = sourceText.split(whereSeparator: { !$0.isASCII || !$0.isNumber })
                     .map(String.init).reversed()
                     .first(where: { !$0.isEmpty })
-                // Imported/shared journeys may not carry the GTFS agency row;
-                // SBB formations use EVU 11.
-                let agency = trip.agencyId ?? "11"
-                guard let number else { throw FormationFailure.invalidRequest }
+                guard let agency = trip.agencyId, !agency.isEmpty, let number else {
+                    throw FormationFailure.invalidRequest
+                }
                 let url = try FormationSettings.request(server: server, agency: agency, number: number, date: trip.travelDate)
                 let result = try await FormationService.shared.load(url: url)
                 try Task.checkCancellation()
                 let uic = trip.sharedJourneyLeg?.origin.id ?? GTFSDataSource.shared.stationUIC(for: trip.originStopId)
                 formation = try result.response.formation(boardingUIC: uic, boardingName: trip.originName,
-                    operatorName: GTFSDataSource.shared.agencyInfo(for: agency)?.name ?? agency)
+                    operatorName: agency == "11" ? "SBB" : (GTFSDataSource.shared.agencyInfo(for: agency)?.name ?? agency))
             } catch is CancellationError { return }
             catch { formation = nil }
         }

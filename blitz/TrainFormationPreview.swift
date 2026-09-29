@@ -14,7 +14,7 @@ struct TrainFormationPreview: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Train Formation")
                     .font(.system(size: 20, weight: .semibold))
@@ -25,15 +25,16 @@ struct TrainFormationPreview: View {
             ScrollView(.horizontal) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 0) {
-                        ForEach(displayedVehicles) { vehicle in
-                            vehicleColumn(vehicle)
+                        ForEach(displayedVehicles.indices, id: \.self) { index in
+                            vehicleColumn(displayedVehicles[index])
+                                .padding(.trailing, gap(after: index))
                         }
                     }
                     if formation.sectors != nil {
                         sectorStrip
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 2)
             }
             .contentMargins(.horizontal, 16, for: .scrollContent)
             .scrollIndicators(.hidden)
@@ -52,7 +53,7 @@ struct TrainFormationPreview: View {
     private func vehicleColumn(_ vehicle: FormationVehicle) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             vehicleArtwork(vehicle)
-                .frame(height: 116, alignment: .bottom)
+                .frame(height: 76, alignment: .bottom)
                 .accessibilityLabel("\(vehicle.position) side profile")
 
             HStack(spacing: 4) {
@@ -74,15 +75,17 @@ struct TrainFormationPreview: View {
             }
 
             FormationFlowLayout(spacing: 4) {
-                ForEach(vehicle.classes, id: \.self) { coachClass in
-                    FormationBadge(title: "Class \(coachClass)", symbol: nil,
-                                   text: coachClass, isClass: true, isLocked: vehicle.isLocked)
+                if vehicle.classes.contains("1") || (vehicle.firstClassSeats ?? 0) > 0 {
+                    FormationBadge(title: "First class", symbol: nil,
+                                   text: "1", isClass: true, isLocked: vehicle.isLocked)
                 }
-                if let seats = vehicle.firstClassSeats, seats > 0 {
-                    FormationCountBadge(symbol: "airplaneseat", value: seats, title: "First-class seats", isLocked: vehicle.isLocked)
+                if vehicle.classes.contains("2") || (vehicle.secondClassSeats ?? 0) > 0 {
+                    FormationBadge(title: "Second class", symbol: nil,
+                                   text: "2", isClass: true, isLocked: vehicle.isLocked)
                 }
-                if let seats = vehicle.secondClassSeats, seats > 0 {
-                    FormationCountBadge(symbol: "airplaneseat", value: seats, title: "Second-class seats", isLocked: vehicle.isLocked)
+                let seatCount = max(0, vehicle.firstClassSeats ?? 0) + max(0, vehicle.secondClassSeats ?? 0)
+                if seatCount > 0 {
+                    FormationSeatBadge(seatCount: seatCount, isLocked: vehicle.isLocked)
                 }
                 if let bikes = vehicle.bikeSeats, bikes > 0 {
                     FormationCountBadge(symbol: "bicycle", value: bikes, title: "Bike spaces", isLocked: vehicle.isLocked)
@@ -90,7 +93,10 @@ struct TrainFormationPreview: View {
                 if let wheelchairs = vehicle.wheelchairSeats, wheelchairs > 0 {
                     FormationCountBadge(symbol: "figure.roll", value: wheelchairs, title: "Wheelchair spaces", isLocked: vehicle.isLocked)
                 }
-                ForEach(vehicle.features) { feature in
+                ForEach(vehicle.features.filter { feature in
+                    !(feature == .bicycle && (vehicle.bikeSeats ?? 0) > 0)
+                        && !(feature == .accessible && (vehicle.wheelchairSeats ?? 0) > 0)
+                }) { feature in
                     FormationBadge(title: feature.title, symbol: feature.symbol, text: nil,
                                    isClass: false, isLocked: vehicle.isLocked)
                 }
@@ -98,7 +104,7 @@ struct TrainFormationPreview: View {
 
             if let evn = vehicle.evn, !evn.isEmpty {
                 Text(evn)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
@@ -108,18 +114,34 @@ struct TrainFormationPreview: View {
         .accessibilityElement(children: .contain)
     }
 
-    @ViewBuilder
     private func vehicleArtwork(_ vehicle: FormationVehicle) -> some View {
-        // Both PNGs use the same 251px height. A shared scale keeps rooflines,
-        // wheels and gangways aligned without adding gaps or stretching a cab.
-        // This supplied cab faces right; mirroring it is explicitly supported.
-        let suppliedAsset = vehicle.artworkName ?? (vehicle.isCab ? "loco" : "car")
-        let directionalAsset = vehicle.facesRight ? vehicle.rightArtwork : vehicle.leftArtwork
-        Image(directionalAsset ?? suppliedAsset)
-            .resizable()
-            .scaledToFit()
-            .frame(width: vehicle.displayWidth, alignment: .bottom)
-            .scaleEffect(x: vehicle.isCab && vehicle.mirrorsArtwork && !vehicle.facesRight && directionalAsset == nil ? -1 : 1, y: 1)
+        let silhouette = FormationSilhouette(isCab: vehicle.isCab,
+                                             isLocomotive: vehicle.isLocomotive,
+                                             facesRight: vehicle.facesRight)
+        let bodyColors = vehicle.isLocked
+            ? [Color(red: 0.72, green: 0.73, blue: 0.75), Color(red: 0.64, green: 0.65, blue: 0.68)]
+            : [Color(red: 0.86, green: 0.88, blue: 0.91), Color(red: 0.75, green: 0.79, blue: 0.83)]
+        return silhouette
+            .fill(LinearGradient(colors: bodyColors, startPoint: .top, endPoint: .bottom))
+            .frame(width: vehicle.displayWidth, height: vehicle.isLocomotive ? 62 : 68)
+            .overlay(alignment: .bottom) {
+                if !vehicle.isLocomotive && (vehicle.classes.contains("1") || (vehicle.firstClassSeats ?? 0) > 0) {
+                    Rectangle()
+                        .fill(Color(red: 1, green: 0.76, blue: 0.08))
+                        .frame(height: 8)
+                }
+            }
+            .clipShape(silhouette)
+            .overlay { silhouette.stroke(Color(red: 0.39, green: 0.45, blue: 0.51).opacity(0.65), lineWidth: 1) }
+    }
+
+    private func gap(after index: Int) -> CGFloat {
+        guard index + 1 < displayedVehicles.count else { return 0 }
+        let vehicle = displayedVehicles[index]
+        let next = displayedVehicles[index + 1]
+        if vehicle.isLocomotive || next.isLocomotive { return 20 }
+        if vehicle.isCab && next.isCab && vehicle.facesRight && !next.facesRight { return 18 }
+        return 10
     }
 
     private func sectorSlices(for vehicle: FormationVehicle) -> [FormationSectorSlice] {
@@ -131,10 +153,12 @@ struct TrainFormationPreview: View {
     // coach edges. The bar width shows where a sector crosses a coach.
     private var sectorSpans: [(label: String, width: CGFloat)] {
         var spans: [(label: String, width: CGFloat)] = []
-        for vehicle in displayedVehicles {
+        for (index, vehicle) in displayedVehicles.enumerated() {
             let slices = sectorSlices(for: vehicle)
-            for slice in slices.isEmpty ? [FormationSectorSlice(label: "—", fraction: 1)] : slices {
+            let visibleSlices = slices.isEmpty ? [FormationSectorSlice(label: "—", fraction: 1)] : slices
+            for (sliceIndex, slice) in visibleSlices.enumerated() {
                 let width = vehicle.displayWidth * slice.fraction
+                    + (sliceIndex == visibleSlices.count - 1 ? gap(after: index) : 0)
                 if spans.last?.label == slice.label {
                     spans[spans.count - 1].width += width
                 } else {
@@ -203,23 +227,47 @@ private struct FormationFlowLayout: Layout {
 
 private struct FormationSilhouette: Shape {
     let isCab: Bool
+    let isLocomotive: Bool
+    let facesRight: Bool
 
     func path(in rect: CGRect) -> Path {
-        guard isCab else { return Path(roundedRect: rect, cornerRadius: 7) }
+        guard isCab || isLocomotive else {
+            return Path(roundedRect: rect, cornerRadius: 12)
+        }
+        let sweptLeft = isLocomotive || !facesRight
+        let sweptRight = isLocomotive || facesRight
+        let radius: CGFloat = 12
+        let sweep: CGFloat = 34
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX + 7, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX - 32, y: rect.minY))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX - 26, y: rect.minY + 5),
-                          control: CGPoint(x: rect.maxX - 28, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX - 2, y: rect.maxY - 7))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX - 7, y: rect.maxY),
-                          control: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX + 7, y: rect.maxY))
-        path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - 7),
-                          control: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + 7))
-        path.addQuadCurve(to: CGPoint(x: rect.minX + 7, y: rect.minY),
-                          control: CGPoint(x: rect.minX, y: rect.minY))
+        path.move(to: CGPoint(x: rect.minX + (sweptLeft ? sweep : radius), y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - (sweptRight ? sweep : radius), y: rect.minY))
+        if sweptRight {
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - 25, y: rect.minY + 7),
+                              control: CGPoint(x: rect.maxX - 27, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - 2, y: rect.maxY - radius))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - radius, y: rect.maxY),
+                              control: CGPoint(x: rect.maxX, y: rect.maxY))
+        } else {
+            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + radius),
+                              control: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - radius, y: rect.maxY),
+                              control: CGPoint(x: rect.maxX, y: rect.maxY))
+        }
+        path.addLine(to: CGPoint(x: rect.minX + radius, y: rect.maxY))
+        if sweptLeft {
+            path.addQuadCurve(to: CGPoint(x: rect.minX + 2, y: rect.maxY - radius),
+                              control: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX + 25, y: rect.minY + 7))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + sweep, y: rect.minY),
+                              control: CGPoint(x: rect.minX + 27, y: rect.minY))
+        } else {
+            path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - radius),
+                              control: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + radius, y: rect.minY),
+                              control: CGPoint(x: rect.minX, y: rect.minY))
+        }
         path.closeSubpath()
         return path
     }
@@ -269,7 +317,7 @@ private struct FormationBadge: View {
             .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(isLocked ? Color.gray.opacity(0.72) : .white)
             .frame(width: 28, height: 28)
-            .background(isLocked ? Color.gray.opacity(0.22) : (isClass ? Color(red: 0.06, green: 0.16, blue: 0.3)
+            .background(isLocked ? Color.gray.opacity(0.22) : (isClass ? Color(red: 0.08, green: 0.19, blue: 0.54)
                         : Color(red: 30.0 / 255, green: 100.0 / 255, blue: 250.0 / 255)),
                         in: RoundedRectangle(cornerRadius: 5))
         }
@@ -290,22 +338,64 @@ private struct FormationCountBadge: View {
     let value: Int
     let title: String
     let isLocked: Bool
+    @State private var showsHint = false
 
     var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: symbol)
-            Text("\(value)")
-                .minimumScaleFactor(0.65)
+        Button { showsHint.toggle() } label: {
+            HStack(spacing: 3) {
+                Image(systemName: symbol)
+                Text("\(value)")
+                    .minimumScaleFactor(0.65)
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(isLocked ? Color.gray.opacity(0.72) : .white)
+            .padding(.horizontal, 5)
+            .frame(minWidth: 28)
+            .frame(height: 28)
+            .fixedSize(horizontal: true, vertical: false)
+            .background(isLocked ? Color.gray.opacity(0.22) : Color(red: 30.0 / 255, green: 100.0 / 255, blue: 250.0 / 255),
+                        in: RoundedRectangle(cornerRadius: 5))
         }
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(isLocked ? Color.gray.opacity(0.72) : .white)
-        .padding(.horizontal, 5)
-        .frame(minWidth: 28)
-        .frame(height: 28)
-        .fixedSize(horizontal: true, vertical: false)
-        .background(isLocked ? Color.gray.opacity(0.22) : Color(red: 30.0 / 255, green: 100.0 / 255, blue: 250.0 / 255),
-                    in: RoundedRectangle(cornerRadius: 5))
+        .buttonStyle(.plain)
         .accessibilityLabel("\(title): \(value)")
+        .popover(isPresented: $showsHint, arrowEdge: .bottom) {
+            Text("\(value) \(title.lowercased())")
+                .font(.subheadline)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+}
+
+private struct FormationSeatBadge: View {
+    let seatCount: Int
+    let isLocked: Bool
+    @State private var showsHint = false
+
+    var body: some View {
+        Button { showsHint.toggle() } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "airplaneseat")
+                Text("\(seatCount)")
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(isLocked ? Color.gray.opacity(0.72) : .white)
+            .padding(.horizontal, 5)
+            .frame(minWidth: 28, minHeight: 28)
+            .fixedSize(horizontal: true, vertical: false)
+            .background(isLocked ? Color.gray.opacity(0.22) : Color(red: 30.0 / 255, green: 100.0 / 255, blue: 250.0 / 255),
+                        in: RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(seatCount) seats")
+        .popover(isPresented: $showsHint, arrowEdge: .bottom) {
+            Text("\(seatCount) seats")
+                .font(.subheadline)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .presentationCompactAdaptation(.popover)
+        }
     }
 }
 
@@ -316,10 +406,8 @@ struct FormationVehicle: Identifiable {
     let type: String
     let evn: String?
     let isCab: Bool
-    let artworkName: String?
-    let mirrorsArtwork: Bool
-    /// The supplied locomotive artwork faces right. This flag describes the
-    /// physical facing of a control cab in the consist.
+    let isLocomotive: Bool
+    /// Physical facing of a control cab in the consist.
     let facesRight: Bool
     let isLocked: Bool
     let features: [FormationFeature]
@@ -327,24 +415,26 @@ struct FormationVehicle: Identifiable {
     let secondClassSeats: Int?
     let bikeSeats: Int?
     let wheelchairSeats: Int?
-    var operatorName = "SBB"
-    var displayWidth: CGFloat { CGFloat(isCab ? 1097 : 1006) * 0.26 }
-    var leftArtwork: String? = nil
-    var rightArtwork: String? = nil
+    let operatorName: String
+    var displayWidth: CGFloat { isLocomotive ? 220 : 270 }
 
     static let samples: [Self] = [
         .init(id: 1, position: "Car 1", classes: ["1"], type: "RABe 526",
-              evn: "93 85 1501 224-4", isCab: true, artworkName: nil, mirrorsArtwork: true, facesRight: true, isLocked: false,
-              features: [.airConditioning, .wifi, .power, .quiet], firstClassSeats: 41, secondClassSeats: nil, bikeSeats: nil, wheelchairSeats: nil),
+              evn: "93 85 1501 224-4", isCab: true, isLocomotive: false, facesRight: false, isLocked: false,
+              features: [.airConditioning, .wifi, .power, .quiet], firstClassSeats: 41, secondClassSeats: nil, bikeSeats: nil, wheelchairSeats: nil,
+              operatorName: "SBB"),
         .init(id: 2, position: "Car 2", classes: ["2"], type: "RABe 526",
-              evn: "93 85 0501 002-8", isCab: false, artworkName: nil, mirrorsArtwork: true, facesRight: true, isLocked: false,
-              features: [.airConditioning, .restaurant, .wifi], firstClassSeats: nil, secondClassSeats: 80, bikeSeats: nil, wheelchairSeats: nil),
+              evn: "93 85 0501 002-8", isCab: false, isLocomotive: false, facesRight: true, isLocked: false,
+              features: [.airConditioning, .restaurant, .wifi], firstClassSeats: nil, secondClassSeats: 80, bikeSeats: nil, wheelchairSeats: nil,
+              operatorName: "SBB"),
         .init(id: 3, position: "Car 3", classes: ["2"], type: "RABe 526",
-              evn: "93 85 0501 003-6", isCab: false, artworkName: nil, mirrorsArtwork: true, facesRight: true, isLocked: false,
-              features: [.airConditioning, .accessible, .power, .wifi], firstClassSeats: nil, secondClassSeats: 80, bikeSeats: nil, wheelchairSeats: 2),
+              evn: "93 85 0501 003-6", isCab: false, isLocomotive: false, facesRight: true, isLocked: false,
+              features: [.airConditioning, .accessible, .power, .wifi], firstClassSeats: nil, secondClassSeats: 80, bikeSeats: nil, wheelchairSeats: 2,
+              operatorName: "SBB"),
         .init(id: 4, position: "Car 4", classes: ["2"], type: "RABe 526",
-              evn: "93 85 0501 004-4", isCab: true, artworkName: nil, mirrorsArtwork: true, facesRight: true, isLocked: false,
-              features: [.airConditioning, .bicycle, .power], firstClassSeats: nil, secondClassSeats: 70, bikeSeats: 8, wheelchairSeats: nil)
+              evn: "93 85 0501 004-4", isCab: true, isLocomotive: false, facesRight: true, isLocked: false,
+              features: [.airConditioning, .bicycle, .power], firstClassSeats: nil, secondClassSeats: 70, bikeSeats: 8, wheelchairSeats: nil,
+              operatorName: "SBB")
     ]
 }
 
@@ -400,8 +490,10 @@ enum FormationFeature: String, Identifiable {
     var detail: String { "This symbol marks \(title.lowercased()) on this coach. This formation is sample data." }
 }
 
-#Preview {
-    ScrollView {
-        TrainFormationPreview().padding()
+struct TrainFormationPreview_Previews: PreviewProvider {
+    static var previews: some View {
+        ScrollView {
+            TrainFormationPreview().padding()
+        }
     }
 }

@@ -27,13 +27,7 @@ enum OperatorBrandingCatalog {
         "97": OperatorBranding(logoName: "travys", phoneNumber: nil, city: "Switzerland"),
         "96": OperatorBranding(logoName: "aargau-verkehr", phoneNumber: nil, city: "Switzerland"),
         "31": OperatorBranding(logoName: "aargau-verkehr", phoneNumber: nil, city: "Switzerland"),
-        "82": OperatorBranding(logoName: "sob", phoneNumber: "+41 585 807 777", city: "Switzerland"),
-        "6100826": OperatorBranding(logoName: "cfr", phoneNumber: "+40213190358", city: "Romania"),
-        "227098": OperatorBranding(logoName: "regio", phoneNumber: "+40310800900", city: "Romania"),
-        "236025": OperatorBranding(logoName: "softrans", phoneNumber: "+40742018798", city: "Romania"),
-        "200000": OperatorBranding(logoName: "astra", phoneNumber: "+40751525520", city: "Romania"),
-        "228389": OperatorBranding(logoName: "tfc", phoneNumber: "+40238434380", city: "Romania"),
-        "236037": OperatorBranding(logoName: "interregional", phoneNumber: "+40364140245", city: "Romania")
+        "82": OperatorBranding(logoName: "sob", phoneNumber: "+41 585 807 777", city: "Switzerland")
     ]
 
     static func branding(for agencyId: String?) -> OperatorBranding {
