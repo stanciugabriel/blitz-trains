@@ -47,7 +47,7 @@ final class DeviceLocationProvider: NSObject, ObservableObject {
     }
 
     func enableTracking() {
-        guard CLLocationManager.locationServicesEnabled() else { return }
+        guard authorizationStatus != .denied, authorizationStatus != .restricted else { return }
         if authorizationStatus == .notDetermined {
             manager.requestAlwaysAuthorization()
         } else if authorizationStatus == .authorizedWhenInUse {
@@ -69,7 +69,7 @@ final class DeviceLocationProvider: NSObject, ObservableObject {
     }
 
     func enableSpeedTracking() {
-        guard CLLocationManager.locationServicesEnabled() else { return }
+        guard authorizationStatus != .denied, authorizationStatus != .restricted else { return }
         if authorizationStatus == .notDetermined {
             manager.requestAlwaysAuthorization()
         }
@@ -148,12 +148,6 @@ enum TripDetectedPhase: String, Codable {
     case exitedEarly
 }
 
-struct TripEarlyExitCandidate: Equatable, Codable, Identifiable {
-    let id: String
-    let stationName: String
-    let createdAt: Date
-}
-
 struct TripGPSProgress: Equatable, Codable {
     let fraction: Double
     let recordedAt: Date
@@ -222,13 +216,11 @@ extension Notification.Name {
 final class TripLocationPhaseDetector: ObservableObject {
     @Published private(set) var phases: [String: TripDetectedPhase] = [:]
     @Published private(set) var holdingStations: [String: String] = [:]
-    @Published private(set) var earlyExitCandidates: [String: TripEarlyExitCandidate] = [:]
     @Published private(set) var gpsProgress: [String: TripGPSProgress] = [:]
 
     private let phaseKey = "raily.tripDetection.phases"
     private let observationKey = "raily.tripDetection.observations"
     private let stationKey = "raily.tripDetection.holdingStations"
-    private let earlyExitKey = "raily.tripDetection.earlyExitCandidates"
     private let arrivalEvidenceKey = "raily.tripDetection.arrivalEvidence"
     private let holdingGrace: TimeInterval = 3 * 60
 
@@ -270,10 +262,6 @@ final class TripLocationPhaseDetector: ObservableObject {
            let stored = try? JSONDecoder().decode([String: String].self, from: data) {
             holdingStations = stored
         }
-        if let data = UserDefaults.standard.data(forKey: earlyExitKey),
-           let stored = try? JSONDecoder().decode([String: TripEarlyExitCandidate].self, from: data) {
-            earlyExitCandidates = stored
-        }
         if let data = UserDefaults.standard.data(forKey: arrivalEvidenceKey),
            let stored = try? JSONDecoder().decode([String: ArrivalEvidence].self, from: data) {
             arrivalEvidence = stored
@@ -284,8 +272,13 @@ final class TripLocationPhaseDetector: ObservableObject {
         phases[stateKey(for: trip)] ?? .unknown
     }
 
-    func earlyExitCandidate(for trip: Trip) -> TripEarlyExitCandidate? {
-        earlyExitCandidates[stateKey(for: trip)]
+    static func persistedPhase(for trip: Trip) -> TripDetectedPhase {
+        guard let data = UserDefaults.standard.data(forKey: "raily.tripDetection.phases"),
+              let phases = try? JSONDecoder().decode([String: TripDetectedPhase].self, from: data) else {
+            return .unknown
+        }
+        let day = trip.travelDate.map { ISO8601DateFormatter().string(from: $0) } ?? "undated"
+        return phases["\(trip.id)|\(day.prefix(10))"] ?? .unknown
     }
 
     func progress(for trip: Trip) -> TripGPSProgress? {
@@ -295,8 +288,7 @@ final class TripLocationPhaseDetector: ObservableObject {
     func update(
         trip: Trip,
         location: CLLocation,
-        route: [CLLocationCoordinate2D],
-        trustedTrainCoordinate: CLLocationCoordinate2D? = nil
+        route: [CLLocationCoordinate2D]
     ) {
         guard location.horizontalAccuracy >= 0, location.horizontalAccuracy <= 150,
               abs(location.timestamp.timeIntervalSinceNow) <= 15 * 60,
@@ -333,17 +325,6 @@ final class TripLocationPhaseDetector: ObservableObject {
             destinationProjection: destinationProjection,
             key: key
         )
-        updateEarlyExitCandidate(
-            trip: trip,
-            location: location,
-            routeProjection: routeProjection,
-            originProjection: originProjection,
-            destinationProjection: destinationProjection,
-            previous: previous,
-            key: key,
-            trustedTrainCoordinate: trustedTrainCoordinate
-        )
-
         let originRadius = max(250, location.horizontalAccuracy * 1.5)
         let destinationRadius = max(250, location.horizontalAccuracy * 1.5)
         let distanceToOrigin = location.distance(from: CLLocation(latitude: origin.latitude, longitude: origin.longitude))
@@ -399,65 +380,6 @@ final class TripLocationPhaseDetector: ObservableObject {
         phases[tripID] = phase
         if let data = try? JSONEncoder().encode(phases) {
             UserDefaults.standard.set(data, forKey: phaseKey)
-        }
-    }
-
-    private func updateEarlyExitCandidate(
-        trip: Trip,
-        location: CLLocation,
-        routeProjection: (progress: CLLocationDistance, distance: CLLocationDistance),
-        originProjection: (progress: CLLocationDistance, distance: CLLocationDistance),
-        destinationProjection: (progress: CLLocationDistance, distance: CLLocationDistance),
-        previous: Observation?,
-        key: String,
-        trustedTrainCoordinate: CLLocationCoordinate2D?
-    ) {
-        guard phase(for: trip) == .boarded,
-              let previous,
-              routeProjection.progress > originProjection.progress + 500,
-              routeProjection.progress < destinationProjection.progress - 500,
-              location.timestamp.timeIntervalSince(previous.timestamp) >= holdingGrace,
-              abs(routeProjection.progress - previous.progress) < 150,
-              location.speed < 1,
-              let trustedTrainCoordinate else { return }
-
-        let tripIdentifier = trip.gtfsTripId ?? trip.id
-        let sourceStops = GTFSDataSource.shared.stops(for: tripIdentifier)
-        let stops: [StoredStop] = (sourceStops.isEmpty ? (trip.stops ?? []) : sourceStops.map(StoredStop.init(gtfsStop:)))
-            .sorted { $0.sequence < $1.sequence }
-        let originIndex = stops.firstIndex { $0.id == trip.originStopId || $0.sequence == trip.originSequence } ?? 0
-        let destinationIndex = stops.lastIndex { $0.id == trip.destinationStopId || $0.sequence == trip.destinationSequence } ?? stops.count - 1
-        guard originIndex < destinationIndex else { return }
-        let intermediate = stops[(originIndex + 1)..<destinationIndex]
-        guard let station = intermediate.min(by: {
-            location.distance(from: CLLocation(latitude: $0.latitude, longitude: $0.longitude)) <
-            location.distance(from: CLLocation(latitude: $1.latitude, longitude: $1.longitude))
-        }) else { return }
-        let stationDistance = location.distance(from: CLLocation(latitude: station.latitude, longitude: station.longitude))
-        guard stationDistance <= max(250, location.horizontalAccuracy * 1.5) else { return }
-        let trainDistance = CLLocation(latitude: station.latitude, longitude: station.longitude)
-            .distance(from: CLLocation(latitude: trustedTrainCoordinate.latitude, longitude: trustedTrainCoordinate.longitude))
-        guard trainDistance > max(1_000, location.horizontalAccuracy * 5) else { return }
-
-        earlyExitCandidates[key] = TripEarlyExitCandidate(id: key, stationName: station.name, createdAt: location.timestamp)
-        persistEarlyExitCandidates()
-    }
-
-    func dismissEarlyExit(for trip: Trip) {
-        earlyExitCandidates.removeValue(forKey: stateKey(for: trip))
-        persistEarlyExitCandidates()
-    }
-
-    func confirmEarlyExit(for trip: Trip) {
-        let key = stateKey(for: trip)
-        earlyExitCandidates.removeValue(forKey: key)
-        setPhase(.exitedEarly, for: key)
-        persistEarlyExitCandidates()
-    }
-
-    private func persistEarlyExitCandidates() {
-        if let data = try? JSONEncoder().encode(earlyExitCandidates) {
-            UserDefaults.standard.set(data, forKey: earlyExitKey)
         }
     }
 
@@ -555,14 +477,12 @@ final class TripLocationPhaseDetector: ObservableObject {
         phases = phases.filter { entry in !prefixes.contains(where: { entry.key.hasPrefix($0) }) }
         observations = observations.filter { entry in !prefixes.contains(where: { entry.key.hasPrefix($0) }) }
         holdingStations = holdingStations.filter { entry in !prefixes.contains(where: { entry.key.hasPrefix($0) }) }
-        earlyExitCandidates = earlyExitCandidates.filter { entry in !prefixes.contains(where: { entry.key.hasPrefix($0) }) }
         gpsProgress = gpsProgress.filter { entry in !prefixes.contains(where: { entry.key.hasPrefix($0) }) }
         arrivalEvidence = arrivalEvidence.filter { entry in !prefixes.contains(where: { entry.key.hasPrefix($0) }) }
         stationSchedules = stationSchedules.filter { entry in !prefixes.contains(where: { entry.key.hasPrefix($0) }) }
         if let data = try? JSONEncoder().encode(phases) { UserDefaults.standard.set(data, forKey: phaseKey) }
         persistObservations()
         persistHoldingStations()
-        persistEarlyExitCandidates()
         persistArrivalEvidence()
     }
 
@@ -578,14 +498,12 @@ final class TripLocationPhaseDetector: ObservableObject {
         phases = phases.filter { keep($0.key) }
         observations = observations.filter { keep($0.key) }
         holdingStations = holdingStations.filter { keep($0.key) }
-        earlyExitCandidates = earlyExitCandidates.filter { keep($0.key) }
         gpsProgress = gpsProgress.filter { keep($0.key) }
         arrivalEvidence = arrivalEvidence.filter { keep($0.key) }
         stationSchedules = stationSchedules.filter { keep($0.key) }
         if let data = try? JSONEncoder().encode(phases) { UserDefaults.standard.set(data, forKey: phaseKey) }
         persistObservations()
         persistHoldingStations()
-        persistEarlyExitCandidates()
         persistArrivalEvidence()
     }
 
@@ -593,14 +511,12 @@ final class TripLocationPhaseDetector: ObservableObject {
         phases.removeAll()
         observations.removeAll()
         holdingStations.removeAll()
-        earlyExitCandidates.removeAll()
         gpsProgress.removeAll()
         arrivalEvidence.removeAll()
         stationSchedules.removeAll()
         UserDefaults.standard.removeObject(forKey: phaseKey)
         UserDefaults.standard.removeObject(forKey: observationKey)
         UserDefaults.standard.removeObject(forKey: stationKey)
-        UserDefaults.standard.removeObject(forKey: earlyExitKey)
         UserDefaults.standard.removeObject(forKey: arrivalEvidenceKey)
     }
 

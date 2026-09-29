@@ -23,26 +23,16 @@ struct TripDetailSheet: View {
     @State private var isWeatherLoading = false
     @State private var hasAttemptedWeather = false
     @State private var now = Date()
-    @State private var isSyncingDelay = false
     @State private var liveDelayInfo: DelayInfo?
-    @State private var syncStatusText: String?
-    @State private var shouldSkipNextSync = false
-    @State private var hasTriggeredSyncLongPress = false
     @State private var isPresentingSeatEditor = false
-    @State private var seatEditorCar = ""
-    @State private var seatEditorSeats = ""
-    @State private var seatEditorTrainIdentifier = ""
-    @State private var seatEditorTrainPower: TrainPowerType?
     @State private var ticketCode: String?
     @State private var isPresentingTicketSheet = false
-    @State private var isShowingStationDelaySheet = false
     @State private var segments: [GTFSSegment] = []
     @StateObject private var locationProvider = DeviceLocationProvider()
     @State private var isShowingSpeedPage = false
     @State private var isSpeedPageLoading = false
     @State private var isLiveActivityRunning = false
-    @State private var liveActivityStatusText: String?
-    @State private var liveActivityDiagnosticText: String?
+    @State private var liveActivityNotice: String?
 
     private let dataSource = GTFSDataSource.shared
     private let secondTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -88,32 +78,7 @@ struct TripDetailSheet: View {
                 }
             }
             ToolbarSpacer(.flexible, placement: .bottomBar)
-            if !isPastTrip {
-                ToolbarItem(placement: .bottomBar) {
-                    Button(action: {
-                        if shouldSkipNextSync {
-                            shouldSkipNextSync = false
-                            return
-                        }
-                        syncDelay()
-                    }) {
-                        Label("Sync", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
-                    }
-                    .simultaneousGesture(
-                        LongPressGesture(minimumDuration: 0.6)
-                            .onChanged { _ in
-                                guard !hasTriggeredSyncLongPress else { return }
-                                hasTriggeredSyncLongPress = true
-                                shouldSkipNextSync = true
-                                forgetDelay()
-                            }
-                            .onEnded { _ in
-                                hasTriggeredSyncLongPress = false
-                            }
-                    )
-                    .disabled(isSyncingDelay)
-                }
-            }
+
 
             ToolbarItem(placement: .bottomBar) {
                 Button(action: toggleLiveActivity) {
@@ -125,30 +90,31 @@ struct TripDetailSheet: View {
                 .disabled(isPastTrip)
             }
 
-            ToolbarItem(placement: .bottomBar) {
-                Button(action: {
-                    isShowingStationDelaySheet = true
-                }) {
-                    Label("Delays", systemImage: "list.bullet.rectangle")
-                }
-            }
+
         }
         .task(id: trip.id) {
+            liveDelayInfo = LiveDelayStore.shared.info(for: trip.id)
             await loadTiming()
-            await loadSegments()
             refreshLiveActivityState()
-            await loadDestinationWeather()
+            // Segments, weather, and the formation section are independent
+            // loads. Start the two detail requests together so weather never
+            // delays the schedule/timeline from appearing.
+            async let segmentsLoad: Void = loadSegments()
+            async let weatherLoad: Void = loadDestinationWeather()
+            _ = await (segmentsLoad, weatherLoad)
         }
         .onReceive(secondTimer) { value in
             now = value
             refreshLiveActivityState()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .liveDelayInfoUpdated)) { notification in
+            guard let updatedID = notification.object as? String, updatedID == trip.id else { return }
+            liveDelayInfo = LiveDelayStore.shared.info(for: trip.id)
+            Task { await loadTiming() }
+        }
         .sheet(isPresented: $isPresentingSeatEditor) {
             SeatEditorSheet(
-                carText: $seatEditorCar,
-                seatsText: $seatEditorSeats,
-                trainIdentifierText: $seatEditorTrainIdentifier,
-                trainPower: $seatEditorTrainPower,
+                trip: trip,
                 onSave: saveSeatEditor,
                 onCancel: { isPresentingSeatEditor = false }
             )
@@ -160,20 +126,19 @@ struct TripDetailSheet: View {
                 onDismiss: { isPresentingTicketSheet = false }
             )
         }
-        .background(Color(.systemBackground))
-        .sheet(isPresented: $isShowingStationDelaySheet) {
-            WebcamBoardSheet(trip: trip, station: "BucurestiNord", onDismiss: {
-                isShowingStationDelaySheet = false
-            }, onUpdateTrip: { updatedTrip in
-                onUpdateTrip?(updatedTrip)
-            })
-            .presentationDetents([.fraction(0.72), .large])
-            .presentationDragIndicator(.visible)
+        .alert("Live Activity", isPresented: Binding(
+            get: { liveActivityNotice != nil },
+            set: { if !$0 { liveActivityNotice = nil } }
+        )) {
+            Button("OK", role: .cancel) { liveActivityNotice = nil }
+        } message: {
+            Text(liveActivityNotice ?? "")
         }
-        .onChange(of: trip.ticketQRCode ?? "") { _ in
+        .background(Color(.systemBackground))
+        .onChange(of: trip.ticketQRCode ?? "") { _, _ in
             ticketCode = trip.ticketQRCode
         }
-        .onChange(of: trip.id) { _ in
+        .onChange(of: trip.id) { _, _ in
             ticketCode = trip.ticketQRCode
             exitSpeedDashboard()
         }
@@ -187,46 +152,6 @@ struct TripDetailSheet: View {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                 Section {
                     VStack(alignment: .leading, spacing: 20) {
-                        if !isPastTrip {
-                            syncFreshnessIndicator
-                        }
-#if DEBUG
-                        // Keep operational detail available while developing. The
-                        // release UI communicates freshness through the indicator.
-                        if !isPastTrip, let syncStatusText {
-                            Text(syncStatusText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        }
-                        if !isPastTrip, let liveActivityStatusText {
-                            Text(liveActivityStatusText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        }
-                        if !isPastTrip, let liveActivityDiagnosticText {
-                            Text(liveActivityDiagnosticText)
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                                .textSelection(.enabled)
-                        }
-                        if !isPastTrip, let freshness = liveDelayInfo?.freshnessText {
-                            Text("Live data: \(freshness)")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-#endif
-                        if !isPastTrip, let candidate = locationPhaseDetector.earlyExitCandidate(for: trip) {
-                            earlyExitConfirmationCard(candidate: candidate)
-                        }
-                        if !isPastTrip, let prediction = TripDelayFusionStore.shared.prediction(for: trip) {
-                            delayPredictionCard(prediction)
-                        }
-                        if !isPastTrip, let bannerText = scraperStatusText {
-                            ScraperStatusBanner(text: bannerText, isDelayed: scraperStatusIsDelayed)
-                                .padding(.horizontal, -16)
-                        }
                         if hasSegmentData {
                             TimelineView(.periodic(from: .now, by: 1)) { context in
                                 timetableSection(referenceDate: context.date)
@@ -253,53 +178,6 @@ struct TripDetailSheet: View {
         .scrollIndicators(.hidden)
     }
 
-    private func earlyExitConfirmationCard(candidate: TripEarlyExitCandidate) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Possible early exit", systemImage: "figure.walk.departure")
-                .font(.headline)
-            Text("Your location has stayed near \(candidate.stationName) beyond the expected stop. Did you get off here?")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            HStack {
-                Button("Keep tracking") {
-                    locationPhaseDetector.dismissEarlyExit(for: trip)
-                }
-                .buttonStyle(.bordered)
-                Spacer()
-                Button("I got off here") {
-                    locationPhaseDetector.confirmEarlyExit(for: trip)
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func delayPredictionCard(_ prediction: TripDelayPrediction) -> some View {
-        let delayText: String = {
-            guard let delay = prediction.delayMinutes else { return "No estimate yet" }
-            if delay == 0 { return "Estimated on time" }
-            return delay > 0 ? "Estimated +\(delay)m" : "Estimated \(abs(delay))m early"
-        }()
-        return HStack(spacing: 10) {
-            Image(systemName: "location.north.line")
-                .foregroundStyle(prediction.source == .infoFerConfirmed ? .green : .orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Arrival forecast")
-                    .font(.subheadline.weight(.semibold))
-                Text("\(delayText) • \(prediction.source.rawValue)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-    }
-
     private var speedDashboard: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -307,7 +185,6 @@ struct TripDetailSheet: View {
                     speedLoadingCard
                 } else {
                     currentSpeedCard
-                    speedLimitCard
                     gpsStatusCard
                 }
             }
@@ -366,42 +243,6 @@ struct TripDetailSheet: View {
         )
     }
 
-    private var speedLimitCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Track Speed Limit")
-                .font(.headline)
-
-            HStack(alignment: .lastTextBaseline, spacing: 8) {
-                Text(maxSpeedDisplayValue)
-                    .font(.system(size: 48, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                Text("km/h")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-
-            if let label = speedLimitSegmentLabel {
-                Text(label)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-            }
-
-            if let comparison = speedComparisonDetailText {
-                Text(comparison)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(24)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color(.systemGray4), lineWidth: 1)
-        )
-    }
-
     private var gpsStatusCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
@@ -432,29 +273,6 @@ struct TripDetailSheet: View {
         return value.isFinite ? value : nil
     }
 
-    private var syncFreshnessIndicator: some View {
-        Circle()
-            .fill(syncFreshnessColor)
-            .frame(width: 8, height: 8)
-            .accessibilityLabel(syncFreshnessAccessibilityLabel)
-    }
-
-    private var syncFreshnessColor: Color {
-        guard let fetchedAt = liveDelayInfo?.fetchedAt else { return .gray }
-        let age = Date().timeIntervalSince(fetchedAt)
-        if age < 5 * 60 { return .green }
-        if age < 20 * 60 { return .orange }
-        return .red
-    }
-
-    private var syncFreshnessAccessibilityLabel: String {
-        guard let fetchedAt = liveDelayInfo?.fetchedAt else { return "Live data unavailable" }
-        let age = Date().timeIntervalSince(fetchedAt)
-        if age < 5 * 60 { return "Live data is fresh" }
-        if age < 20 * 60 { return "Live data may be getting old" }
-        return "Live data is stale"
-    }
-
     private var currentSpeedDisplayValue: String {
         guard let speed = currentSpeedKPH else { return "--" }
         return String(format: "%.0f", speed)
@@ -478,32 +296,6 @@ struct TripDetailSheet: View {
         }
     }
 
-    private var referenceSpeedSegment: GTFSSegment? {
-        currentSegmentContext?.segment ?? segments.first
-    }
-
-    private var maxSegmentSpeedValue: Int {
-        referenceSpeedSegment?.maxSpeed ?? 0
-    }
-
-    private var maxSpeedDisplayValue: String {
-        maxSegmentSpeedValue > 0 ? "\(maxSegmentSpeedValue)" : "--"
-    }
-
-    private var speedLimitSegmentLabel: String? {
-        guard let segment = referenceSpeedSegment else { return nil }
-        return segmentLabel(for: segment)
-    }
-
-    private var speedComparisonDetailText: String? {
-        guard let current = currentSpeedKPH, maxSegmentSpeedValue > 0 else { return nil }
-        let delta = Int(round(Double(maxSegmentSpeedValue) - current))
-        if delta >= 0 {
-            return "≈ \(delta) km/h below the limit"
-        }
-        return "≈ \(abs(delta)) km/h above the limit"
-    }
-
     private var gpsStatusDescription: String {
         switch locationProvider.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
@@ -514,7 +306,7 @@ struct TripDetailSheet: View {
         case .notDetermined:
             return "We need your permission to start measuring live speed."
         case .denied:
-            return "Location is turned off for Raily. Enable it in Settings to track speed."
+            return "Location is turned off for Blitz. Enable it in Settings to track speed."
         case .restricted:
             return "Location access is restricted by system controls."
         @unknown default:
@@ -596,10 +388,8 @@ struct TripDetailSheet: View {
             seatInfoGrid
             goodToKnowSection
             historySection
+            TripFormationSection(trip: trip)
             operatorSection
-            arrivalForecastSection
-//            trackSpeedSection
-            trainInfoSection
         }
     }
 
@@ -646,18 +436,6 @@ struct TripDetailSheet: View {
         trip.subtitle.split(separator: "·", maxSplits: 1, omittingEmptySubsequences: true).map { String($0) }
     }
 
-    private var scraperStatusText: String? {
-        liveDelayInfo?.statusText
-    }
-
-    private var scraperStatusIsDelayed: Bool {
-        (liveDelayInfo?.delayMinutes ?? trip.delayMinutes ?? 0) > 0
-    }
-
-    private var syncTravelDate: Date {
-        trip.travelDate ?? timing.scheduledDeparture ?? Date()
-    }
-
     private var activeDelayMinutes: Int? {
         timing.headerDelayMinutes ?? trip.delayMinutes
     }
@@ -676,7 +454,7 @@ struct TripDetailSheet: View {
 
     private var isOvernightTrip: Bool {
         guard let departure = timing.scheduledDeparture, let arrival = timing.scheduledArrival else { return false }
-        return !Calendar.current.isDate(arrival, inSameDayAs: departure)
+        return !GTFSDataSource.calendar.isDate(arrival, inSameDayAs: departure)
     }
 
     private var shouldShowTravelSummaryRow: Bool {
@@ -774,19 +552,18 @@ struct TripDetailSheet: View {
         let trip = self.trip
         let delayInfo = liveDelayInfo
         let referenceDate = now
-        timing = await Task.detached(priority: .userInitiated) {
-            TripTimingResolver().resolve(
-                trip: trip,
-                delayInfo: delayInfo,
-                referenceDate: referenceDate
-            )
-        }.value
+        timing = TripTimingResolver().resolve(
+            trip: trip,
+            delayInfo: delayInfo,
+            referenceDate: referenceDate
+        )
     }
 
     private func loadSegments() async {
         let identifier = tripIdentifier
+        let source = GTFSDataSource.shared
         segments = await Task.detached(priority: .userInitiated) {
-            dataSource.segments(for: identifier)
+            source.segments(for: identifier)
         }.value
     }
 
@@ -881,6 +658,7 @@ struct TripDetailSheet: View {
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.timeZone = GTFSDataSource.calendar.timeZone
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
@@ -936,106 +714,42 @@ struct TripDetailSheet: View {
     }
 }
     
-// MARK: - Sync Helpers
+// MARK: - Live Activity Helpers
 
 extension TripDetailSheet {
-    private var syncResultSummary: String? {
-        guard let info = liveDelayInfo else { return nil }
-        var parts: [String] = []
-        if let delay = info.delayMinutes {
-            parts.append(delay == 0 ? "On time" : "Delay +\(delay)m")
-        }
-        if let platform = info.platform {
-            parts.append("Platform \(platform)")
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " • ")
-    }
-
-    private func syncDelay() {
-        guard let trainNumber = resolvedTrainNumber else {
-            syncStatusText = "Train number unavailable"
-            return
-        }
-        if let serviceDepartureDate, Date() < serviceDepartureDate.addingTimeInterval(-30 * 60) {
-            syncStatusText = "The train does not have data from its trip yet."
-            return
-        }
-
-        isSyncingDelay = true
-        syncStatusText = "Refreshing session…"
-
-        Task {
-            print("[TripDetailSheet] Starting InfoFer sync for \(trainNumber)")
-            guard let result = await TripSyncService.shared.sync(trip: trip, shouldFetchMapInfo: true) else { return }
-            let info = result.info
-            print("[TripDetailSheet] Sync completed delay=\(info.delayMinutes ?? -1) platform=\(info.platform ?? "n/a")")
-
-            await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    liveDelayInfo = info
-                }
-                onUpdateTrip?(result.trip)
-                isSyncingDelay = false
-                syncStatusText = result.status.detailText
-            }
-        }
-    }
-
-    private var serviceDepartureDate: Date? {
-        let baseDate = Calendar.current.startOfDay(for: syncTravelDate)
-        let segments = dataSource.segments(for: tripIdentifier)
-        guard let firstSegment = segments.min(by: {
-            ($0.departureSeconds ?? $0.arrivalSeconds ?? Int.max) < ($1.departureSeconds ?? $1.arrivalSeconds ?? Int.max)
-        }) else {
-            return nil
-        }
-        guard let departureSeconds = firstSegment.departureSeconds ?? firstSegment.arrivalSeconds else { return nil }
-        return baseDate.addingTimeInterval(TimeInterval(departureSeconds))
-    }
-
-    private func forgetDelay() {
-        withAnimation(.easeInOut(duration: 0.35)) {
-            liveDelayInfo = nil
-        }
-        LiveDelayStore.shared.clear(tripID: trip.id)
-        LiveActivityManager.shared.updateActivity(for: trip)
-        syncStatusText = "Delay cleared"
-    }
-
     private func toggleLiveActivity() {
         if isLiveActivityRunning {
-            LiveActivityManager.shared.endActivity(for: trip.id)
+            LiveActivityManager.shared.stopActivityByUser(for: trip)
             isLiveActivityRunning = false
-            liveActivityStatusText = "Live Activity stopped"
             refreshLiveActivityState()
             return
         }
 
-        let result = LiveActivityManager.shared.startActivity(for: trip, delayInfo: liveDelayInfo)
-        liveActivityStatusText = result.message
+        LiveActivityManager.shared.allowAutomaticStart(for: trip)
+        let result = LiveActivityManager.shared.startOrSchedule(for: trip, delayInfo: liveDelayInfo)
+        if let result {
+            switch result {
+            case .started, .alreadyRunning:
+                break
+            default:
+                liveActivityNotice = result.message
+            }
+        } else {
+            liveActivityNotice = "Live Activity will start one hour before departure."
+        }
         refreshLiveActivityState()
     }
 
     private func refreshLiveActivityState() {
         isLiveActivityRunning = LiveActivityManager.shared.isActivityRunning(for: trip.id)
-        liveActivityDiagnosticText = LiveActivityManager.shared.diagnosticSummary(for: trip.id)
     }
 
-    private var resolvedTrainNumber: String? {
-        trip.resolvedTrainNumber
-    }
-}
-
-private extension TripDetailSheet {
     func normalizeStationName(_ value: String) -> String {
         value
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
-}
-
-private extension TripDetailSheet {
     @ViewBuilder
     var goodToKnowSection: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1089,52 +803,8 @@ private extension TripDetailSheet {
     }
 
     private var isWaitingAtOriginForDeparture: Bool {
-        guard !isPastTrip,
-              let departure = timing.adjustedDeparture,
-              now >= departure,
-              locationPhaseDetector.phase(for: trip) != .boarded,
-              !hasFreshInfoFerTrainDeparture,
-              let location = locationProvider.lastLocation,
-              location.horizontalAccuracy >= 0,
-              location.horizontalAccuracy <= 150,
-              abs(location.timestamp.timeIntervalSinceNow) <= 15 * 60,
-              let origin = coordinate(for: trip.originStopId, sequence: trip.originSequence, in: trip) else {
-            return false
-        }
-        let radius = max(250, location.horizontalAccuracy * 1.5)
-        return location.distance(from: CLLocation(latitude: origin.latitude, longitude: origin.longitude)) <= radius
-    }
-
-    private var hasFreshInfoFerTrainDeparture: Bool {
-        guard let info = liveDelayInfo,
-              let liveCoordinate = info.liveCoordinate,
-              let fetchedAt = info.fetchedAt,
-              Date().timeIntervalSince(fetchedAt) <= 15 * 60,
-              let origin = coordinate(for: trip.originStopId, sequence: trip.originSequence, in: trip) else {
-            return false
-        }
-        let trainDistance = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
-            .distance(from: CLLocation(latitude: liveCoordinate.latitude, longitude: liveCoordinate.longitude))
-        return trainDistance > 750
-    }
-
-    private var stationDelayEntries: [StationDelayEntry] {
-        let stops = segmentStops
-        guard !stops.isEmpty else { return [] }
-
-        return stops.enumerated().map { index, stop in
-            StationDelayEntry(
-                id: stop.id,
-                name: stop.name,
-                platform: stop.platform,
-                arrivalDelay: stop.arrivalDelayMinutes,
-                departureDelay: stop.departureDelayMinutes,
-                isOrigin: isOriginStop(stop),
-                isDestination: isDestinationStop(stop),
-                isFirst: index == 0,
-                isLast: index == stops.count - 1
-            )
-        }
+        !isPastTrip && now >= (timing.adjustedDeparture ?? .distantFuture)
+            && locationPhaseDetector.phase(for: trip) == .atOrigin
     }
 
     private var segmentStops: [StoredStop] {
@@ -1384,7 +1054,6 @@ private extension TripDetailSheet {
                 }
             }
 
-            OperatorActionButton(title: "Send a report") {}
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1392,87 +1061,6 @@ private extension TripDetailSheet {
             RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
         )
-    }
-
-    @ViewBuilder
-    var arrivalForecastSection: some View {
-        let history = dataSource.delayHistory(for: resolvedTrainNumber ?? trip.id)
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Arrival Forecast")
-                    .font(.system(size: 20, weight: .semibold))
-                Text(arrivalForecastSubtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: 50) {
-                ForecastStatView(title: "Late", icon: "clock", value: history.map { "\(roundedPercent($0.delayedTrips, of: $0.observedTrips))%" } ?? "--")
-                ForecastStatView(title: "Avg. delay", icon: "stopwatch", value: history.map { formattedAverageDelay($0.averageDelayMinutes) } ?? "--")
-                ForecastStatView(title: "Observed", icon: "binoculars", value: history.map { "\($0.observedTrips)" } ?? "--")
-            }
-
-            VStack(spacing: 10) {
-                ForEach(arrivalDistribution, id: \.label) { entry in
-                    HStack(spacing: 12) {
-                        Text(entry.label)
-                            .font(.system(size: 13, weight: .regular))
-                            .frame(width: 65, alignment: .leading)
-
-                        ArrivalBarView(percent: entry.percent, barColor: entry.color)
-
-                        Text("\(entry.percent)%")
-                            .font(.system(size: 13, weight: .regular))
-                            .frame(width: 30, alignment: .trailing)
-                    }
-                }
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
-        )
-    }
-
-    private var arrivalDistribution: [(label: String, percent: Int, color: Color)] {
-        guard let history = dataSource.delayHistory(for: resolvedTrainNumber ?? trip.id) else {
-            return []
-        }
-        return [
-            ("On time", percentValue(history.percentOnTime), Color.green.opacity(0.8)),
-            ("15m late", percentValue(history.percentDelay15Minutes), Color.yellow.opacity(0.8)),
-            ("30m late", percentValue(history.percentDelay30Minutes), Color.orange.opacity(0.85)),
-            ("45m+ late", percentValue(history.percentDelay45MinutesPlus), Color.orange.opacity(0.6))
-        ]
-    }
-
-    private var arrivalForecastSubtitle: String {
-        "\(trainDisplayName) performance over the last 60 days"
-    }
-
-    private func percentValue(_ value: Double) -> Int {
-        Int(value.rounded())
-    }
-
-    private func roundedPercent(_ count: Int, of total: Int) -> Int {
-        guard total > 0 else { return 0 }
-        return Int((Double(count) / Double(total) * 100).rounded())
-    }
-
-    private func formattedAverageDelay(_ value: Double) -> String {
-        let minutes = Int(value.rounded())
-        if minutes == 0 { return "0m" }
-        return minutes > 0 ? "+\(minutes)m" : "\(minutes)m"
-    }
-
-    private var trainDisplayName: String {
-        let title = trip.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let firstComponent = title.split(separator: "•").first {
-            return String(firstComponent).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return title
     }
 
     private var historyRouteSubtitle: String {
@@ -1495,93 +1083,6 @@ private extension TripDetailSheet {
                 isPlaceholder: isSeatNumbersPlaceholder
             )
         }
-    }
-
-    @ViewBuilder
-    private var trainInfoSection: some View {
-        Button(action: openSeatEditor) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .center, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("About the Train")
-                            .font(.system(size: 20, weight: .semibold))
-                        Text("Tap to edit seats, license & traction")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    trainPowerChip
-                    Image(systemName: "chevron.right")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                if trip.agencyId == "236025" {
-                    HStack() {
-                        Spacer()
-                        Image("train")
-                            .resizable()
-                            .scaledToFill()
-                            .clipped()
-                            .frame(alignment: .leading)
-                            .padding(.trailing, -16)
-                    }
-                }
-
-                trainFactRow(
-                    title: "Type",
-                    value: trainTypeFact.text,
-                    isPlaceholder: trainTypeFact.isPlaceholder
-                )
-
-                Divider()
-
-                trainFactRow(
-                    title: "Registration",
-                    value: trainIdentifierFact.text,
-                    isPlaceholder: trainIdentifierFact.isPlaceholder
-                )
-
-                Divider()
-
-                trainFactRow(
-                    title: "Length",
-                    value: trainLengthFact.text,
-                    isPlaceholder: trainLengthFact.isPlaceholder
-                )
-
-                Divider()
-
-                trainFactRow(
-                    title: "Tonnage",
-                    value: trainTonnageFact.text,
-                    isPlaceholder: trainTonnageFact.isPlaceholder
-                )
-
-                Divider()
-
-                trainFactRow(
-                    title: "Voltage & Frequency",
-                    value: trainElectrificationFact.text,
-                    isPlaceholder: trainElectrificationFact.isPlaceholder
-                )
-
-                Divider()
-
-                trainFactRow(
-                    title: "Track Gauge",
-                    value: trainTrackGaugeFact.text,
-                    isPlaceholder: trainTrackGaugeFact.isPlaceholder
-                )
-            }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
     }
 
     private func editorInfoCard(
@@ -1627,65 +1128,6 @@ private extension TripDetailSheet {
         return seats.isEmpty
     }
 
-    private var resolvedTrainType: TrainType? {
-        if let stored = trip.trainType {
-            return stored
-        }
-        return TrainType.inferred(fromTitle: trip.title)
-    }
-
-    private var trainTypeFact: (text: String, isPlaceholder: Bool) {
-        if let type = resolvedTrainType {
-            return (type.displayLabel, false)
-        }
-        return ("Add train type", true)
-    }
-
-    private var trainIdentifierFact: (text: String, isPlaceholder: Bool) {
-        guard let identifier = trip.trainIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !identifier.isEmpty else {
-            return ("Add train license", true)
-        }
-        return (identifier, false)
-    }
-
-    private var trainLengthFact: (text: String, isPlaceholder: Bool) {
-        if let stored = trip.trainLength?.trimmingCharacters(in: .whitespacesAndNewlines), !stored.isEmpty {
-            return (stored, false)
-        }
-        if let derived = derivedTrainLengthText {
-            return (derived, false)
-        }
-        return ("Add train length", true)
-    }
-
-    private var trainTonnageFact: (text: String, isPlaceholder: Bool) {
-        if let stored = trip.trainTonnage?.trimmingCharacters(in: .whitespacesAndNewlines), !stored.isEmpty {
-            return (stored, false)
-        }
-        if let derived = derivedTrainTonnageText {
-            return (derived, false)
-        }
-        return ("Add tonnage", true)
-    }
-
-    private var trainElectrificationFact: (text: String, isPlaceholder: Bool) {
-        ("25kV @ 50Hz", false)
-    }
-
-    private var trainTrackGaugeFact: (text: String, isPlaceholder: Bool) {
-        ("1435mm standard", false)
-    }
-
-    private var derivedTrainLengthText: String? {
-        guard let meters = segments.first?.trainLengthMeters, meters > 0 else { return nil }
-        return "\(meters) m"
-    }
-
-    private var derivedTrainTonnageText: String? {
-        guard let tons = segments.first?.trainTonnage, tons > 0 else { return nil }
-        return "\(tons) t"
-    }
-
     private var operatorBranding: OperatorBranding {
         OperatorBrandingCatalog.branding(for: trip.agencyId)
     }
@@ -1707,20 +1149,12 @@ private extension TripDetailSheet {
     }
 
     private var operatorSecondaryText: String {
-        operatorLocationText ?? operatorWebsiteHost ?? "Romania"
+        operatorLocationText ?? operatorWebsiteHost ?? "Switzerland"
     }
 
     private var operatorLocationText: String? {
         OperatorBrandingCatalog.city(for: trip.agencyId)
-            ?? inferredLocationFromTimezone
             ?? operatorWebsiteHost
-    }
-
-    private var inferredLocationFromTimezone: String? {
-        guard let timezone = operatorAgencyInfo?.timezone else { return nil }
-        guard let component = timezone.split(separator: "/").last else { return nil }
-        let city = component.replacingOccurrences(of: "_", with: " ")
-        return city.isEmpty ? nil : city
     }
 
     private var operatorWebsiteString: String? {
@@ -1756,47 +1190,7 @@ private extension TripDetailSheet {
         operatorHasWebsite || operatorHasPhone
     }
 
-    @ViewBuilder
-    private func trainFactRow(title: String, value: String, isPlaceholder: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title.uppercased())
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.title3)
-                .fontWeight(.semibold)
-                .foregroundStyle(isPlaceholder ? .secondary : .primary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var trainPowerChip: some View {
-        if let power = trip.trainPower {
-            Label(power.displayName, systemImage: power.systemImage)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .foregroundStyle(power == .electric ? Color.blue : Color.orange)
-                .background((power == .electric ? Color.blue : Color.orange).opacity(0.15))
-                .clipShape(Capsule())
-        } else {
-            Text("Set traction")
-                .font(.caption)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .foregroundStyle(.secondary)
-                .background(Color(.systemGray5))
-                .clipShape(Capsule())
-        }
-    }
-
     private func openSeatEditor() {
-        seatEditorCar = trip.seatCar ?? ""
-        seatEditorSeats = trip.seatNumbers?.joined(separator: ", ") ?? ""
-        seatEditorTrainIdentifier = trip.trainIdentifier ?? ""
-        seatEditorTrainPower = trip.trainPower
         isPresentingSeatEditor = true
     }
 
@@ -1812,32 +1206,20 @@ private extension TripDetailSheet {
         openURL(url)
     }
 
-    private func saveSeatEditor() {
-        let trimmedCar = seatEditorCar.trimmingCharacters(in: .whitespacesAndNewlines)
-        let carValue = trimmedCar.isEmpty ? nil : trimmedCar
-
-        let seatTokens = seatEditorSeats
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        let seatsValue = seatTokens.isEmpty ? nil : seatTokens
-
-        let trimmedIdentifier = seatEditorTrainIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trainIdentifierValue = trimmedIdentifier.isEmpty ? nil : trimmedIdentifier
-
+    private func saveSeatEditor(car: String?, seats: [String]?) {
         guard let onUpdateTrip else {
             isPresentingSeatEditor = false
             return
         }
 
         let updatedTrip = trip.updatingSeatInfo(
-            car: carValue,
-            seats: seatsValue,
-            trainType: trip.trainType ?? resolvedTrainType,
-            trainLength: trip.trainLength ?? derivedTrainLengthText,
-            trainTonnage: trip.trainTonnage ?? derivedTrainTonnageText,
-            trainIdentifier: trainIdentifierValue,
-            trainPower: seatEditorTrainPower
+            car: car,
+            seats: seats,
+            trainType: trip.trainType,
+            trainLength: trip.trainLength,
+            trainTonnage: trip.trainTonnage,
+            trainIdentifier: trip.trainIdentifier,
+            trainPower: trip.trainPower
         )
         onUpdateTrip(updatedTrip)
         isPresentingSeatEditor = false
@@ -2094,37 +1476,6 @@ private struct RouteHistoryMetrics {
     let totalDuration: TimeInterval?
 }
 
-private struct SegmentTimelineEntry {
-    let segment: GTFSSegment
-    let startDate: Date
-    let endDate: Date
-}
-
-private struct SegmentSpeedContext {
-    enum State {
-        case upcoming
-        case active
-        case complete
-    }
-
-    let segment: GTFSSegment
-    let startDate: Date
-    let endDate: Date
-    let state: State
-
-    init(entry: SegmentTimelineEntry, state: State) {
-        segment = entry.segment
-        startDate = entry.startDate
-        endDate = entry.endDate
-        self.state = state
-    }
-}
-
-private enum SegmentClockEvent {
-    case departure
-    case arrival
-}
-
 private struct DestinationWeather {
     let symbolName: String
     let summary: String
@@ -2144,595 +1495,6 @@ private struct TerminalStatusDisplay {
     let showsOriginalTime: Bool
     let originalTimeText: String?
     let platformText: String
-}
-
-private struct StationDelayEntry: Identifiable {
-    let id: String
-    let name: String
-    let platform: String?
-    let arrivalDelay: Int?
-    let departureDelay: Int?
-    let isOrigin: Bool
-    let isDestination: Bool
-    let isFirst: Bool
-    let isLast: Bool
-
-    var platformLabel: String {
-        guard let platform, !platform.isEmpty, platform != "-" else { return "—" }
-        return "Linia \(platform)"
-    }
-}
-
-private struct StationDelaysSheet: View {
-    let entries: [StationDelayEntry]
-    var onDismiss: (() -> Void)? = nil
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                StationDelayTimelineView(entries: entries)
-                    .padding()
-            }
-            .navigationTitle("Station Delays")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { onDismiss?() }
-                }
-            }
-        }
-    }
-}
-
-private struct WebcamBoardSheet: View {
-    let trip: Trip
-    let station: String
-    var onDismiss: (() -> Void)? = nil
-    var onUpdateTrip: ((Trip) -> Void)? = nil
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var currentImage: UIImage?
-    @State private var platformText: String?
-    @State private var statusText: String = "Waiting for the first webcam refresh…"
-    @State private var isLoading = false
-    @State private var loadError: String?
-    @State private var loadTask: Task<Void, Never>?
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    headerCard
-
-                    if isLoading && currentImage == nil {
-                        loadingCard
-                    } else {
-                        if let loadError {
-                            errorCard(text: loadError)
-                        }
-                        platformCard
-                        webcamImageCard
-                    }
-                }
-                .padding()
-            }
-            .navigationTitle("Platform OCR")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
-                        loadTask?.cancel()
-                        dismiss()
-                        onDismiss?()
-                    }
-                }
-            }
-        }
-        .onAppear {
-            guard loadTask == nil else { return }
-            loadTask = Task { await runRefreshLoop() }
-        }
-        .onDisappear {
-            loadTask?.cancel()
-            loadTask = nil
-        }
-    }
-
-    private var headerCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Bucharest North platform")
-                    .font(.system(size: 22, weight: .semibold))
-                Spacer(minLength: 12)
-                if isLoading {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                }
-            }
-            Text("Live board OCR for \(station)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color(.separator).opacity(0.7), lineWidth: 1)
-        )
-    }
-
-    private var loadingCard: some View {
-        VStack(spacing: 14) {
-            ProgressView()
-                .progressViewStyle(.circular)
-                .scaleEffect(1.2)
-            Text("Reading the board…")
-                .font(.headline)
-            Text("Fetching the JPG and checking the train row.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 30)
-        .padding(.horizontal, 24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color(.separator).opacity(0.7), lineWidth: 1)
-        )
-    }
-
-    private var platformCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Platform")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-
-            HStack(alignment: .lastTextBaseline, spacing: 10) {
-                Text(platformText ?? "—")
-                    .font(.system(size: 56, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                Text(platformText == nil ? "not there yet" : "confirmed")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-
-            Text(statusText)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color(.separator).opacity(0.7), lineWidth: 1)
-        )
-    }
-
-    private func errorCard(text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Could not load board")
-                .font(.headline)
-            Text(text)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-
-    private var webcamImageCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Webcam JPG")
-                .font(.system(size: 20, weight: .semibold))
-            Text("The raw image fetched from the CFR webcam page.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            if let currentImage {
-                Image(uiImage: currentImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color(.separator).opacity(0.7), lineWidth: 1)
-                    )
-            } else {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.quaternary.opacity(0.35))
-                    .frame(height: 220)
-                    .overlay {
-                        ProgressView()
-                    }
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color(.separator).opacity(0.7), lineWidth: 1)
-        )
-    }
-
-    private func runRefreshLoop() async {
-        await refreshOnce()
-        while !Task.isCancelled {
-            do {
-                try await Task.sleep(for: .seconds(60))
-            } catch {
-                break
-            }
-            guard !Task.isCancelled else { break }
-            await refreshOnce()
-        }
-    }
-
-    private func refreshOnce() async {
-        await MainActor.run {
-            isLoading = true
-            loadError = nil
-        }
-
-        let observation = await InfoFerScraper.shared.fetchBoardObservation(for: trip, station: station)
-
-        guard !Task.isCancelled else { return }
-
-        await MainActor.run {
-            guard !Task.isCancelled else { return }
-            isLoading = false
-            guard let observation else {
-                loadError = "Unable to fetch or read the webcam board."
-                statusText = "Unable to fetch or read the webcam board."
-                return
-            }
-
-            currentImage = observation.image
-            platformText = observation.platformText
-            statusText = observation.statusText
-            loadError = nil
-
-            if let updatedTrip = observation.updatedTrip {
-                onUpdateTrip?(updatedTrip)
-            }
-        }
-    }
-}
-
-private extension TripDetailSheet {
-    @ViewBuilder
-    var trackSpeedSection: some View {
-        if let context = currentSegmentContext {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Track Speed Limit")
-                    .font(.system(size: 20, weight: .semibold))
-
-                HStack(alignment: .lastTextBaseline, spacing: 8) {
-                    Text(speedDisplayValue(for: context.segment.maxSpeed))
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                    if context.segment.maxSpeed > 0 {
-                        Text("km/h")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .animation(.easeInOut(duration: 0.35), value: context.segment.id)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(segmentLabel(for: context.segment))
-                        .font(.headline)
-                    Text(segmentStateDescription(for: context))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text(segmentWindowDescription(for: context))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
-            )
-        }
-    }
-
-    private func speedDisplayValue(for speed: Int) -> String {
-        speed > 0 ? "\(speed)" : "-"
-    }
-
-    private func segmentLabel(for segment: GTFSSegment) -> String {
-        let origin = segmentStationName(segment.startName, fallback: segment.startId)
-        let destination = segmentStationName(segment.endName, fallback: segment.endId)
-        return "\(origin) → \(destination)"
-    }
-
-    private func segmentStateDescription(for context: SegmentSpeedContext) -> String {
-        switch context.state {
-        case .active:
-            return "Segment in progress"
-        case .upcoming:
-            return "Segment scheduled next"
-        case .complete:
-            return "Segment completed"
-        }
-    }
-
-    private func segmentWindowDescription(for context: SegmentSpeedContext) -> String {
-        let startText = segmentTimeLabel(for: context.startDate)
-        let endText = segmentTimeLabel(for: context.endDate)
-        switch context.state {
-        case .active:
-            return "Live window: \(startText) – \(endText)"
-        case .upcoming:
-            return "Begins around \(startText)"
-        case .complete:
-            return "Ended around \(endText)"
-        }
-    }
-
-    private func segmentStationName(_ name: String?, fallback: String) -> String {
-        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let trimmed, !trimmed.isEmpty {
-            return trimmed
-        }
-        return fallback
-    }
-
-    private func segmentTimeLabel(for date: Date) -> String {
-        TripDetailSheet.timeFormatter.string(from: date)
-    }
-
-    private var currentSegmentContext: SegmentSpeedContext? {
-        let entries = segmentTimelineEntries
-        guard !entries.isEmpty else { return nil }
-        let sorted = entries.sorted { $0.startDate < $1.startDate }
-        let reference = now
-
-        if let active = sorted.first(where: { reference >= $0.startDate && reference <= $0.endDate }) {
-            return SegmentSpeedContext(entry: active, state: .active)
-        }
-
-        if reference < sorted.first!.startDate {
-            let upcoming = sorted.first(where: { reference <= $0.startDate }) ?? sorted.first!
-            return SegmentSpeedContext(entry: upcoming, state: .upcoming)
-        }
-
-        if reference > sorted.last!.endDate {
-            let last = sorted.last!
-            return SegmentSpeedContext(entry: last, state: .complete)
-        }
-
-        if let upcoming = sorted.first(where: { reference <= $0.startDate }) {
-            return SegmentSpeedContext(entry: upcoming, state: .upcoming)
-        }
-
-        return nil
-    }
-
-    private var segmentTimelineEntries: [SegmentTimelineEntry] {
-        guard !segments.isEmpty else { return [] }
-        let baseDate = segmentBaseDate
-        var lastReference: Date?
-        let entries: [SegmentTimelineEntry] = segments.compactMap { segment in
-            guard
-                var startDate = adjustedSegmentDate(seconds: segment.departureSeconds, stopId: segment.startId, stationName: segment.startName, event: .departure, baseDate: baseDate),
-                var endDate = adjustedSegmentDate(seconds: segment.arrivalSeconds, stopId: segment.endId, stationName: segment.endName, event: .arrival, baseDate: baseDate)
-            else {
-                return nil
-            }
-
-            if let arrivalNormalized = ScheduleDateUtils.normalizedArrival(endDate, relativeTo: startDate) {
-                endDate = arrivalNormalized
-            }
-
-            startDate = ScheduleDateUtils.shiftedForward(startDate, after: lastReference)
-            endDate = ScheduleDateUtils.shiftedForward(endDate, after: startDate)
-            lastReference = endDate
-
-            return SegmentTimelineEntry(segment: segment, startDate: startDate, endDate: endDate)
-        }
-        return entries
-    }
-
-    private var segmentBaseDate: Date {
-        let reference = timing.scheduledDeparture ?? trip.travelDate ?? syncTravelDate
-        var candidate = Calendar.current.startOfDay(for: reference)
-        if reference < now,
-           let firstSeconds = segments.first?.departureSeconds {
-            let firstStart = candidate.addingTimeInterval(TimeInterval(firstSeconds))
-            if now < firstStart {
-                candidate = candidate.addingTimeInterval(-ScheduleDateUtils.dayInterval)
-            }
-        }
-        return candidate
-    }
-
-    private func adjustedSegmentDate(
-        seconds: Int?,
-        stopId: String,
-        stationName: String?,
-        event: SegmentClockEvent,
-        baseDate: Date
-    ) -> Date? {
-        guard let seconds else { return nil }
-        var date = baseDate.addingTimeInterval(TimeInterval(seconds))
-        if let delay = segmentDelayMinutes(for: stopId, stationName: stationName, event: event) ?? activeDelayMinutes,
-           delay != 0 {
-            date = date.addingTimeInterval(TimeInterval(delay * 60))
-        }
-        return date
-    }
-
-    private func segmentDelayMinutes(
-        for stopId: String,
-        stationName: String?,
-        event: SegmentClockEvent
-    ) -> Int? {
-        if let stop = trip.stops?.first(where: { $0.id == stopId }) {
-            return event == .departure ? stop.departureDelayMinutes : stop.arrivalDelayMinutes
-        }
-
-        guard let stationName else { return nil }
-        let normalized = normalizeStationName(stationName)
-        if let info = liveDelayInfo,
-           let entry = info.stationDelays.first(where: { normalizeStationName($0.stationName) == normalized }) {
-            switch event {
-            case .departure:
-                return entry.departureDelayMinutes
-            case .arrival:
-                return entry.arrivalDelayMinutes
-            }
-        }
-
-        return nil
-    }
-}
-
-private struct StationDelayTimelineView: View {
-    let entries: [StationDelayEntry]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Station Delays")
-                .font(.system(size: 18, weight: .semibold))
-
-            if entries.isEmpty {
-                Text("No station-level delay data yet.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                LazyVStack(spacing: 0) {
-                    ForEach(entries.indices, id: \.self) { index in
-                        StationDelayRow(entry: entries[index])
-                        if index < entries.count - 1 {
-                            Divider().opacity(0.2)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color(.separator), lineWidth: 1)
-        )
-    }
-}
-
-private struct StationDelayRow: View {
-    let entry: StationDelayEntry
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            TimelineIndicator(isFirst: entry.isFirst, isLast: entry.isLast, isHighlighted: entry.isOrigin || entry.isDestination)
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(entry.name)
-                        .fontWeight(entry.isOrigin || entry.isDestination ? .semibold : .regular)
-                    if entry.isOrigin {
-                        tagView("Origin")
-                    }
-                    if entry.isDestination {
-                        tagView("Destination")
-                    }
-                }
-
-                HStack(spacing: 8) {
-                    DelayBadge(label: "Arr", value: entry.arrivalDelay)
-                    DelayBadge(label: "Dep", value: entry.departureDelay)
-                }
-            }
-
-            Spacer(minLength: 0)
-
-            Text(entry.platformLabel)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 8)
-    }
-
-    private func tagView(_ text: String) -> some View {
-        Text(text)
-            .font(.caption2)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color(.secondarySystemBackground))
-            .clipShape(Capsule())
-    }
-}
-
-private struct TimelineIndicator: View {
-    let isFirst: Bool
-    let isLast: Bool
-    let isHighlighted: Bool
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Rectangle()
-                .fill(Color(.separator))
-                .frame(width: 2, height: isFirst ? 0 : 12)
-            Circle()
-                .fill(isHighlighted ? Color.orange : Color(.label))
-                .frame(width: 10, height: 10)
-                .overlay(
-                    Circle()
-                        .stroke(Color(.separator), lineWidth: 1)
-                )
-            Rectangle()
-                .fill(Color(.separator))
-                .frame(width: 2, height: isLast ? 0 : 12)
-        }
-        .frame(width: 12)
-    }
-}
-
-private struct DelayBadge: View {
-    let label: String
-    let value: Int?
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text(displayText)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(color)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    private var displayText: String {
-        guard let value else { return "--" }
-        if value > 0 { return "+\(value)m" }
-        if value < 0 { return "−\(abs(value))m" }
-        return "0m"
-    }
-
-    private var color: Color {
-        guard let value else { return .secondary }
-        if value > 0 { return .orange }
-        if value < 0 { return .green }
-        return .secondary
-    }
 }
 
 private struct TerminalInfoView: View {
@@ -2827,7 +1589,7 @@ private struct InfoTileCard: View {
     let icon: String
     let title: String
     let value: String
-    var isPlaceholder: Bool = false
+    var isPlaceholder = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2835,78 +1597,252 @@ private struct InfoTileCard: View {
                 .font(.headline)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title.uppercased())
-                    .font(.caption)
-                    .fontWeight(.semibold)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Text(value)
-                    .font(.title3)
-                    .fontWeight(.semibold)
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(isPlaceholder ? .secondary : .primary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .overlay(
+        .overlay {
             RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .stroke(Color(.systemGray3).opacity(0.9), lineWidth: 1)
-        )
+        }
     }
 }
 
 private struct SeatEditorSheet: View {
-    @Binding var carText: String
-    @Binding var seatsText: String
-    @Binding var trainIdentifierText: String
-    @Binding var trainPower: TrainPowerType?
-    var onSave: () -> Void
-    var onCancel: () -> Void
+    let trip: Trip
+    let onSave: (String?, [String]?) -> Void
+    let onCancel: () -> Void
+
+    @AppStorage(FormationSettings.key) private var formationServer = FormationSettings.defaultServer
+    @State private var coachText: String
+    @State private var seatDraft = ""
+    @State private var seats: [String]
+    @State private var formationCoaches: [String] = []
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable { case coach, seat }
+
+    init(trip: Trip, onSave: @escaping (String?, [String]?) -> Void, onCancel: @escaping () -> Void) {
+        self.trip = trip
+        self.onSave = onSave
+        self.onCancel = onCancel
+        let firstCoach = (trip.seatCar ?? "")
+            .components(separatedBy: CharacterSet(charactersIn: ",;/"))
+            .first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        _coachText = State(initialValue: firstCoach)
+        _seats = State(initialValue: trip.seatNumbers ?? [])
+    }
+
+    private var coachSuggestions: [String] {
+        let choices = formationCoaches.isEmpty ? (1...12).map(String.init) : formationCoaches
+        let query = coachText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, !choices.contains(query) else { return choices }
+        return choices.filter { $0.lowercased().hasPrefix(query.lowercased()) }
+    }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Coach") {
-                    TextField("e.g. 12", text: $carText)
-                        .textInputAutocapitalization(.characters)
-                        .disableAutocorrection(true)
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Find your seat")
+                            .font(.system(.title2, design: .rounded, weight: .bold))
+                        Text("Pick a coach, then add one or more seats.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
 
-                Section("Seats") {
-                    TextField("e.g. 22A, 22B", text: $seatsText)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-                }
+                    VStack(alignment: .leading, spacing: 14) {
+                        Label("Coach", systemImage: "train.side.rear.car")
+                            .font(.headline)
+                        TextField("Coach number", text: $coachText)
+                            .font(.system(.title2, design: .rounded, weight: .semibold))
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                            .onChange(of: coachText) { _, value in
+                                // A seat booking has one coach; pasted lists keep the first entry.
+                                let first = value.components(separatedBy: CharacterSet(charactersIn: ",;/"))
+                                    .first ?? ""
+                                if first != value { coachText = first }
+                            }
+                            .submitLabel(.next)
+                            .focused($focusedField, equals: .coach)
+                            .onSubmit { focusedField = .seat }
+                            .padding(14)
+                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 14))
 
-                Section("Train License") {
-                    TextField("e.g. 90 53 0481 001-2", text: $trainIdentifierText)
-                        .textInputAutocapitalization(.characters)
-                        .disableAutocorrection(true)
-                }
-
-                Section("Traction") {
-                    Picker("Power", selection: $trainPower) {
-                        Text("Not set").tag(nil as TrainPowerType?)
-                        ForEach(TrainPowerType.allCases) { power in
-                            Text(power.displayName).tag(power as TrainPowerType?)
+                        if !coachSuggestions.isEmpty {
+                            Text(formationCoaches.isEmpty ? "QUICK PICK" : "COACHES ON THIS TRAIN")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.secondary)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(coachSuggestions, id: \.self) { coach in
+                                        Button(coach) { selectCoach(coach) }
+                                            .font(.system(.subheadline, design: .rounded, weight: .semibold))
+                                            .foregroundStyle(coachText == coach ? .white : .primary)
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 10)
+                                            .background(coachText == coach ? Color.blue : Color(.tertiarySystemFill), in: Capsule())
+                                    }
+                                }
+                            }
                         }
                     }
-                    .pickerStyle(.segmented)
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
+
+                    VStack(alignment: .leading, spacing: 14) {
+                        Label("Seats", systemImage: "airplaneseat")
+                            .font(.headline)
+                        HStack(spacing: 10) {
+                            TextField("Seat number, e.g. 22A", text: $seatDraft)
+                                .font(.system(.title3, design: .rounded, weight: .semibold))
+                                .textInputAutocapitalization(.characters)
+                                .autocorrectionDisabled()
+                                .submitLabel(.done)
+                                .focused($focusedField, equals: .seat)
+                                .onSubmit(addSeats)
+                            Button(action: addSeats) {
+                                Image(systemName: "plus")
+                                    .font(.headline)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .clipShape(Circle())
+                            .disabled(parsedSeats(from: seatDraft).isEmpty)
+                            .accessibilityLabel("Add seat")
+                        }
+                        .padding(10)
+                        .padding(.leading, 4)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 14))
+
+                        if !seats.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(seats.indices, id: \.self) { index in
+                                        let seat = seats[index]
+                                        Button {
+                                            seats.remove(at: index)
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Text(seat)
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            .font(.subheadline.weight(.semibold))
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 9)
+                                            .background(Color.blue.opacity(0.12), in: Capsule())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel("Remove seat \(seat)")
+                                    }
+                                }
+                            }
+                        } else {
+                            Text("Add each seat with +, or separate several with commas.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
                 }
+                .padding(20)
             }
-            .scrollContentBackground(.hidden)
-            .background(Color(.systemBackground))
-            .navigationTitle("Seat & Train Details")
+            .scrollDismissesKeyboard(.interactively)
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Coach & Seats")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onCancel)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(action: onSave) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.title2)
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
             }
+            .safeAreaInset(edge: .bottom) {
+                Button(action: save) {
+                    Text("Save seat details")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(.regularMaterial)
+            }
+            .onAppear { focusedField = .coach }
+            .task(id: "\(trip.id)|\(trip.travelDate?.timeIntervalSince1970 ?? 0)|\(formationServer)") {
+                await loadFormationCoaches()
+            }
+        }
+    }
+
+    private func selectCoach(_ coach: String) {
+        coachText = coach
+        focusedField = .seat
+    }
+
+    private func parsedSeats(from input: String) -> [String] {
+        input.components(separatedBy: CharacterSet(charactersIn: ",;\n"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
+            .filter { !$0.isEmpty }
+    }
+
+    private func addSeats() {
+        for seat in parsedSeats(from: seatDraft)
+        where !seats.contains(where: { $0.caseInsensitiveCompare(seat) == .orderedSame }) {
+            seats.append(seat)
+        }
+        seatDraft = ""
+        focusedField = .seat
+    }
+
+    private func save() {
+        var allSeats = seats
+        for seat in parsedSeats(from: seatDraft)
+        where !allSeats.contains(where: { $0.caseInsensitiveCompare(seat) == .orderedSame }) {
+            allSeats.append(seat)
+        }
+        let coach = coachText.trimmingCharacters(in: .whitespacesAndNewlines)
+        onSave(coach.isEmpty ? nil : coach, allSeats.isEmpty ? nil : allSeats)
+    }
+
+    private func loadFormationCoaches() async {
+        do {
+            let sourceText = [trip.trainIdentifier, trip.sharedJourneyLeg?.service, trip.title]
+                .compactMap { $0 }.joined(separator: " ")
+            let number = sourceText.split(whereSeparator: { !$0.isASCII || !$0.isNumber })
+                .map(String.init).reversed().first(where: { !$0.isEmpty })
+            guard let agency = trip.agencyId, !agency.isEmpty, let number else { return }
+            let url = try FormationSettings.request(server: formationServer, agency: agency, number: number, date: trip.travelDate)
+            let result = try await FormationService.shared.load(url: url)
+            try Task.checkCancellation()
+            let uic = trip.sharedJourneyLeg?.origin.id ?? GTFSDataSource.shared.stationUIC(for: trip.originStopId)
+            let formation = try result.response.formation(
+                boardingUIC: uic,
+                boardingName: trip.originName,
+                operatorName: agency == "11" ? "SBB" : (GTFSDataSource.shared.agencyInfo(for: agency)?.name ?? agency)
+            )
+            let coaches = formation?.vehicles.compactMap { vehicle -> String? in
+                guard vehicle.position.hasPrefix("Car ") else { return nil }
+                return String(vehicle.position.dropFirst(4))
+            } ?? []
+            formationCoaches = Array(Set(coaches)).sorted {
+                (Int($0) ?? Int.max, $0) < (Int($1) ?? Int.max, $1)
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            formationCoaches = []
         }
     }
 }
@@ -3052,7 +1988,7 @@ private struct QRScannerView: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> DataScannerViewController {
         let controller = DataScannerViewController(
-            recognizedDataTypes: [.barcode(symbologies: [.QR])],
+            recognizedDataTypes: [.barcode(symbologies: [.qr])],
             qualityLevel: .balanced,
             recognizesMultipleItems: false,
             isHighFrameRateTrackingEnabled: true,
@@ -3082,7 +2018,7 @@ private struct QRScannerView: UIViewControllerRepresentable {
             for item in addedItems {
                 if case let .barcode(barcode) = item, let payload = barcode.payloadStringValue {
                     onScan(payload)
-                    try? dataScanner.stopScanning()
+                    dataScanner.stopScanning()
                     break
                 }
             }
@@ -3121,78 +2057,5 @@ private struct OperatorActionButton: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct ScraperStatusBanner: View {
-    let text: String
-    let isDelayed: Bool
-
-    private var accentColor: Color {
-        isDelayed ? .red : .green
-    }
-
-    private var backgroundColor: Color {
-        accentColor.opacity(0.12)
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Rectangle()
-                .fill(accentColor)
-                .frame(height: 1)
-
-            Text(text)
-                .font(.subheadline)
-                .multilineTextAlignment(.leading)
-                .foregroundStyle(accentColor)
-                .padding(.vertical, 12)
-                .padding(.horizontal, 16)
-                .frame(maxWidth: .infinity)
-                .background(backgroundColor)
-
-            Rectangle()
-                .fill(accentColor)
-                .frame(height: 1)
-        }
-    }
-}
-
-private struct ForecastStatView: View {
-    let title: String
-    let icon: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.headline)
-                Text(value)
-                    .font(.system(size: 16, weight: .semibold))
-            }
-        }
-    }
-}
-
-private struct ArrivalBarView: View {
-    let percent: Int
-    let barColor: Color
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color(.systemGray5))
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(barColor)
-                    .frame(width: max(0, CGFloat(percent) / 100.0 * proxy.size.width))
-            }
-        }
-        .frame(height: 16)
-        .frame(maxWidth: .infinity)
     }
 }

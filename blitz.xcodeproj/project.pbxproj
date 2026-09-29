@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AB2400010000000000000001 /* SBBSharedJourneyResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2400010000000000000003 /* SBBSharedJourneyResolver.swift */; };
+		AB2400010000000000000002 /* SBBSharedJourneyResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2400010000000000000003 /* SBBSharedJourneyResolver.swift */; };
+		C027D98C306481380056357A /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C027D982306481380056357A /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C0609DA12FCE050E00786820 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C06852332EE58E6100C1A387 /* WidgetKit.framework */; };
 		C0609DA22FCE050E00786820 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C06852352EE58E6100C1A387 /* SwiftUI.framework */; };
 		C0609DB12FCE050F00786820 /* blitzWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C0609DA02FCE050E00786820 /* blitzWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -15,6 +18,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		C027D98A306481380056357A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C0C852122EDC81730025047D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C027D981306481380056357A;
+			remoteInfo = ShareExtension;
+		};
 		C0609DAF2FCE050F00786820 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = C0C852122EDC81730025047D /* Project object */;
@@ -45,6 +55,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
+				C027D98C306481380056357A /* ShareExtension.appex in Embed Foundation Extensions */,
 				C0609DB12FCE050F00786820 /* blitzWidgetExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
@@ -53,6 +64,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		AB2400010000000000000003 /* SBBSharedJourneyResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SBBSharedJourneyResolver.swift; sourceTree = "<group>"; };
+		C027D982306481380056357A /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0609DA02FCE050E00786820 /* blitzWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = blitzWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C06852332EE58E6100C1A387 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		C06852352EE58E6100C1A387 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
@@ -63,6 +76,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C027D990306481380056357A /* Exceptions for "ShareExtension" folder in "ShareExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C027D981306481380056357A /* ShareExtension */;
+		};
 		C0609DB22FCE050F00786820 /* Exceptions for "blitzWidget" folder in "blitzWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -74,12 +94,21 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				sbb_gtfs.db,
 			);
 			target = C0C852192EDC81730025047D /* blitz */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		C027D983306481380056357A /* ShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C027D990306481380056357A /* Exceptions for "ShareExtension" folder in "ShareExtension" target */,
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
 		C0609DA32FCE050E00786820 /* blitzWidget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -109,6 +138,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		C027D97F306481380056357A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C0609D9D2FCE050E00786820 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -159,6 +195,7 @@
 				C0C8522A2EDC81740025047D /* blitzTests */,
 				C0C852342EDC81740025047D /* blitzUITests */,
 				C0609DA32FCE050E00786820 /* blitzWidget */,
+				C027D983306481380056357A /* ShareExtension */,
 				C06852322EE58E6100C1A387 /* Frameworks */,
 				C0C8521B2EDC81730025047D /* Products */,
 			);
@@ -171,6 +208,7 @@
 				C0C852272EDC81740025047D /* blitzTests.xctest */,
 				C0C852312EDC81740025047D /* blitzUITests.xctest */,
 				C0609DA02FCE050E00786820 /* blitzWidgetExtension.appex */,
+				C027D982306481380056357A /* ShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -178,6 +216,7 @@
 		C0E769CC2FCEC5A30003832C /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				AB2400010000000000000003 /* SBBSharedJourneyResolver.swift */,
 				C0E769CD2FCEC5B00003832C /* TrainLiveActivityAttributes.swift */,
 			);
 			path = Shared;
@@ -186,6 +225,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		C027D981306481380056357A /* ShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C027D98D306481380056357A /* Build configuration list for PBXNativeTarget "ShareExtension" */;
+			buildPhases = (
+				C027D97E306481380056357A /* Sources */,
+				C027D97F306481380056357A /* Frameworks */,
+				C027D980306481380056357A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C027D983306481380056357A /* ShareExtension */,
+			);
+			name = ShareExtension;
+			packageProductDependencies = (
+			);
+			productName = ShareExtension;
+			productReference = C027D982306481380056357A /* ShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		C0609D9F2FCE050E00786820 /* blitzWidgetExtension */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C0609DB32FCE050F00786820 /* Build configuration list for PBXNativeTarget "blitzWidgetExtension" */;
@@ -221,6 +282,7 @@
 			);
 			dependencies = (
 				C0609DB02FCE050F00786820 /* PBXTargetDependency */,
+				C027D98B306481380056357A /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C0C8521C2EDC81730025047D /* blitz */,
@@ -288,6 +350,9 @@
 				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
+					C027D981306481380056357A = {
+						CreatedOnToolsVersion = 26.0.1;
+					};
 					C0609D9F2FCE050E00786820 = {
 						CreatedOnToolsVersion = 26.0.1;
 					};
@@ -322,11 +387,19 @@
 				C0C852262EDC81740025047D /* blitzTests */,
 				C0C852302EDC81740025047D /* blitzUITests */,
 				C0609D9F2FCE050E00786820 /* blitzWidgetExtension */,
+				C027D981306481380056357A /* ShareExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		C027D980306481380056357A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C0609D9E2FCE050E00786820 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -358,6 +431,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		C027D97E306481380056357A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB2400010000000000000002 /* SBBSharedJourneyResolver.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C0609D9C2FCE050E00786820 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -370,6 +451,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB2400010000000000000001 /* SBBSharedJourneyResolver.swift in Sources */,
 				C0E769CE2FCEC5C10003832C /* TrainLiveActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -391,6 +473,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		C027D98B306481380056357A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C027D981306481380056357A /* ShareExtension */;
+			targetProxy = C027D98A306481380056357A /* PBXContainerItemProxy */;
+		};
 		C0609DB02FCE050F00786820 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = C0609D9F2FCE050E00786820 /* blitzWidgetExtension */;
@@ -409,13 +496,71 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		C027D98E306481380056357A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 8SHQGK682T;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = ShareExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ro.openlabs.blitz.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C027D98F306481380056357A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 8SHQGK682T;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = ShareExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ro.openlabs.blitz.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		C0609DB42FCE050F00786820 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 8SHQGK682T;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = blitzWidget/Info.plist;
@@ -446,7 +591,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 8SHQGK682T;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = blitzWidget/Info.plist;
@@ -607,7 +752,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Blitz Trains";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.travel";
 				INFOPLIST_KEY_NSCameraUsageDescription = "The camera is used to scan the ticket's QR Code";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Raily uses your location during active train trips to detect boarding, station stops, and arrival, even when the app is in the background.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Blitz uses your location during active train trips to detect boarding, station stops, and arrival, even when the app is in the background.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "The location is used to pinpoint you on the map while using the app";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
@@ -653,7 +798,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Blitz Trains";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.travel";
 				INFOPLIST_KEY_NSCameraUsageDescription = "The camera is used to scan the ticket's QR Code";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Raily uses your location during active train trips to detect boarding, station stops, and arrival, even when the app is in the background.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Blitz uses your location during active train trips to detect boarding, station stops, and arrival, even when the app is in the background.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "The location is used to pinpoint you on the map while using the app";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
@@ -771,6 +916,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		C027D98D306481380056357A /* Build configuration list for PBXNativeTarget "ShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C027D98E306481380056357A /* Debug */,
+				C027D98F306481380056357A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		C0609DB32FCE050F00786820 /* Build configuration list for PBXNativeTarget "blitzWidgetExtension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

@@ -1,6 +1,6 @@
 import Foundation
 
-enum ScheduleDateUtils {
+nonisolated enum ScheduleDateUtils {
     static let dayInterval: TimeInterval = 24 * 60 * 60
 
     /// Returns the calendar-day offset of a stop within a service. SQLite may
@@ -36,7 +36,7 @@ enum ScheduleDateUtils {
         return offset
     }
 
-    static func serviceDate(forBoardingDate boardingDate: Date, dayOffset: Int, calendar: Calendar = .current) -> Date {
+    static func serviceDate(forBoardingDate boardingDate: Date, dayOffset: Int, calendar: Calendar = GTFSDataSource.calendar) -> Date {
         let boardingDay = calendar.startOfDay(for: boardingDate)
         return calendar.date(byAdding: .day, value: -max(0, dayOffset), to: boardingDay) ?? boardingDay
     }
