@@ -13,5 +13,8 @@ Finally, make sure the PC that runs these services locally is on the same networ
 machine's IP within the network and add it in the iOS app in the settings page.
 
 That's it! You can now see train formations, and get real time updates. 
-DISCLAIMER: Not all train trips are supported, so if you don't see it working, try with another trip. Most SBB-based trips work.
+# DISCLAIMER: 
+Not all train trips are supported, so if you don't see it working, try with another trip. Most SBB-based trips work. The swiss opentransport website publishes new GTFS files bi-weekly. When they do that, the old ones will not work anymore. That means that the one in the repository will be stale by the time this project is opened. This is why, most probably real time delays, won't be working in a few days. We didn't manage to make a system that auto updates the GTFS files yet. The GTFS files are encapsulated in `mini_feed.sqlite`.
+
+Thanks for taking the time to check our project.
 
