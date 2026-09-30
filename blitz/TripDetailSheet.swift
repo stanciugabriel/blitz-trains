@@ -103,8 +103,10 @@ struct TripDetailSheet: View {
             async let weatherLoad: Void = loadDestinationWeather()
             _ = await (segmentsLoad, weatherLoad)
         }
-        .onReceive(secondTimer) { value in
-            now = value
+        .onReceive(secondTimer) { _ in
+            // Anchor the display to wall-clock time if the main thread delays
+            // delivery of a timer tick.
+            now = Date()
             refreshLiveActivityState()
         }
         .onReceive(NotificationCenter.default.publisher(for: .liveDelayInfoUpdated)) { notification in
@@ -153,9 +155,7 @@ struct TripDetailSheet: View {
                 Section {
                     VStack(alignment: .leading, spacing: 20) {
                         if hasSegmentData {
-                            TimelineView(.periodic(from: .now, by: 1)) { context in
-                                timetableSection(referenceDate: context.date)
-                            }
+                            timetableSection(referenceDate: now)
                         } else {
                             Text("Schedule information unavailable for this trip.")
                                 .font(.callout)
@@ -802,11 +802,6 @@ extension TripDetailSheet {
         terminalStatusDisplay(for: .arrival, scheduledDate: timing.scheduledArrival)
     }
 
-    private var isWaitingAtOriginForDeparture: Bool {
-        !isPastTrip && now >= (timing.adjustedDeparture ?? .distantFuture)
-            && locationPhaseDetector.phase(for: trip) == .atOrigin
-    }
-
     private var segmentStops: [StoredStop] {
         guard !orderedStops.isEmpty else { return [] }
         guard let start = trip.originSequence, let end = trip.destinationSequence else {
@@ -912,12 +907,7 @@ extension TripDetailSheet {
         let timeColor: Color
         let showsOriginalTime: Bool
 
-        if type == .departure && isWaitingAtOriginForDeparture {
-            statusText = "Waiting to depart"
-            statusColor = .orange
-            timeColor = .orange
-            showsOriginalTime = true
-        } else if let delay {
+        if let delay {
             if delay > 0 {
                 statusText = "Delay +\(delay)m"
                 statusColor = .red
@@ -1581,6 +1571,9 @@ private struct TerminalInfoView: View {
                     .foregroundStyle(.secondary)
             }
             .font(.subheadline)
+            .transaction { transaction in
+                transaction.animation = nil
+            }
         }
     }
 }
@@ -1619,6 +1612,7 @@ private struct SeatEditorSheet: View {
     let onCancel: () -> Void
 
     @AppStorage(FormationSettings.key) private var formationServer = FormationSettings.defaultServer
+    @ObservedObject private var subscriptions = RevenueCatManager.shared
     @State private var coachText: String
     @State private var seatDraft = ""
     @State private var seats: [String]
@@ -1780,7 +1774,8 @@ private struct SeatEditorSheet: View {
                 .background(.regularMaterial)
             }
             .onAppear { focusedField = .coach }
-            .task(id: "\(trip.id)|\(trip.travelDate?.timeIntervalSince1970 ?? 0)|\(formationServer)") {
+            .task(id: "\(trip.id)|\(trip.travelDate?.timeIntervalSince1970 ?? 0)|\(formationServer)|\(subscriptions.isPro)") {
+                guard subscriptions.isPro else { return }
                 await loadFormationCoaches()
             }
         }

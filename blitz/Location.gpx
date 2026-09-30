@@ -1,0 +1,3636 @@
+<?xml version="1.0"?>
+<gpx version="1.1" creator="Blitz / Xcode">
+    <!-- IC2 869 Zurich HB to Lugano, 2026-09-30; GTFS shape 2ec9465347. -->
+<!--    <wpt lat="47.37857276" lon="8.53643297">-->
+<!--        <name>IC2 869 waypoint 1</name>-->
+<!--        <time>2026-09-30T09:05:00Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.17281831" lon="8.51560823">-->
+<!--        <name>IC2 869 waypoint 2</name>-->
+<!--        <time>2026-09-30T09:30:13Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.17191909" lon="8.51560757">-->
+<!--        <name>IC2 869 waypoint 3</name>-->
+<!--        <time>2026-09-30T09:30:18Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.17138763" lon="8.51573742">-->
+<!--        <name>IC2 869 waypoint 4</name>-->
+<!--        <time>2026-09-30T09:30:22Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.16981359" lon="8.51670224">-->
+<!--        <name>IC2 869 waypoint 5</name>-->
+<!--        <time>2026-09-30T09:30:32Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.16793859" lon="8.51714367">-->
+<!--        <name>IC2 869 waypoint 6</name>-->
+<!--        <time>2026-09-30T09:30:44Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.16618096" lon="8.51846047">-->
+<!--        <name>IC2 869 waypoint 7</name>-->
+<!--        <time>2026-09-30T09:30:57Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.16565312" lon="8.51861885">-->
+<!--        <name>IC2 869 waypoint 8</name>-->
+<!--        <time>2026-09-30T09:31:00Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.16511433" lon="8.51862062">-->
+<!--        <name>IC2 869 waypoint 9</name>-->
+<!--        <time>2026-09-30T09:31:03Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.16433227" lon="8.51833157">-->
+<!--        <name>IC2 869 waypoint 10</name>-->
+<!--        <time>2026-09-30T09:31:08Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.16371298" lon="8.51780038">-->
+<!--        <name>IC2 869 waypoint 11</name>-->
+<!--        <time>2026-09-30T09:31:13Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.16326730" lon="8.51715139">-->
+<!--        <name>IC2 869 waypoint 12</name>-->
+<!--        <time>2026-09-30T09:31:17Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.16229352" lon="8.51526055">-->
+<!--        <name>IC2 869 waypoint 13</name>-->
+<!--        <time>2026-09-30T09:31:27Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.16185894" lon="8.51477174">-->
+<!--        <name>IC2 869 waypoint 14</name>-->
+<!--        <time>2026-09-30T09:31:30Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.16128940" lon="8.51438315">-->
+<!--        <name>IC2 869 waypoint 15</name>-->
+<!--        <time>2026-09-30T09:31:34Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.16076331" lon="8.51421272">-->
+<!--        <name>IC2 869 waypoint 16</name>-->
+<!--        <time>2026-09-30T09:31:38Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.15959604" lon="8.51411784">-->
+<!--        <name>IC2 869 waypoint 17</name>-->
+<!--        <time>2026-09-30T09:31:45Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.15906724" lon="8.51396629">-->
+<!--        <name>IC2 869 waypoint 18</name>-->
+<!--        <time>2026-09-30T09:31:48Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.15720688" lon="8.51264730">-->
+<!--        <name>IC2 869 waypoint 19</name>-->
+<!--        <time>2026-09-30T09:32:01Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.15660838" lon="8.51236735">-->
+<!--        <name>IC2 869 waypoint 20</name>-->
+<!--        <time>2026-09-30T09:32:05Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.15603592" lon="8.51229532">-->
+<!--        <name>IC2 869 waypoint 21</name>-->
+<!--        <time>2026-09-30T09:32:09Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.15460186" lon="8.51245578">-->
+<!--        <name>IC2 869 waypoint 22</name>-->
+<!--        <time>2026-09-30T09:32:18Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.15389409" lon="8.51228349">-->
+<!--        <name>IC2 869 waypoint 23</name>-->
+<!--        <time>2026-09-30T09:32:22Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.15324232" lon="8.51184390">-->
+<!--        <name>IC2 869 waypoint 24</name>-->
+<!--        <time>2026-09-30T09:32:27Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.15186163" lon="8.51037065">-->
+<!--        <name>IC2 869 waypoint 25</name>-->
+<!--        <time>2026-09-30T09:32:38Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.15110690" lon="8.50995393">-->
+<!--        <name>IC2 869 waypoint 26</name>-->
+<!--        <time>2026-09-30T09:32:43Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.15039153" lon="8.50987397">-->
+<!--        <name>IC2 869 waypoint 27</name>-->
+<!--        <time>2026-09-30T09:32:47Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.14842321" lon="8.51016730">-->
+<!--        <name>IC2 869 waypoint 28</name>-->
+<!--        <time>2026-09-30T09:33:00Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.14766677" lon="8.51003257">-->
+<!--        <name>IC2 869 waypoint 29</name>-->
+<!--        <time>2026-09-30T09:33:04Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.14700482" lon="8.50962701">-->
+<!--        <name>IC2 869 waypoint 30</name>-->
+<!--        <time>2026-09-30T09:33:09Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.14559866" lon="8.50820536">-->
+<!--        <name>IC2 869 waypoint 31</name>-->
+<!--        <time>2026-09-30T09:33:20Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.14484451" lon="8.50778656">-->
+<!--        <name>IC2 869 waypoint 32</name>-->
+<!--        <time>2026-09-30T09:33:25Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.14430905" lon="8.50769823">-->
+<!--        <name>IC2 869 waypoint 33</name>-->
+<!--        <time>2026-09-30T09:33:28Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.14179331" lon="8.50768482">-->
+<!--        <name>IC2 869 waypoint 34</name>-->
+<!--        <time>2026-09-30T09:33:44Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.14127485" lon="8.50746993">-->
+<!--        <name>IC2 869 waypoint 35</name>-->
+<!--        <time>2026-09-30T09:33:47Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.13987962" lon="8.50655455">-->
+<!--        <name>IC2 869 waypoint 36</name>-->
+<!--        <time>2026-09-30T09:33:57Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.13917700" lon="8.50634181">-->
+<!--        <name>IC2 869 waypoint 37</name>-->
+<!--        <time>2026-09-30T09:34:01Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.13846097" lon="8.50640794">-->
+<!--        <name>IC2 869 waypoint 38</name>-->
+<!--        <time>2026-09-30T09:34:06Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.13689329" lon="8.50698611">-->
+<!--        <name>IC2 869 waypoint 39</name>-->
+<!--        <time>2026-09-30T09:34:16Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.13591354" lon="8.50685391">-->
+<!--        <name>IC2 869 waypoint 40</name>-->
+<!--        <time>2026-09-30T09:34:22Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.13517883" lon="8.50636643">-->
+<!--        <name>IC2 869 waypoint 41</name>-->
+<!--        <time>2026-09-30T09:34:27Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.13249564" lon="8.50348210">-->
+<!--        <name>IC2 869 waypoint 42</name>-->
+<!--        <time>2026-09-30T09:34:48Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.13102987" lon="8.50219592">-->
+<!--        <name>IC2 869 waypoint 43</name>-->
+<!--        <time>2026-09-30T09:34:59Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.12970508" lon="8.50041688">-->
+<!--        <name>IC2 869 waypoint 44</name>-->
+<!--        <time>2026-09-30T09:35:10Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.12909293" lon="8.49986873">-->
+<!--        <name>IC2 869 waypoint 45</name>-->
+<!--        <time>2026-09-30T09:35:14Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.12858039" lon="8.49962520">-->
+<!--        <name>IC2 869 waypoint 46</name>-->
+<!--        <time>2026-09-30T09:35:18Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.12689746" lon="8.49919014">-->
+<!--        <name>IC2 869 waypoint 47</name>-->
+<!--        <time>2026-09-30T09:35:28Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.12638071" lon="8.49896622">-->
+<!--        <name>IC2 869 waypoint 48</name>-->
+<!--        <time>2026-09-30T09:35:32Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.12582573" lon="8.49853323">-->
+<!--        <name>IC2 869 waypoint 49</name>-->
+<!--        <time>2026-09-30T09:35:36Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.12402362" lon="8.49679319">-->
+<!--        <name>IC2 869 waypoint 50</name>-->
+<!--        <time>2026-09-30T09:35:49Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.12319711" lon="8.49628634">-->
+<!--        <name>IC2 869 waypoint 51</name>-->
+<!--        <time>2026-09-30T09:35:55Z</time>-->
+<!--    </wpt>-->
+<!--    <wpt lat="47.12230390" lon="8.49619536">-->
+<!--        <name>IC2 869 waypoint 52</name>-->
+<!--        <time>2026-09-30T09:36:00Z</time>-->
+<!--    </wpt>-->
+    <wpt lat="47.11980916" lon="8.49670070">
+        <name>IC2 869 waypoint 53</name>
+        <time>2026-09-30T09:36:16Z</time>
+    </wpt>
+    <wpt lat="47.11920135" lon="8.49693425">
+        <name>IC2 869 waypoint 54</name>
+        <time>2026-09-30T09:36:20Z</time>
+    </wpt>
+    <wpt lat="47.11864653" lon="8.49736589">
+        <name>IC2 869 waypoint 55</name>
+        <time>2026-09-30T09:36:24Z</time>
+    </wpt>
+    <wpt lat="47.11823652" lon="8.49787797">
+        <name>IC2 869 waypoint 56</name>
+        <time>2026-09-30T09:36:27Z</time>
+    </wpt>
+    <wpt lat="47.11745000" lon="8.49914456">
+        <name>IC2 869 waypoint 57</name>
+        <time>2026-09-30T09:36:35Z</time>
+    </wpt>
+    <wpt lat="47.11678014" lon="8.49980244">
+        <name>IC2 869 waypoint 58</name>
+        <time>2026-09-30T09:36:40Z</time>
+    </wpt>
+    <wpt lat="47.11440295" lon="8.50101183">
+        <name>IC2 869 waypoint 59</name>
+        <time>2026-09-30T09:36:56Z</time>
+    </wpt>
+    <wpt lat="47.11301356" lon="8.50155781">
+        <name>IC2 869 waypoint 60</name>
+        <time>2026-09-30T09:37:05Z</time>
+    </wpt>
+    <wpt lat="47.11127746" lon="8.50290997">
+        <name>IC2 869 waypoint 61</name>
+        <time>2026-09-30T09:37:17Z</time>
+    </wpt>
+    <wpt lat="47.10970710" lon="8.50347417">
+        <name>IC2 869 waypoint 62</name>
+        <time>2026-09-30T09:37:27Z</time>
+    </wpt>
+    <wpt lat="47.10905668" lon="8.50391772">
+        <name>IC2 869 waypoint 63</name>
+        <time>2026-09-30T09:37:32Z</time>
+    </wpt>
+    <wpt lat="47.10837083" lon="8.50483939">
+        <name>IC2 869 waypoint 64</name>
+        <time>2026-09-30T09:37:37Z</time>
+    </wpt>
+    <wpt lat="47.10705525" lon="8.50782878">
+        <name>IC2 869 waypoint 65</name>
+        <time>2026-09-30T09:37:53Z</time>
+    </wpt>
+    <wpt lat="47.10664801" lon="8.50852958">
+        <name>IC2 869 waypoint 66</name>
+        <time>2026-09-30T09:37:57Z</time>
+    </wpt>
+    <wpt lat="47.10598281" lon="8.50919762">
+        <name>IC2 869 waypoint 67</name>
+        <time>2026-09-30T09:38:02Z</time>
+    </wpt>
+    <wpt lat="47.10317281" lon="8.51096487">
+        <name>IC2 869 waypoint 68</name>
+        <time>2026-09-30T09:38:21Z</time>
+    </wpt>
+    <wpt lat="47.10255577" lon="8.51150235">
+        <name>IC2 869 waypoint 69</name>
+        <time>2026-09-30T09:38:25Z</time>
+    </wpt>
+    <wpt lat="47.10194596" lon="8.51246294">
+        <name>IC2 869 waypoint 70</name>
+        <time>2026-09-30T09:38:31Z</time>
+    </wpt>
+    <wpt lat="47.10112662" lon="8.51465538">
+        <name>IC2 869 waypoint 71</name>
+        <time>2026-09-30T09:38:42Z</time>
+    </wpt>
+    <wpt lat="47.10055744" lon="8.51549263">
+        <name>IC2 869 waypoint 72</name>
+        <time>2026-09-30T09:38:47Z</time>
+    </wpt>
+    <wpt lat="47.09715349" lon="8.51855769">
+        <name>IC2 869 waypoint 73</name>
+        <time>2026-09-30T09:39:12Z</time>
+    </wpt>
+    <wpt lat="47.09423428" lon="8.52026484">
+        <name>IC2 869 waypoint 74</name>
+        <time>2026-09-30T09:39:31Z</time>
+    </wpt>
+    <wpt lat="47.09372930" lon="8.52081296">
+        <name>IC2 869 waypoint 75</name>
+        <time>2026-09-30T09:39:35Z</time>
+    </wpt>
+    <wpt lat="47.09276530" lon="8.52219223">
+        <name>IC2 869 waypoint 76</name>
+        <time>2026-09-30T09:39:44Z</time>
+    </wpt>
+    <wpt lat="47.09113274" lon="8.52382599">
+        <name>IC2 869 waypoint 77</name>
+        <time>2026-09-30T09:39:56Z</time>
+    </wpt>
+    <wpt lat="47.09004078" lon="8.52443189">
+        <name>IC2 869 waypoint 78</name>
+        <time>2026-09-30T09:40:04Z</time>
+    </wpt>
+    <wpt lat="47.08942817" lon="8.52463737">
+        <name>IC2 869 waypoint 79</name>
+        <time>2026-09-30T09:40:07Z</time>
+    </wpt>
+    <wpt lat="47.08692200" lon="8.52438471">
+        <name>IC2 869 waypoint 80</name>
+        <time>2026-09-30T09:40:23Z</time>
+    </wpt>
+    <wpt lat="47.08230692" lon="8.52548843">
+        <name>IC2 869 waypoint 81</name>
+        <time>2026-09-30T09:40:52Z</time>
+    </wpt>
+    <wpt lat="47.08162373" lon="8.52581481">
+        <name>IC2 869 waypoint 82</name>
+        <time>2026-09-30T09:40:57Z</time>
+    </wpt>
+    <wpt lat="47.08017146" lon="8.52686004">
+        <name>IC2 869 waypoint 83</name>
+        <time>2026-09-30T09:41:07Z</time>
+    </wpt>
+    <wpt lat="47.07850993" lon="8.52743160">
+        <name>IC2 869 waypoint 84</name>
+        <time>2026-09-30T09:41:18Z</time>
+    </wpt>
+    <wpt lat="47.07714147" lon="8.52842584">
+        <name>IC2 869 waypoint 85</name>
+        <time>2026-09-30T09:41:27Z</time>
+    </wpt>
+    <wpt lat="47.07569639" lon="8.52915270">
+        <name>IC2 869 waypoint 86</name>
+        <time>2026-09-30T09:41:37Z</time>
+    </wpt>
+    <wpt lat="47.07516333" lon="8.52963918">
+        <name>IC2 869 waypoint 87</name>
+        <time>2026-09-30T09:41:41Z</time>
+    </wpt>
+    <wpt lat="47.07400998" lon="8.53110500">
+        <name>IC2 869 waypoint 88</name>
+        <time>2026-09-30T09:41:50Z</time>
+    </wpt>
+    <wpt lat="47.07271988" lon="8.53203459">
+        <name>IC2 869 waypoint 89</name>
+        <time>2026-09-30T09:41:59Z</time>
+    </wpt>
+    <wpt lat="47.07220018" lon="8.53255274">
+        <name>IC2 869 waypoint 90</name>
+        <time>2026-09-30T09:42:03Z</time>
+    </wpt>
+    <wpt lat="47.07005655" lon="8.53574365">
+        <name>IC2 869 waypoint 91</name>
+        <time>2026-09-30T09:42:23Z</time>
+    </wpt>
+    <wpt lat="47.06950338" lon="8.53641525">
+        <name>IC2 869 waypoint 92</name>
+        <time>2026-09-30T09:42:27Z</time>
+    </wpt>
+    <wpt lat="47.06879598" lon="8.53698731">
+        <name>IC2 869 waypoint 93</name>
+        <time>2026-09-30T09:42:32Z</time>
+    </wpt>
+    <wpt lat="47.06728241" lon="8.53782560">
+        <name>IC2 869 waypoint 94</name>
+        <time>2026-09-30T09:42:42Z</time>
+    </wpt>
+    <wpt lat="47.06667185" lon="8.53837967">
+        <name>IC2 869 waypoint 95</name>
+        <time>2026-09-30T09:42:47Z</time>
+    </wpt>
+    <wpt lat="47.06614776" lon="8.53909898">
+        <name>IC2 869 waypoint 96</name>
+        <time>2026-09-30T09:42:51Z</time>
+    </wpt>
+    <wpt lat="47.06456488" lon="8.54179440">
+        <name>IC2 869 waypoint 97</name>
+        <time>2026-09-30T09:43:07Z</time>
+    </wpt>
+    <wpt lat="47.06380082" lon="8.54270849">
+        <name>IC2 869 waypoint 98</name>
+        <time>2026-09-30T09:43:13Z</time>
+    </wpt>
+    <wpt lat="47.06205870" lon="8.54408115">
+        <name>IC2 869 waypoint 99</name>
+        <time>2026-09-30T09:43:25Z</time>
+    </wpt>
+    <wpt lat="47.06146731" lon="8.54439156">
+        <name>IC2 869 waypoint 100</name>
+        <time>2026-09-30T09:43:29Z</time>
+    </wpt>
+    <wpt lat="47.06075304" lon="8.54449016">
+        <name>IC2 869 waypoint 101</name>
+        <time>2026-09-30T09:43:34Z</time>
+    </wpt>
+    <wpt lat="47.05914595" lon="8.54423007">
+        <name>IC2 869 waypoint 102</name>
+        <time>2026-09-30T09:43:44Z</time>
+    </wpt>
+    <wpt lat="47.05865968" lon="8.54431464">
+        <name>IC2 869 waypoint 103</name>
+        <time>2026-09-30T09:43:47Z</time>
+    </wpt>
+    <wpt lat="47.05814683" lon="8.54455550">
+        <name>IC2 869 waypoint 104</name>
+        <time>2026-09-30T09:43:50Z</time>
+    </wpt>
+    <wpt lat="47.05733569" lon="8.54537050">
+        <name>IC2 869 waypoint 105</name>
+        <time>2026-09-30T09:43:56Z</time>
+    </wpt>
+    <wpt lat="47.05601584" lon="8.54769690">
+        <name>IC2 869 waypoint 106</name>
+        <time>2026-09-30T09:44:09Z</time>
+    </wpt>
+    <wpt lat="47.05558042" lon="8.54816122">
+        <name>IC2 869 waypoint 107</name>
+        <time>2026-09-30T09:44:13Z</time>
+    </wpt>
+    <wpt lat="47.05509037" lon="8.54848888">
+        <name>IC2 869 waypoint 108</name>
+        <time>2026-09-30T09:44:16Z</time>
+    </wpt>
+    <wpt lat="47.05456545" lon="8.54866668">
+        <name>IC2 869 waypoint 109</name>
+        <time>2026-09-30T09:44:19Z</time>
+    </wpt>
+    <wpt lat="47.05402685" lon="8.54868745">
+        <name>IC2 869 waypoint 110</name>
+        <time>2026-09-30T09:44:23Z</time>
+    </wpt>
+    <wpt lat="47.05349615" lon="8.54855103">
+        <name>IC2 869 waypoint 111</name>
+        <time>2026-09-30T09:44:26Z</time>
+    </wpt>
+    <wpt lat="47.05203240" lon="8.54791847">
+        <name>IC2 869 waypoint 112</name>
+        <time>2026-09-30T09:44:36Z</time>
+    </wpt>
+    <wpt lat="47.05149376" lon="8.54789609">
+        <name>IC2 869 waypoint 113</name>
+        <time>2026-09-30T09:44:39Z</time>
+    </wpt>
+    <wpt lat="47.05087574" lon="8.54806185">
+        <name>IC2 869 waypoint 114</name>
+        <time>2026-09-30T09:44:43Z</time>
+    </wpt>
+    <wpt lat="47.05029825" lon="8.54842437">
+        <name>IC2 869 waypoint 115</name>
+        <time>2026-09-30T09:44:47Z</time>
+    </wpt>
+    <wpt lat="47.04978642" lon="8.54895793">
+        <name>IC2 869 waypoint 116</name>
+        <time>2026-09-30T09:44:51Z</time>
+    </wpt>
+    <wpt lat="47.04936719" lon="8.54964210">
+        <name>IC2 869 waypoint 117</name>
+        <time>2026-09-30T09:44:55Z</time>
+    </wpt>
+    <wpt lat="47.04911619" lon="8.55035944">
+        <name>IC2 869 waypoint 118</name>
+        <time>2026-09-30T09:44:58Z</time>
+    </wpt>
+    <wpt lat="46.87605421" lon="8.63125189">
+        <name>IC2 869 waypoint 119</name>
+        <time>2026-09-30T10:07:58Z</time>
+    </wpt>
+    <wpt lat="46.86194219" lon="8.63591701">
+        <name>IC2 869 waypoint 120</name>
+        <time>2026-09-30T10:08:27Z</time>
+    </wpt>
+    <wpt lat="46.85657029" lon="8.63754373">
+        <name>IC2 869 waypoint 121</name>
+        <time>2026-09-30T10:08:38Z</time>
+    </wpt>
+    <wpt lat="46.84429308" lon="8.64218463">
+        <name>IC2 869 waypoint 122</name>
+        <time>2026-09-30T10:09:03Z</time>
+    </wpt>
+    <wpt lat="46.83676587" lon="8.64578648">
+        <name>IC2 869 waypoint 123</name>
+        <time>2026-09-30T10:09:19Z</time>
+    </wpt>
+    <wpt lat="46.83546491" lon="8.64630565">
+        <name>IC2 869 waypoint 124</name>
+        <time>2026-09-30T10:09:21Z</time>
+    </wpt>
+    <wpt lat="46.83413762" lon="8.64665574">
+        <name>IC2 869 waypoint 125</name>
+        <time>2026-09-30T10:09:24Z</time>
+    </wpt>
+    <wpt lat="46.83279431" lon="8.64683400">
+        <name>IC2 869 waypoint 126</name>
+        <time>2026-09-30T10:09:27Z</time>
+    </wpt>
+    <wpt lat="46.83171523" lon="8.64684402">
+        <name>IC2 869 waypoint 127</name>
+        <time>2026-09-30T10:09:29Z</time>
+    </wpt>
+    <wpt lat="46.82992034" lon="8.64667257">
+        <name>IC2 869 waypoint 128</name>
+        <time>2026-09-30T10:09:32Z</time>
+    </wpt>
+    <wpt lat="46.82893309" lon="8.64675060">
+        <name>IC2 869 waypoint 129</name>
+        <time>2026-09-30T10:09:34Z</time>
+    </wpt>
+    <wpt lat="46.82294730" lon="8.64865336">
+        <name>IC2 869 waypoint 130</name>
+        <time>2026-09-30T10:09:46Z</time>
+    </wpt>
+    <wpt lat="46.82063443" lon="8.65010259">
+        <name>IC2 869 waypoint 131</name>
+        <time>2026-09-30T10:09:51Z</time>
+    </wpt>
+    <wpt lat="46.81943467" lon="8.65103793">
+        <name>IC2 869 waypoint 132</name>
+        <time>2026-09-30T10:09:54Z</time>
+    </wpt>
+    <wpt lat="46.81275674" lon="8.65793290">
+        <name>IC2 869 waypoint 133</name>
+        <time>2026-09-30T10:10:10Z</time>
+    </wpt>
+    <wpt lat="46.81184327" lon="8.65899551">
+        <name>IC2 869 waypoint 134</name>
+        <time>2026-09-30T10:10:12Z</time>
+    </wpt>
+    <wpt lat="46.81128197" lon="8.65984425">
+        <name>IC2 869 waypoint 135</name>
+        <time>2026-09-30T10:10:14Z</time>
+    </wpt>
+    <wpt lat="46.81084110" lon="8.66067157">
+        <name>IC2 869 waypoint 136</name>
+        <time>2026-09-30T10:10:15Z</time>
+    </wpt>
+    <wpt lat="46.81021409" lon="8.66225978">
+        <name>IC2 869 waypoint 137</name>
+        <time>2026-09-30T10:10:18Z</time>
+    </wpt>
+    <wpt lat="46.80947153" lon="8.66339870">
+        <name>IC2 869 waypoint 138</name>
+        <time>2026-09-30T10:10:20Z</time>
+    </wpt>
+    <wpt lat="46.80812717" lon="8.66493096">
+        <name>IC2 869 waypoint 139</name>
+        <time>2026-09-30T10:10:23Z</time>
+    </wpt>
+    <wpt lat="46.80743147" lon="8.66553310">
+        <name>IC2 869 waypoint 140</name>
+        <time>2026-09-30T10:10:25Z</time>
+    </wpt>
+    <wpt lat="46.80693207" lon="8.66582800">
+        <name>IC2 869 waypoint 141</name>
+        <time>2026-09-30T10:10:26Z</time>
+    </wpt>
+    <wpt lat="46.80631278" lon="8.66598187">
+        <name>IC2 869 waypoint 142</name>
+        <time>2026-09-30T10:10:27Z</time>
+    </wpt>
+    <wpt lat="46.80568592" lon="8.66592165">
+        <name>IC2 869 waypoint 143</name>
+        <time>2026-09-30T10:10:28Z</time>
+    </wpt>
+    <wpt lat="46.80516860" lon="8.66570212">
+        <name>IC2 869 waypoint 144</name>
+        <time>2026-09-30T10:10:29Z</time>
+    </wpt>
+    <wpt lat="46.80426339" lon="8.66512146">
+        <name>IC2 869 waypoint 145</name>
+        <time>2026-09-30T10:10:31Z</time>
+    </wpt>
+    <wpt lat="46.80365130" lon="8.66491419">
+        <name>IC2 869 waypoint 146</name>
+        <time>2026-09-30T10:10:32Z</time>
+    </wpt>
+    <wpt lat="46.80293323" lon="8.66486702">
+        <name>IC2 869 waypoint 147</name>
+        <time>2026-09-30T10:10:34Z</time>
+    </wpt>
+    <wpt lat="46.80221996" lon="8.66499824">
+        <name>IC2 869 waypoint 148</name>
+        <time>2026-09-30T10:10:35Z</time>
+    </wpt>
+    <wpt lat="46.80110888" lon="8.66551357">
+        <name>IC2 869 waypoint 149</name>
+        <time>2026-09-30T10:10:37Z</time>
+    </wpt>
+    <wpt lat="46.79836788" lon="8.66776109">
+        <name>IC2 869 waypoint 150</name>
+        <time>2026-09-30T10:10:44Z</time>
+    </wpt>
+    <wpt lat="46.79766891" lon="8.66799895">
+        <name>IC2 869 waypoint 151</name>
+        <time>2026-09-30T10:10:45Z</time>
+    </wpt>
+    <wpt lat="46.79587385" lon="8.66813619">
+        <name>IC2 869 waypoint 152</name>
+        <time>2026-09-30T10:10:49Z</time>
+    </wpt>
+    <wpt lat="46.79430772" lon="8.66872819">
+        <name>IC2 869 waypoint 153</name>
+        <time>2026-09-30T10:10:52Z</time>
+    </wpt>
+    <wpt lat="46.79216690" lon="8.66972711">
+        <name>IC2 869 waypoint 154</name>
+        <time>2026-09-30T10:10:56Z</time>
+    </wpt>
+    <wpt lat="46.79077634" lon="8.67092705">
+        <name>IC2 869 waypoint 155</name>
+        <time>2026-09-30T10:10:59Z</time>
+    </wpt>
+    <wpt lat="46.79010492" lon="8.67129557">
+        <name>IC2 869 waypoint 156</name>
+        <time>2026-09-30T10:11:01Z</time>
+    </wpt>
+    <wpt lat="46.78912194" lon="8.67136299">
+        <name>IC2 869 waypoint 157</name>
+        <time>2026-09-30T10:11:03Z</time>
+    </wpt>
+    <wpt lat="46.78617293" lon="8.67019425">
+        <name>IC2 869 waypoint 158</name>
+        <time>2026-09-30T10:11:09Z</time>
+    </wpt>
+    <wpt lat="46.78545785" lon="8.67008723">
+        <name>IC2 869 waypoint 159</name>
+        <time>2026-09-30T10:11:10Z</time>
+    </wpt>
+    <wpt lat="46.78474027" lon="8.67014933">
+        <name>IC2 869 waypoint 160</name>
+        <time>2026-09-30T10:11:11Z</time>
+    </wpt>
+    <wpt lat="46.78335996" lon="8.67072424">
+        <name>IC2 869 waypoint 161</name>
+        <time>2026-09-30T10:11:14Z</time>
+    </wpt>
+    <wpt lat="46.77956025" lon="8.67318413">
+        <name>IC2 869 waypoint 162</name>
+        <time>2026-09-30T10:11:22Z</time>
+    </wpt>
+    <wpt lat="46.77859766" lon="8.67349354">
+        <name>IC2 869 waypoint 163</name>
+        <time>2026-09-30T10:11:24Z</time>
+    </wpt>
+    <wpt lat="46.77707048" lon="8.67339888">
+        <name>IC2 869 waypoint 164</name>
+        <time>2026-09-30T10:11:27Z</time>
+    </wpt>
+    <wpt lat="46.77627528" lon="8.67318620">
+        <name>IC2 869 waypoint 165</name>
+        <time>2026-09-30T10:11:29Z</time>
+    </wpt>
+    <wpt lat="46.77561554" lon="8.67277441">
+        <name>IC2 869 waypoint 166</name>
+        <time>2026-09-30T10:11:30Z</time>
+    </wpt>
+    <wpt lat="46.77442505" lon="8.67160142">
+        <name>IC2 869 waypoint 167</name>
+        <time>2026-09-30T10:11:33Z</time>
+    </wpt>
+    <wpt lat="46.77400753" lon="8.67136035">
+        <name>IC2 869 waypoint 168</name>
+        <time>2026-09-30T10:11:34Z</time>
+    </wpt>
+    <wpt lat="46.77347765" lon="8.67121908">
+        <name>IC2 869 waypoint 169</name>
+        <time>2026-09-30T10:11:35Z</time>
+    </wpt>
+    <wpt lat="46.77293916" lon="8.67124289">
+        <name>IC2 869 waypoint 170</name>
+        <time>2026-09-30T10:11:36Z</time>
+    </wpt>
+    <wpt lat="46.77233164" lon="8.67147516">
+        <name>IC2 869 waypoint 171</name>
+        <time>2026-09-30T10:11:37Z</time>
+    </wpt>
+    <wpt lat="46.77185439" lon="8.67183905">
+        <name>IC2 869 waypoint 172</name>
+        <time>2026-09-30T10:11:38Z</time>
+    </wpt>
+    <wpt lat="46.77075089" lon="8.67296587">
+        <name>IC2 869 waypoint 173</name>
+        <time>2026-09-30T10:11:41Z</time>
+    </wpt>
+    <wpt lat="46.76989976" lon="8.67337014">
+        <name>IC2 869 waypoint 174</name>
+        <time>2026-09-30T10:11:43Z</time>
+    </wpt>
+    <wpt lat="46.76900381" lon="8.67348067">
+        <name>IC2 869 waypoint 175</name>
+        <time>2026-09-30T10:11:45Z</time>
+    </wpt>
+    <wpt lat="46.76837781" lon="8.67340489">
+        <name>IC2 869 waypoint 176</name>
+        <time>2026-09-30T10:11:46Z</time>
+    </wpt>
+    <wpt lat="46.76778405" lon="8.67310709">
+        <name>IC2 869 waypoint 177</name>
+        <time>2026-09-30T10:11:47Z</time>
+    </wpt>
+    <wpt lat="46.76718706" lon="8.67252676">
+        <name>IC2 869 waypoint 178</name>
+        <time>2026-09-30T10:11:48Z</time>
+    </wpt>
+    <wpt lat="46.76619559" lon="8.67119944">
+        <name>IC2 869 waypoint 179</name>
+        <time>2026-09-30T10:11:51Z</time>
+    </wpt>
+    <wpt lat="46.76472827" lon="8.66822358">
+        <name>IC2 869 waypoint 180</name>
+        <time>2026-09-30T10:11:56Z</time>
+    </wpt>
+    <wpt lat="46.76448740" lon="8.66737826">
+        <name>IC2 869 waypoint 181</name>
+        <time>2026-09-30T10:11:57Z</time>
+    </wpt>
+    <wpt lat="46.76435153" lon="8.66648468">
+        <name>IC2 869 waypoint 182</name>
+        <time>2026-09-30T10:11:59Z</time>
+    </wpt>
+    <wpt lat="46.76424300" lon="8.66322153">
+        <name>IC2 869 waypoint 183</name>
+        <time>2026-09-30T10:12:03Z</time>
+    </wpt>
+    <wpt lat="46.76397594" lon="8.66143085">
+        <name>IC2 869 waypoint 184</name>
+        <time>2026-09-30T10:12:05Z</time>
+    </wpt>
+    <wpt lat="46.76364225" lon="8.66007612">
+        <name>IC2 869 waypoint 185</name>
+        <time>2026-09-30T10:12:07Z</time>
+    </wpt>
+    <wpt lat="46.76321522" lon="8.65908030">
+        <name>IC2 869 waypoint 186</name>
+        <time>2026-09-30T10:12:09Z</time>
+    </wpt>
+    <wpt lat="46.76217722" lon="8.65763200">
+        <name>IC2 869 waypoint 187</name>
+        <time>2026-09-30T10:12:12Z</time>
+    </wpt>
+    <wpt lat="46.76083295" lon="8.65517582">
+        <name>IC2 869 waypoint 188</name>
+        <time>2026-09-30T10:12:16Z</time>
+    </wpt>
+    <wpt lat="46.76050092" lon="8.65396618">
+        <name>IC2 869 waypoint 189</name>
+        <time>2026-09-30T10:12:18Z</time>
+    </wpt>
+    <wpt lat="46.76032148" lon="8.65149621">
+        <name>IC2 869 waypoint 190</name>
+        <time>2026-09-30T10:12:21Z</time>
+    </wpt>
+    <wpt lat="46.76005736" lon="8.65038602">
+        <name>IC2 869 waypoint 191</name>
+        <time>2026-09-30T10:12:23Z</time>
+    </wpt>
+    <wpt lat="46.75938889" lon="8.64883856">
+        <name>IC2 869 waypoint 192</name>
+        <time>2026-09-30T10:12:25Z</time>
+    </wpt>
+    <wpt lat="46.75835678" lon="8.64738201">
+        <name>IC2 869 waypoint 193</name>
+        <time>2026-09-30T10:12:28Z</time>
+    </wpt>
+    <wpt lat="46.75679366" lon="8.64564561">
+        <name>IC2 869 waypoint 194</name>
+        <time>2026-09-30T10:12:32Z</time>
+    </wpt>
+    <wpt lat="46.75568638" lon="8.64477724">
+        <name>IC2 869 waypoint 195</name>
+        <time>2026-09-30T10:12:34Z</time>
+    </wpt>
+    <wpt lat="46.75365658" lon="8.64371248">
+        <name>IC2 869 waypoint 196</name>
+        <time>2026-09-30T10:12:38Z</time>
+    </wpt>
+    <wpt lat="46.75225333" lon="8.64324852">
+        <name>IC2 869 waypoint 197</name>
+        <time>2026-09-30T10:12:41Z</time>
+    </wpt>
+    <wpt lat="46.75108762" lon="8.64312509">
+        <name>IC2 869 waypoint 198</name>
+        <time>2026-09-30T10:12:44Z</time>
+    </wpt>
+    <wpt lat="46.75056149" lon="8.64295617">
+        <name>IC2 869 waypoint 199</name>
+        <time>2026-09-30T10:12:45Z</time>
+    </wpt>
+    <wpt lat="46.74856906" lon="8.64146123">
+        <name>IC2 869 waypoint 200</name>
+        <time>2026-09-30T10:12:49Z</time>
+    </wpt>
+    <wpt lat="46.74803904" lon="8.64132128">
+        <name>IC2 869 waypoint 201</name>
+        <time>2026-09-30T10:12:50Z</time>
+    </wpt>
+    <wpt lat="46.74750072" lon="8.64134979">
+        <name>IC2 869 waypoint 202</name>
+        <time>2026-09-30T10:12:51Z</time>
+    </wpt>
+    <wpt lat="46.74612515" lon="8.64195492">
+        <name>IC2 869 waypoint 203</name>
+        <time>2026-09-30T10:12:54Z</time>
+    </wpt>
+    <wpt lat="46.74550206" lon="8.64207138">
+        <name>IC2 869 waypoint 204</name>
+        <time>2026-09-30T10:12:55Z</time>
+    </wpt>
+    <wpt lat="46.74479076" lon="8.64193698">
+        <name>IC2 869 waypoint 205</name>
+        <time>2026-09-30T10:12:57Z</time>
+    </wpt>
+    <wpt lat="46.74421097" lon="8.64158571">
+        <name>IC2 869 waypoint 206</name>
+        <time>2026-09-30T10:12:58Z</time>
+    </wpt>
+    <wpt lat="46.74370834" lon="8.64103787">
+        <name>IC2 869 waypoint 207</name>
+        <time>2026-09-30T10:12:59Z</time>
+    </wpt>
+    <wpt lat="46.74295272" lon="8.63974099">
+        <name>IC2 869 waypoint 208</name>
+        <time>2026-09-30T10:13:01Z</time>
+    </wpt>
+    <wpt lat="46.74255267" lon="8.63921599">
+        <name>IC2 869 waypoint 209</name>
+        <time>2026-09-30T10:13:02Z</time>
+    </wpt>
+    <wpt lat="46.74208751" lon="8.63882044">
+        <name>IC2 869 waypoint 210</name>
+        <time>2026-09-30T10:13:03Z</time>
+    </wpt>
+    <wpt lat="46.74084038" lon="8.63807393">
+        <name>IC2 869 waypoint 211</name>
+        <time>2026-09-30T10:13:06Z</time>
+    </wpt>
+    <wpt lat="46.74032321" lon="8.63755500">
+        <name>IC2 869 waypoint 212</name>
+        <time>2026-09-30T10:13:07Z</time>
+    </wpt>
+    <wpt lat="46.73883905" lon="8.63510039">
+        <name>IC2 869 waypoint 213</name>
+        <time>2026-09-30T10:13:12Z</time>
+    </wpt>
+    <wpt lat="46.73814896" lon="8.63372832">
+        <name>IC2 869 waypoint 214</name>
+        <time>2026-09-30T10:13:14Z</time>
+    </wpt>
+    <wpt lat="46.73775929" lon="8.63318728">
+        <name>IC2 869 waypoint 215</name>
+        <time>2026-09-30T10:13:15Z</time>
+    </wpt>
+    <wpt lat="46.73599821" lon="8.63189153">
+        <name>IC2 869 waypoint 216</name>
+        <time>2026-09-30T10:13:19Z</time>
+    </wpt>
+    <wpt lat="46.73495154" lon="8.63065468">
+        <name>IC2 869 waypoint 217</name>
+        <time>2026-09-30T10:13:22Z</time>
+    </wpt>
+    <wpt lat="46.73387947" lon="8.62969543">
+        <name>IC2 869 waypoint 218</name>
+        <time>2026-09-30T10:13:24Z</time>
+    </wpt>
+    <wpt lat="46.73295849" lon="8.62864789">
+        <name>IC2 869 waypoint 219</name>
+        <time>2026-09-30T10:13:26Z</time>
+    </wpt>
+    <wpt lat="46.73238873" lon="8.62764330">
+        <name>IC2 869 waypoint 220</name>
+        <time>2026-09-30T10:13:28Z</time>
+    </wpt>
+    <wpt lat="46.73181333" lon="8.62558586">
+        <name>IC2 869 waypoint 221</name>
+        <time>2026-09-30T10:13:31Z</time>
+    </wpt>
+    <wpt lat="46.73141424" lon="8.62471894">
+        <name>IC2 869 waypoint 222</name>
+        <time>2026-09-30T10:13:33Z</time>
+    </wpt>
+    <wpt lat="46.73094773" lon="8.62410597">
+        <name>IC2 869 waypoint 223</name>
+        <time>2026-09-30T10:13:34Z</time>
+    </wpt>
+    <wpt lat="46.72830931" lon="8.62123038">
+        <name>IC2 869 waypoint 224</name>
+        <time>2026-09-30T10:13:40Z</time>
+    </wpt>
+    <wpt lat="46.72778286" lon="8.62072957">
+        <name>IC2 869 waypoint 225</name>
+        <time>2026-09-30T10:13:41Z</time>
+    </wpt>
+    <wpt lat="46.72592973" lon="8.61939236">
+        <name>IC2 869 waypoint 226</name>
+        <time>2026-09-30T10:13:46Z</time>
+    </wpt>
+    <wpt lat="46.72490753" lon="8.61832526">
+        <name>IC2 869 waypoint 227</name>
+        <time>2026-09-30T10:13:48Z</time>
+    </wpt>
+    <wpt lat="46.72443316" lon="8.61795357">
+        <name>IC2 869 waypoint 228</name>
+        <time>2026-09-30T10:13:49Z</time>
+    </wpt>
+    <wpt lat="46.72382918" lon="8.61770179">
+        <name>IC2 869 waypoint 229</name>
+        <time>2026-09-30T10:13:50Z</time>
+    </wpt>
+    <wpt lat="46.72240456" lon="8.61741374">
+        <name>IC2 869 waypoint 230</name>
+        <time>2026-09-30T10:13:53Z</time>
+    </wpt>
+    <wpt lat="46.72164628" lon="8.61700836">
+        <name>IC2 869 waypoint 231</name>
+        <time>2026-09-30T10:13:55Z</time>
+    </wpt>
+    <wpt lat="46.71989115" lon="8.61541712">
+        <name>IC2 869 waypoint 232</name>
+        <time>2026-09-30T10:13:59Z</time>
+    </wpt>
+    <wpt lat="46.71947841" lon="8.61491375">
+        <name>IC2 869 waypoint 233</name>
+        <time>2026-09-30T10:14:00Z</time>
+    </wpt>
+    <wpt lat="46.71914874" lon="8.61429428">
+        <name>IC2 869 waypoint 234</name>
+        <time>2026-09-30T10:14:01Z</time>
+    </wpt>
+    <wpt lat="46.71891721" lon="8.61358705">
+        <name>IC2 869 waypoint 235</name>
+        <time>2026-09-30T10:14:02Z</time>
+    </wpt>
+    <wpt lat="46.71880703" lon="8.61295388">
+        <name>IC2 869 waypoint 236</name>
+        <time>2026-09-30T10:14:03Z</time>
+    </wpt>
+    <wpt lat="46.71877935" lon="8.61217165">
+        <name>IC2 869 waypoint 237</name>
+        <time>2026-09-30T10:14:04Z</time>
+    </wpt>
+    <wpt lat="46.71884428" lon="8.61152540">
+        <name>IC2 869 waypoint 238</name>
+        <time>2026-09-30T10:14:05Z</time>
+    </wpt>
+    <wpt lat="46.71902466" lon="8.61078735">
+        <name>IC2 869 waypoint 239</name>
+        <time>2026-09-30T10:14:06Z</time>
+    </wpt>
+    <wpt lat="46.71930825" lon="8.61012136">
+        <name>IC2 869 waypoint 240</name>
+        <time>2026-09-30T10:14:07Z</time>
+    </wpt>
+    <wpt lat="46.71967196" lon="8.60954238">
+        <name>IC2 869 waypoint 241</name>
+        <time>2026-09-30T10:14:08Z</time>
+    </wpt>
+    <wpt lat="46.72068672" lon="8.60846791">
+        <name>IC2 869 waypoint 242</name>
+        <time>2026-09-30T10:14:10Z</time>
+    </wpt>
+    <wpt lat="46.72134635" lon="8.60805236">
+        <name>IC2 869 waypoint 243</name>
+        <time>2026-09-30T10:14:12Z</time>
+    </wpt>
+    <wpt lat="46.72195449" lon="8.60781783">
+        <name>IC2 869 waypoint 244</name>
+        <time>2026-09-30T10:14:13Z</time>
+    </wpt>
+    <wpt lat="46.72257916" lon="8.60770863">
+        <name>IC2 869 waypoint 245</name>
+        <time>2026-09-30T10:14:14Z</time>
+    </wpt>
+    <wpt lat="46.72320725" lon="8.60774484">
+        <name>IC2 869 waypoint 246</name>
+        <time>2026-09-30T10:14:15Z</time>
+    </wpt>
+    <wpt lat="46.72372925" lon="8.60793913">
+        <name>IC2 869 waypoint 247</name>
+        <time>2026-09-30T10:14:17Z</time>
+    </wpt>
+    <wpt lat="46.72421447" lon="8.60827987">
+        <name>IC2 869 waypoint 248</name>
+        <time>2026-09-30T10:14:18Z</time>
+    </wpt>
+    <wpt lat="46.72494638" lon="8.60923629">
+        <name>IC2 869 waypoint 249</name>
+        <time>2026-09-30T10:14:19Z</time>
+    </wpt>
+    <wpt lat="46.72536793" lon="8.61038507">
+        <name>IC2 869 waypoint 250</name>
+        <time>2026-09-30T10:14:21Z</time>
+    </wpt>
+    <wpt lat="46.72550687" lon="8.61167133">
+        <name>IC2 869 waypoint 251</name>
+        <time>2026-09-30T10:14:23Z</time>
+    </wpt>
+    <wpt lat="46.72531893" lon="8.61307595">
+        <name>IC2 869 waypoint 252</name>
+        <time>2026-09-30T10:14:25Z</time>
+    </wpt>
+    <wpt lat="46.72479722" lon="8.61428927">
+        <name>IC2 869 waypoint 253</name>
+        <time>2026-09-30T10:14:27Z</time>
+    </wpt>
+    <wpt lat="46.72409225" lon="8.61509198">
+        <name>IC2 869 waypoint 254</name>
+        <time>2026-09-30T10:14:29Z</time>
+    </wpt>
+    <wpt lat="46.72324168" lon="8.61549592">
+        <name>IC2 869 waypoint 255</name>
+        <time>2026-09-30T10:14:30Z</time>
+    </wpt>
+    <wpt lat="46.72234768" lon="8.61544193">
+        <name>IC2 869 waypoint 256</name>
+        <time>2026-09-30T10:14:32Z</time>
+    </wpt>
+    <wpt lat="46.72152308" lon="8.61493683">
+        <name>IC2 869 waypoint 257</name>
+        <time>2026-09-30T10:14:34Z</time>
+    </wpt>
+    <wpt lat="46.71819918" lon="8.61157803">
+        <name>IC2 869 waypoint 258</name>
+        <time>2026-09-30T10:14:42Z</time>
+    </wpt>
+    <wpt lat="46.71641154" lon="8.61035740">
+        <name>IC2 869 waypoint 259</name>
+        <time>2026-09-30T10:14:46Z</time>
+    </wpt>
+    <wpt lat="46.71593916" lon="8.60975529">
+        <name>IC2 869 waypoint 260</name>
+        <time>2026-09-30T10:14:47Z</time>
+    </wpt>
+    <wpt lat="46.71501533" lon="8.60807437">
+        <name>IC2 869 waypoint 261</name>
+        <time>2026-09-30T10:14:50Z</time>
+    </wpt>
+    <wpt lat="46.71444542" lon="8.60744075">
+        <name>IC2 869 waypoint 262</name>
+        <time>2026-09-30T10:14:51Z</time>
+    </wpt>
+    <wpt lat="46.71377751" lon="8.60706075">
+        <name>IC2 869 waypoint 263</name>
+        <time>2026-09-30T10:14:53Z</time>
+    </wpt>
+    <wpt lat="46.71216849" lon="8.60682786">
+        <name>IC2 869 waypoint 264</name>
+        <time>2026-09-30T10:14:56Z</time>
+    </wpt>
+    <wpt lat="46.71141191" lon="8.60642318">
+        <name>IC2 869 waypoint 265</name>
+        <time>2026-09-30T10:14:57Z</time>
+    </wpt>
+    <wpt lat="46.71078094" lon="8.60569372">
+        <name>IC2 869 waypoint 266</name>
+        <time>2026-09-30T10:14:59Z</time>
+    </wpt>
+    <wpt lat="46.70963426" lon="8.60368468">
+        <name>IC2 869 waypoint 267</name>
+        <time>2026-09-30T10:15:02Z</time>
+    </wpt>
+    <wpt lat="46.70912771" lon="8.60314296">
+        <name>IC2 869 waypoint 268</name>
+        <time>2026-09-30T10:15:04Z</time>
+    </wpt>
+    <wpt lat="46.70856317" lon="8.60274020">
+        <name>IC2 869 waypoint 269</name>
+        <time>2026-09-30T10:15:05Z</time>
+    </wpt>
+    <wpt lat="46.70760311" lon="8.60240974">
+        <name>IC2 869 waypoint 270</name>
+        <time>2026-09-30T10:15:07Z</time>
+    </wpt>
+    <wpt lat="46.70553784" lon="8.60229008">
+        <name>IC2 869 waypoint 271</name>
+        <time>2026-09-30T10:15:11Z</time>
+    </wpt>
+    <wpt lat="46.70442364" lon="8.60179366">
+        <name>IC2 869 waypoint 272</name>
+        <time>2026-09-30T10:15:13Z</time>
+    </wpt>
+    <wpt lat="46.70336365" lon="8.60080885">
+        <name>IC2 869 waypoint 273</name>
+        <time>2026-09-30T10:15:16Z</time>
+    </wpt>
+    <wpt lat="46.70189254" lon="8.59869735">
+        <name>IC2 869 waypoint 274</name>
+        <time>2026-09-30T10:15:20Z</time>
+    </wpt>
+    <wpt lat="46.70112925" lon="8.59801855">
+        <name>IC2 869 waypoint 275</name>
+        <time>2026-09-30T10:15:21Z</time>
+    </wpt>
+    <wpt lat="46.70060914" lon="8.59781463">
+        <name>IC2 869 waypoint 276</name>
+        <time>2026-09-30T10:15:23Z</time>
+    </wpt>
+    <wpt lat="46.70007109" lon="8.59777626">
+        <name>IC2 869 waypoint 277</name>
+        <time>2026-09-30T10:15:24Z</time>
+    </wpt>
+    <wpt lat="46.69953976" lon="8.59790518">
+        <name>IC2 869 waypoint 278</name>
+        <time>2026-09-30T10:15:25Z</time>
+    </wpt>
+    <wpt lat="46.69911968" lon="8.59813638">
+        <name>IC2 869 waypoint 279</name>
+        <time>2026-09-30T10:15:26Z</time>
+    </wpt>
+    <wpt lat="46.69845995" lon="8.59880963">
+        <name>IC2 869 waypoint 280</name>
+        <time>2026-09-30T10:15:27Z</time>
+    </wpt>
+    <wpt lat="46.69730786" lon="8.60081661">
+        <name>IC2 869 waypoint 281</name>
+        <time>2026-09-30T10:15:31Z</time>
+    </wpt>
+    <wpt lat="46.69691266" lon="8.60134886">
+        <name>IC2 869 waypoint 282</name>
+        <time>2026-09-30T10:15:32Z</time>
+    </wpt>
+    <wpt lat="46.69619998" lon="8.60189720">
+        <name>IC2 869 waypoint 283</name>
+        <time>2026-09-30T10:15:33Z</time>
+    </wpt>
+    <wpt lat="46.69540729" lon="8.60211399">
+        <name>IC2 869 waypoint 284</name>
+        <time>2026-09-30T10:15:35Z</time>
+    </wpt>
+    <wpt lat="46.69443346" lon="8.60190873">
+        <name>IC2 869 waypoint 285</name>
+        <time>2026-09-30T10:15:37Z</time>
+    </wpt>
+    <wpt lat="46.69394331" lon="8.60158343">
+        <name>IC2 869 waypoint 286</name>
+        <time>2026-09-30T10:15:38Z</time>
+    </wpt>
+    <wpt lat="46.69350720" lon="8.60112354">
+        <name>IC2 869 waypoint 287</name>
+        <time>2026-09-30T10:15:39Z</time>
+    </wpt>
+    <wpt lat="46.69314251" lon="8.60054704">
+        <name>IC2 869 waypoint 288</name>
+        <time>2026-09-30T10:15:40Z</time>
+    </wpt>
+    <wpt lat="46.69286340" lon="8.59987718">
+        <name>IC2 869 waypoint 289</name>
+        <time>2026-09-30T10:15:41Z</time>
+    </wpt>
+    <wpt lat="46.69260834" lon="8.59849606">
+        <name>IC2 869 waypoint 290</name>
+        <time>2026-09-30T10:15:43Z</time>
+    </wpt>
+    <wpt lat="46.69263102" lon="8.59758356">
+        <name>IC2 869 waypoint 291</name>
+        <time>2026-09-30T10:15:44Z</time>
+    </wpt>
+    <wpt lat="46.69279736" lon="8.59670312">
+        <name>IC2 869 waypoint 292</name>
+        <time>2026-09-30T10:15:45Z</time>
+    </wpt>
+    <wpt lat="46.69310050" lon="8.59590343">
+        <name>IC2 869 waypoint 293</name>
+        <time>2026-09-30T10:15:47Z</time>
+    </wpt>
+    <wpt lat="46.69345674" lon="8.59531594">
+        <name>IC2 869 waypoint 294</name>
+        <time>2026-09-30T10:15:48Z</time>
+    </wpt>
+    <wpt lat="46.69396340" lon="8.59477593">
+        <name>IC2 869 waypoint 295</name>
+        <time>2026-09-30T10:15:49Z</time>
+    </wpt>
+    <wpt lat="46.69454132" lon="8.59441760">
+        <name>IC2 869 waypoint 296</name>
+        <time>2026-09-30T10:15:50Z</time>
+    </wpt>
+    <wpt lat="46.69516035" lon="8.59426192">
+        <name>IC2 869 waypoint 297</name>
+        <time>2026-09-30T10:15:51Z</time>
+    </wpt>
+    <wpt lat="46.69578740" lon="8.59431855">
+        <name>IC2 869 waypoint 298</name>
+        <time>2026-09-30T10:15:53Z</time>
+    </wpt>
+    <wpt lat="46.69647027" lon="8.59463853">
+        <name>IC2 869 waypoint 299</name>
+        <time>2026-09-30T10:15:54Z</time>
+    </wpt>
+    <wpt lat="46.69740241" lon="8.59542839">
+        <name>IC2 869 waypoint 300</name>
+        <time>2026-09-30T10:15:56Z</time>
+    </wpt>
+    <wpt lat="46.69790038" lon="8.59572722">
+        <name>IC2 869 waypoint 301</name>
+        <time>2026-09-30T10:15:57Z</time>
+    </wpt>
+    <wpt lat="46.70003204" lon="8.59620719">
+        <name>IC2 869 waypoint 302</name>
+        <time>2026-09-30T10:16:01Z</time>
+    </wpt>
+    <wpt lat="46.70383833" lon="8.59774507">
+        <name>IC2 869 waypoint 303</name>
+        <time>2026-09-30T10:16:09Z</time>
+    </wpt>
+    <wpt lat="46.70473433" lon="8.59777281">
+        <name>IC2 869 waypoint 304</name>
+        <time>2026-09-30T10:16:11Z</time>
+    </wpt>
+    <wpt lat="46.70640402" lon="8.59726833">
+        <name>IC2 869 waypoint 305</name>
+        <time>2026-09-30T10:16:14Z</time>
+    </wpt>
+    <wpt lat="46.70703110" lon="8.59732879">
+        <name>IC2 869 waypoint 306</name>
+        <time>2026-09-30T10:16:16Z</time>
+    </wpt>
+    <wpt lat="46.70755085" lon="8.59753583">
+        <name>IC2 869 waypoint 307</name>
+        <time>2026-09-30T10:16:17Z</time>
+    </wpt>
+    <wpt lat="46.70817736" lon="8.59804339">
+        <name>IC2 869 waypoint 308</name>
+        <time>2026-09-30T10:16:18Z</time>
+    </wpt>
+    <wpt lat="46.70895838" lon="8.59912409">
+        <name>IC2 869 waypoint 309</name>
+        <time>2026-09-30T10:16:20Z</time>
+    </wpt>
+    <wpt lat="46.70928642" lon="8.59974592">
+        <name>IC2 869 waypoint 310</name>
+        <time>2026-09-30T10:16:21Z</time>
+    </wpt>
+    <wpt lat="46.70995628" lon="8.60144765">
+        <name>IC2 869 waypoint 311</name>
+        <time>2026-09-30T10:16:24Z</time>
+    </wpt>
+    <wpt lat="46.71050535" lon="8.60230742">
+        <name>IC2 869 waypoint 312</name>
+        <time>2026-09-30T10:16:25Z</time>
+    </wpt>
+    <wpt lat="46.71095288" lon="8.60274401">
+        <name>IC2 869 waypoint 313</name>
+        <time>2026-09-30T10:16:26Z</time>
+    </wpt>
+    <wpt lat="46.71144806" lon="8.60305335">
+        <name>IC2 869 waypoint 314</name>
+        <time>2026-09-30T10:16:27Z</time>
+    </wpt>
+    <wpt lat="46.71197397" lon="8.60322389">
+        <name>IC2 869 waypoint 315</name>
+        <time>2026-09-30T10:16:29Z</time>
+    </wpt>
+    <wpt lat="46.71251267" lon="8.60323303">
+        <name>IC2 869 waypoint 316</name>
+        <time>2026-09-30T10:16:30Z</time>
+    </wpt>
+    <wpt lat="46.71337795" lon="8.60289824">
+        <name>IC2 869 waypoint 317</name>
+        <time>2026-09-30T10:16:31Z</time>
+    </wpt>
+    <wpt lat="46.71405412" lon="8.60225898">
+        <name>IC2 869 waypoint 318</name>
+        <time>2026-09-30T10:16:33Z</time>
+    </wpt>
+    <wpt lat="46.71457028" lon="8.60135789">
+        <name>IC2 869 waypoint 319</name>
+        <time>2026-09-30T10:16:35Z</time>
+    </wpt>
+    <wpt lat="46.71488038" lon="8.60027534">
+        <name>IC2 869 waypoint 320</name>
+        <time>2026-09-30T10:16:36Z</time>
+    </wpt>
+    <wpt lat="46.71495674" lon="8.59910794">
+        <name>IC2 869 waypoint 321</name>
+        <time>2026-09-30T10:16:38Z</time>
+    </wpt>
+    <wpt lat="46.71479256" lon="8.59795982">
+        <name>IC2 869 waypoint 322</name>
+        <time>2026-09-30T10:16:39Z</time>
+    </wpt>
+    <wpt lat="46.71440248" lon="8.59693342">
+        <name>IC2 869 waypoint 323</name>
+        <time>2026-09-30T10:16:41Z</time>
+    </wpt>
+    <wpt lat="46.71374704" lon="8.59604650">
+        <name>IC2 869 waypoint 324</name>
+        <time>2026-09-30T10:16:43Z</time>
+    </wpt>
+    <wpt lat="46.71301481" lon="8.59555497">
+        <name>IC2 869 waypoint 325</name>
+        <time>2026-09-30T10:16:44Z</time>
+    </wpt>
+    <wpt lat="46.71230494" lon="8.59540336">
+        <name>IC2 869 waypoint 326</name>
+        <time>2026-09-30T10:16:46Z</time>
+    </wpt>
+    <wpt lat="46.70907011" lon="8.59561718">
+        <name>IC2 869 waypoint 327</name>
+        <time>2026-09-30T10:16:52Z</time>
+    </wpt>
+    <wpt lat="46.70782043" lon="8.59583307">
+        <name>IC2 869 waypoint 328</name>
+        <time>2026-09-30T10:16:54Z</time>
+    </wpt>
+    <wpt lat="46.70665301" lon="8.59574499">
+        <name>IC2 869 waypoint 329</name>
+        <time>2026-09-30T10:16:57Z</time>
+    </wpt>
+    <wpt lat="46.70521515" lon="8.59581220">
+        <name>IC2 869 waypoint 330</name>
+        <time>2026-09-30T10:17:00Z</time>
+    </wpt>
+    <wpt lat="46.70468396" lon="8.59568226">
+        <name>IC2 869 waypoint 331</name>
+        <time>2026-09-30T10:17:01Z</time>
+    </wpt>
+    <wpt lat="46.70332591" lon="8.59500575">
+        <name>IC2 869 waypoint 332</name>
+        <time>2026-09-30T10:17:03Z</time>
+    </wpt>
+    <wpt lat="46.70144234" lon="8.59495611">
+        <name>IC2 869 waypoint 333</name>
+        <time>2026-09-30T10:17:07Z</time>
+    </wpt>
+    <wpt lat="46.69983405" lon="8.59412909">
+        <name>IC2 869 waypoint 334</name>
+        <time>2026-09-30T10:17:10Z</time>
+    </wpt>
+    <wpt lat="46.69814451" lon="8.59377461">
+        <name>IC2 869 waypoint 335</name>
+        <time>2026-09-30T10:17:14Z</time>
+    </wpt>
+    <wpt lat="46.69762469" lon="8.59356841">
+        <name>IC2 869 waypoint 336</name>
+        <time>2026-09-30T10:17:15Z</time>
+    </wpt>
+    <wpt lat="46.69699930" lon="8.59305797">
+        <name>IC2 869 waypoint 337</name>
+        <time>2026-09-30T10:17:16Z</time>
+    </wpt>
+    <wpt lat="46.69589596" lon="8.59171866">
+        <name>IC2 869 waypoint 338</name>
+        <time>2026-09-30T10:17:19Z</time>
+    </wpt>
+    <wpt lat="46.69463140" lon="8.59072048">
+        <name>IC2 869 waypoint 339</name>
+        <time>2026-09-30T10:17:22Z</time>
+    </wpt>
+    <wpt lat="46.69381058" lon="8.59018976">
+        <name>IC2 869 waypoint 340</name>
+        <time>2026-09-30T10:17:24Z</time>
+    </wpt>
+    <wpt lat="46.69259505" lon="8.58971538">
+        <name>IC2 869 waypoint 341</name>
+        <time>2026-09-30T10:17:26Z</time>
+    </wpt>
+    <wpt lat="46.69116694" lon="8.58947397">
+        <name>IC2 869 waypoint 342</name>
+        <time>2026-09-30T10:17:29Z</time>
+    </wpt>
+    <wpt lat="46.68424276" lon="8.58925649">
+        <name>IC2 869 waypoint 343</name>
+        <time>2026-09-30T10:17:42Z</time>
+    </wpt>
+    <wpt lat="46.68346067" lon="8.58954231">
+        <name>IC2 869 waypoint 344</name>
+        <time>2026-09-30T10:17:44Z</time>
+    </wpt>
+    <wpt lat="46.68206018" lon="8.59071874">
+        <name>IC2 869 waypoint 345</name>
+        <time>2026-09-30T10:17:47Z</time>
+    </wpt>
+    <wpt lat="46.68129565" lon="8.59109425">
+        <name>IC2 869 waypoint 346</name>
+        <time>2026-09-30T10:17:49Z</time>
+    </wpt>
+    <wpt lat="46.67949986" lon="8.59119855">
+        <name>IC2 869 waypoint 347</name>
+        <time>2026-09-30T10:17:52Z</time>
+    </wpt>
+    <wpt lat="46.67772738" lon="8.59163569">
+        <name>IC2 869 waypoint 348</name>
+        <time>2026-09-30T10:17:56Z</time>
+    </wpt>
+    <wpt lat="46.67601960" lon="8.59161224">
+        <name>IC2 869 waypoint 349</name>
+        <time>2026-09-30T10:17:59Z</time>
+    </wpt>
+    <wpt lat="46.67453160" lon="8.59211356">
+        <name>IC2 869 waypoint 350</name>
+        <time>2026-09-30T10:18:02Z</time>
+    </wpt>
+    <wpt lat="46.67399421" lon="8.59216984">
+        <name>IC2 869 waypoint 351</name>
+        <time>2026-09-30T10:18:03Z</time>
+    </wpt>
+    <wpt lat="46.67158446" lon="8.59175249">
+        <name>IC2 869 waypoint 352</name>
+        <time>2026-09-30T10:18:08Z</time>
+    </wpt>
+    <wpt lat="46.66890618" lon="8.59022456">
+        <name>IC2 869 waypoint 353</name>
+        <time>2026-09-30T10:18:14Z</time>
+    </wpt>
+    <wpt lat="46.66709088" lon="8.58946744">
+        <name>IC2 869 waypoint 354</name>
+        <time>2026-09-30T10:18:17Z</time>
+    </wpt>
+    <wpt lat="46.66400865" lon="8.58861850">
+        <name>IC2 869 waypoint 355</name>
+        <time>2026-09-30T10:18:24Z</time>
+    </wpt>
+    <wpt lat="46.66311207" lon="8.58855581">
+        <name>IC2 869 waypoint 356</name>
+        <time>2026-09-30T10:18:25Z</time>
+    </wpt>
+    <wpt lat="46.52965258" lon="8.60244269">
+        <name>IC2 869 waypoint 357</name>
+        <time>2026-09-30T10:22:48Z</time>
+    </wpt>
+    <wpt lat="46.52890236" lon="8.60287097">
+        <name>IC2 869 waypoint 358</name>
+        <time>2026-09-30T10:22:49Z</time>
+    </wpt>
+    <wpt lat="46.52826597" lon="8.60358977">
+        <name>IC2 869 waypoint 359</name>
+        <time>2026-09-30T10:22:51Z</time>
+    </wpt>
+    <wpt lat="46.52779744" lon="8.60454138">
+        <name>IC2 869 waypoint 360</name>
+        <time>2026-09-30T10:22:52Z</time>
+    </wpt>
+    <wpt lat="46.52753686" lon="8.60564742">
+        <name>IC2 869 waypoint 361</name>
+        <time>2026-09-30T10:22:54Z</time>
+    </wpt>
+    <wpt lat="46.52724034" lon="8.61434009">
+        <name>IC2 869 waypoint 362</name>
+        <time>2026-09-30T10:23:06Z</time>
+    </wpt>
+    <wpt lat="46.52714429" lon="8.61510838">
+        <name>IC2 869 waypoint 363</name>
+        <time>2026-09-30T10:23:07Z</time>
+    </wpt>
+    <wpt lat="46.52680270" lon="8.61659146">
+        <name>IC2 869 waypoint 364</name>
+        <time>2026-09-30T10:23:09Z</time>
+    </wpt>
+    <wpt lat="46.52671649" lon="8.61736211">
+        <name>IC2 869 waypoint 365</name>
+        <time>2026-09-30T10:23:10Z</time>
+    </wpt>
+    <wpt lat="46.52676772" lon="8.61839905">
+        <name>IC2 869 waypoint 366</name>
+        <time>2026-09-30T10:23:11Z</time>
+    </wpt>
+    <wpt lat="46.52711051" lon="8.62001793">
+        <name>IC2 869 waypoint 367</name>
+        <time>2026-09-30T10:23:14Z</time>
+    </wpt>
+    <wpt lat="46.52719526" lon="8.62078877">
+        <name>IC2 869 waypoint 368</name>
+        <time>2026-09-30T10:23:15Z</time>
+    </wpt>
+    <wpt lat="46.52715017" lon="8.62169641">
+        <name>IC2 869 waypoint 369</name>
+        <time>2026-09-30T10:23:16Z</time>
+    </wpt>
+    <wpt lat="46.52695248" lon="8.62256013">
+        <name>IC2 869 waypoint 370</name>
+        <time>2026-09-30T10:23:17Z</time>
+    </wpt>
+    <wpt lat="46.52649462" lon="8.62352150">
+        <name>IC2 869 waypoint 371</name>
+        <time>2026-09-30T10:23:19Z</time>
+    </wpt>
+    <wpt lat="46.52592953" lon="8.62416117">
+        <name>IC2 869 waypoint 372</name>
+        <time>2026-09-30T10:23:20Z</time>
+    </wpt>
+    <wpt lat="46.52321707" lon="8.62554348">
+        <name>IC2 869 waypoint 373</name>
+        <time>2026-09-30T10:23:26Z</time>
+    </wpt>
+    <wpt lat="46.52247111" lon="8.62625894">
+        <name>IC2 869 waypoint 374</name>
+        <time>2026-09-30T10:23:28Z</time>
+    </wpt>
+    <wpt lat="46.52052472" lon="8.63016501">
+        <name>IC2 869 waypoint 375</name>
+        <time>2026-09-30T10:23:34Z</time>
+    </wpt>
+    <wpt lat="46.51951380" lon="8.63262954">
+        <name>IC2 869 waypoint 376</name>
+        <time>2026-09-30T10:23:38Z</time>
+    </wpt>
+    <wpt lat="46.51925869" lon="8.63346169">
+        <name>IC2 869 waypoint 377</name>
+        <time>2026-09-30T10:23:39Z</time>
+    </wpt>
+    <wpt lat="46.51914830" lon="8.63422574">
+        <name>IC2 869 waypoint 378</name>
+        <time>2026-09-30T10:23:40Z</time>
+    </wpt>
+    <wpt lat="46.51905302" lon="8.63630466">
+        <name>IC2 869 waypoint 379</name>
+        <time>2026-09-30T10:23:43Z</time>
+    </wpt>
+    <wpt lat="46.51860881" lon="8.63855789">
+        <name>IC2 869 waypoint 380</name>
+        <time>2026-09-30T10:23:46Z</time>
+    </wpt>
+    <wpt lat="46.51836910" lon="8.64127074">
+        <name>IC2 869 waypoint 381</name>
+        <time>2026-09-30T10:23:50Z</time>
+    </wpt>
+    <wpt lat="46.51773238" lon="8.64398185">
+        <name>IC2 869 waypoint 382</name>
+        <time>2026-09-30T10:23:54Z</time>
+    </wpt>
+    <wpt lat="46.51762701" lon="8.64474738">
+        <name>IC2 869 waypoint 383</name>
+        <time>2026-09-30T10:23:55Z</time>
+    </wpt>
+    <wpt lat="46.51757629" lon="8.64769252">
+        <name>IC2 869 waypoint 384</name>
+        <time>2026-09-30T10:23:59Z</time>
+    </wpt>
+    <wpt lat="46.51783478" lon="8.65118736">
+        <name>IC2 869 waypoint 385</name>
+        <time>2026-09-30T10:24:04Z</time>
+    </wpt>
+    <wpt lat="46.51769644" lon="8.65365029">
+        <name>IC2 869 waypoint 386</name>
+        <time>2026-09-30T10:24:07Z</time>
+    </wpt>
+    <wpt lat="46.51731889" lon="8.65511030">
+        <name>IC2 869 waypoint 387</name>
+        <time>2026-09-30T10:24:09Z</time>
+    </wpt>
+    <wpt lat="46.51629130" lon="8.65740160">
+        <name>IC2 869 waypoint 388</name>
+        <time>2026-09-30T10:24:13Z</time>
+    </wpt>
+    <wpt lat="46.51533694" lon="8.66091716">
+        <name>IC2 869 waypoint 389</name>
+        <time>2026-09-30T10:24:18Z</time>
+    </wpt>
+    <wpt lat="46.51471525" lon="8.66265077">
+        <name>IC2 869 waypoint 390</name>
+        <time>2026-09-30T10:24:20Z</time>
+    </wpt>
+    <wpt lat="46.51450505" lon="8.66350923">
+        <name>IC2 869 waypoint 391</name>
+        <time>2026-09-30T10:24:22Z</time>
+    </wpt>
+    <wpt lat="46.51414524" lon="8.66632581">
+        <name>IC2 869 waypoint 392</name>
+        <time>2026-09-30T10:24:26Z</time>
+    </wpt>
+    <wpt lat="46.51349605" lon="8.66916956">
+        <name>IC2 869 waypoint 393</name>
+        <time>2026-09-30T10:24:30Z</time>
+    </wpt>
+    <wpt lat="46.51339156" lon="8.67176435">
+        <name>IC2 869 waypoint 394</name>
+        <time>2026-09-30T10:24:33Z</time>
+    </wpt>
+    <wpt lat="46.51208582" lon="8.67975202">
+        <name>IC2 869 waypoint 395</name>
+        <time>2026-09-30T10:24:44Z</time>
+    </wpt>
+    <wpt lat="46.51188585" lon="8.68364732">
+        <name>IC2 869 waypoint 396</name>
+        <time>2026-09-30T10:24:50Z</time>
+    </wpt>
+    <wpt lat="46.51163605" lon="8.68569983">
+        <name>IC2 869 waypoint 397</name>
+        <time>2026-09-30T10:24:52Z</time>
+    </wpt>
+    <wpt lat="46.51005645" lon="8.69410523">
+        <name>IC2 869 waypoint 398</name>
+        <time>2026-09-30T10:25:04Z</time>
+    </wpt>
+    <wpt lat="46.50902043" lon="8.69854733">
+        <name>IC2 869 waypoint 399</name>
+        <time>2026-09-30T10:25:11Z</time>
+    </wpt>
+    <wpt lat="46.50849423" lon="8.70330258">
+        <name>IC2 869 waypoint 400</name>
+        <time>2026-09-30T10:25:17Z</time>
+    </wpt>
+    <wpt lat="46.50829300" lon="8.70402657">
+        <name>IC2 869 waypoint 401</name>
+        <time>2026-09-30T10:25:18Z</time>
+    </wpt>
+    <wpt lat="46.50799709" lon="8.70467878">
+        <name>IC2 869 waypoint 402</name>
+        <time>2026-09-30T10:25:19Z</time>
+    </wpt>
+    <wpt lat="46.50658251" lon="8.70667480">
+        <name>IC2 869 waypoint 403</name>
+        <time>2026-09-30T10:25:23Z</time>
+    </wpt>
+    <wpt lat="46.50630753" lon="8.70734606">
+        <name>IC2 869 waypoint 404</name>
+        <time>2026-09-30T10:25:24Z</time>
+    </wpt>
+    <wpt lat="46.50611846" lon="8.70807720">
+        <name>IC2 869 waypoint 405</name>
+        <time>2026-09-30T10:25:25Z</time>
+    </wpt>
+    <wpt lat="46.50601874" lon="8.70884444">
+        <name>IC2 869 waypoint 406</name>
+        <time>2026-09-30T10:25:26Z</time>
+    </wpt>
+    <wpt lat="46.50601911" lon="8.70975487">
+        <name>IC2 869 waypoint 407</name>
+        <time>2026-09-30T10:25:27Z</time>
+    </wpt>
+    <wpt lat="46.50647776" lon="8.71347091">
+        <name>IC2 869 waypoint 408</name>
+        <time>2026-09-30T10:25:33Z</time>
+    </wpt>
+    <wpt lat="46.50642323" lon="8.71437744">
+        <name>IC2 869 waypoint 409</name>
+        <time>2026-09-30T10:25:34Z</time>
+    </wpt>
+    <wpt lat="46.50626273" lon="8.71512237">
+        <name>IC2 869 waypoint 410</name>
+        <time>2026-09-30T10:25:35Z</time>
+    </wpt>
+    <wpt lat="46.50594914" lon="8.71591074">
+        <name>IC2 869 waypoint 411</name>
+        <time>2026-09-30T10:25:36Z</time>
+    </wpt>
+    <wpt lat="46.50544616" lon="8.71665169">
+        <name>IC2 869 waypoint 412</name>
+        <time>2026-09-30T10:25:37Z</time>
+    </wpt>
+    <wpt lat="46.50498869" lon="8.71706395">
+        <name>IC2 869 waypoint 413</name>
+        <time>2026-09-30T10:25:39Z</time>
+    </wpt>
+    <wpt lat="46.50366972" lon="8.71789366">
+        <name>IC2 869 waypoint 414</name>
+        <time>2026-09-30T10:25:41Z</time>
+    </wpt>
+    <wpt lat="46.50330329" lon="8.71827010">
+        <name>IC2 869 waypoint 415</name>
+        <time>2026-09-30T10:25:42Z</time>
+    </wpt>
+    <wpt lat="46.50292874" lon="8.71883104">
+        <name>IC2 869 waypoint 416</name>
+        <time>2026-09-30T10:25:43Z</time>
+    </wpt>
+    <wpt lat="46.50256240" lon="8.71972459">
+        <name>IC2 869 waypoint 417</name>
+        <time>2026-09-30T10:25:45Z</time>
+    </wpt>
+    <wpt lat="46.50216433" lon="8.72159015">
+        <name>IC2 869 waypoint 418</name>
+        <time>2026-09-30T10:25:47Z</time>
+    </wpt>
+    <wpt lat="46.50187067" lon="8.72239448">
+        <name>IC2 869 waypoint 419</name>
+        <time>2026-09-30T10:25:49Z</time>
+    </wpt>
+    <wpt lat="46.50131858" lon="8.72324596">
+        <name>IC2 869 waypoint 420</name>
+        <time>2026-09-30T10:25:50Z</time>
+    </wpt>
+    <wpt lat="46.50000584" lon="8.72437574">
+        <name>IC2 869 waypoint 421</name>
+        <time>2026-09-30T10:25:53Z</time>
+    </wpt>
+    <wpt lat="46.49943542" lon="8.72520142">
+        <name>IC2 869 waypoint 422</name>
+        <time>2026-09-30T10:25:55Z</time>
+    </wpt>
+    <wpt lat="46.49912107" lon="8.72598929">
+        <name>IC2 869 waypoint 423</name>
+        <time>2026-09-30T10:25:56Z</time>
+    </wpt>
+    <wpt lat="46.49823547" lon="8.72912115">
+        <name>IC2 869 waypoint 424</name>
+        <time>2026-09-30T10:26:01Z</time>
+    </wpt>
+    <wpt lat="46.49679474" lon="8.73210713">
+        <name>IC2 869 waypoint 425</name>
+        <time>2026-09-30T10:26:05Z</time>
+    </wpt>
+    <wpt lat="46.49411633" lon="8.73517733">
+        <name>IC2 869 waypoint 426</name>
+        <time>2026-09-30T10:26:12Z</time>
+    </wpt>
+    <wpt lat="46.49363876" lon="8.73553903">
+        <name>IC2 869 waypoint 427</name>
+        <time>2026-09-30T10:26:13Z</time>
+    </wpt>
+    <wpt lat="46.49229439" lon="8.73627728">
+        <name>IC2 869 waypoint 428</name>
+        <time>2026-09-30T10:26:16Z</time>
+    </wpt>
+    <wpt lat="46.49159097" lon="8.73707830">
+        <name>IC2 869 waypoint 429</name>
+        <time>2026-09-30T10:26:18Z</time>
+    </wpt>
+    <wpt lat="46.49118606" lon="8.73793682">
+        <name>IC2 869 waypoint 430</name>
+        <time>2026-09-30T10:26:19Z</time>
+    </wpt>
+    <wpt lat="46.48958802" lon="8.74230649">
+        <name>IC2 869 waypoint 431</name>
+        <time>2026-09-30T10:26:26Z</time>
+    </wpt>
+    <wpt lat="46.48916256" lon="8.74373976">
+        <name>IC2 869 waypoint 432</name>
+        <time>2026-09-30T10:26:28Z</time>
+    </wpt>
+    <wpt lat="46.48887772" lon="8.74630680">
+        <name>IC2 869 waypoint 433</name>
+        <time>2026-09-30T10:26:32Z</time>
+    </wpt>
+    <wpt lat="46.48892147" lon="8.74708435">
+        <name>IC2 869 waypoint 434</name>
+        <time>2026-09-30T10:26:33Z</time>
+    </wpt>
+    <wpt lat="46.48910485" lon="8.74795452">
+        <name>IC2 869 waypoint 435</name>
+        <time>2026-09-30T10:26:34Z</time>
+    </wpt>
+    <wpt lat="46.48952351" lon="8.74895372">
+        <name>IC2 869 waypoint 436</name>
+        <time>2026-09-30T10:26:35Z</time>
+    </wpt>
+    <wpt lat="46.49209380" lon="8.75348028">
+        <name>IC2 869 waypoint 437</name>
+        <time>2026-09-30T10:26:43Z</time>
+    </wpt>
+    <wpt lat="46.49240592" lon="8.75441583">
+        <name>IC2 869 waypoint 438</name>
+        <time>2026-09-30T10:26:45Z</time>
+    </wpt>
+    <wpt lat="46.49278718" lon="8.75642246">
+        <name>IC2 869 waypoint 439</name>
+        <time>2026-09-30T10:26:48Z</time>
+    </wpt>
+    <wpt lat="46.49333732" lon="8.75760367">
+        <name>IC2 869 waypoint 440</name>
+        <time>2026-09-30T10:26:49Z</time>
+    </wpt>
+    <wpt lat="46.49390322" lon="8.75824246">
+        <name>IC2 869 waypoint 441</name>
+        <time>2026-09-30T10:26:51Z</time>
+    </wpt>
+    <wpt lat="46.49447877" lon="8.75860709">
+        <name>IC2 869 waypoint 442</name>
+        <time>2026-09-30T10:26:52Z</time>
+    </wpt>
+    <wpt lat="46.49518707" lon="8.75877324">
+        <name>IC2 869 waypoint 443</name>
+        <time>2026-09-30T10:26:54Z</time>
+    </wpt>
+    <wpt lat="46.49581290" lon="8.75869308">
+        <name>IC2 869 waypoint 444</name>
+        <time>2026-09-30T10:26:55Z</time>
+    </wpt>
+    <wpt lat="46.49640883" lon="8.75840505">
+        <name>IC2 869 waypoint 445</name>
+        <time>2026-09-30T10:26:56Z</time>
+    </wpt>
+    <wpt lat="46.49701213" lon="8.75784255">
+        <name>IC2 869 waypoint 446</name>
+        <time>2026-09-30T10:26:57Z</time>
+    </wpt>
+    <wpt lat="46.49749246" lon="8.75707070">
+        <name>IC2 869 waypoint 447</name>
+        <time>2026-09-30T10:26:59Z</time>
+    </wpt>
+    <wpt lat="46.49778417" lon="8.75626497">
+        <name>IC2 869 waypoint 448</name>
+        <time>2026-09-30T10:27:00Z</time>
+    </wpt>
+    <wpt lat="46.49792557" lon="8.75551205">
+        <name>IC2 869 waypoint 449</name>
+        <time>2026-09-30T10:27:01Z</time>
+    </wpt>
+    <wpt lat="46.49796094" lon="8.75473346">
+        <name>IC2 869 waypoint 450</name>
+        <time>2026-09-30T10:27:02Z</time>
+    </wpt>
+    <wpt lat="46.49774875" lon="8.75334211">
+        <name>IC2 869 waypoint 451</name>
+        <time>2026-09-30T10:27:04Z</time>
+    </wpt>
+    <wpt lat="46.49748997" lon="8.75265773">
+        <name>IC2 869 waypoint 452</name>
+        <time>2026-09-30T10:27:05Z</time>
+    </wpt>
+    <wpt lat="46.49720568" lon="8.75215402">
+        <name>IC2 869 waypoint 453</name>
+        <time>2026-09-30T10:27:06Z</time>
+    </wpt>
+    <wpt lat="46.49640428" lon="8.75132707">
+        <name>IC2 869 waypoint 454</name>
+        <time>2026-09-30T10:27:08Z</time>
+    </wpt>
+    <wpt lat="46.49589592" lon="8.75106835">
+        <name>IC2 869 waypoint 455</name>
+        <time>2026-09-30T10:27:09Z</time>
+    </wpt>
+    <wpt lat="46.49545198" lon="8.75096863">
+        <name>IC2 869 waypoint 456</name>
+        <time>2026-09-30T10:27:10Z</time>
+    </wpt>
+    <wpt lat="46.49447437" lon="8.75113075">
+        <name>IC2 869 waypoint 457</name>
+        <time>2026-09-30T10:27:12Z</time>
+    </wpt>
+    <wpt lat="46.49367331" lon="8.75171015">
+        <name>IC2 869 waypoint 458</name>
+        <time>2026-09-30T10:27:14Z</time>
+    </wpt>
+    <wpt lat="46.49275334" lon="8.75294915">
+        <name>IC2 869 waypoint 459</name>
+        <time>2026-09-30T10:27:16Z</time>
+    </wpt>
+    <wpt lat="46.49091700" lon="8.75648986">
+        <name>IC2 869 waypoint 460</name>
+        <time>2026-09-30T10:27:22Z</time>
+    </wpt>
+    <wpt lat="46.48943720" lon="8.75876438">
+        <name>IC2 869 waypoint 461</name>
+        <time>2026-09-30T10:27:26Z</time>
+    </wpt>
+    <wpt lat="46.48908392" lon="8.75966803">
+        <name>IC2 869 waypoint 462</name>
+        <time>2026-09-30T10:27:28Z</time>
+    </wpt>
+    <wpt lat="46.48891250" lon="8.76093949">
+        <name>IC2 869 waypoint 463</name>
+        <time>2026-09-30T10:27:29Z</time>
+    </wpt>
+    <wpt lat="46.48908132" lon="8.76339897">
+        <name>IC2 869 waypoint 464</name>
+        <time>2026-09-30T10:27:33Z</time>
+    </wpt>
+    <wpt lat="46.48890473" lon="8.76604699">
+        <name>IC2 869 waypoint 465</name>
+        <time>2026-09-30T10:27:36Z</time>
+    </wpt>
+    <wpt lat="46.48889970" lon="8.76813045">
+        <name>IC2 869 waypoint 466</name>
+        <time>2026-09-30T10:27:39Z</time>
+    </wpt>
+    <wpt lat="46.48855733" lon="8.77134745">
+        <name>IC2 869 waypoint 467</name>
+        <time>2026-09-30T10:27:44Z</time>
+    </wpt>
+    <wpt lat="46.48840740" lon="8.77223160">
+        <name>IC2 869 waypoint 468</name>
+        <time>2026-09-30T10:27:45Z</time>
+    </wpt>
+    <wpt lat="46.48817132" lon="8.77293265">
+        <name>IC2 869 waypoint 469</name>
+        <time>2026-09-30T10:27:46Z</time>
+    </wpt>
+    <wpt lat="46.48777382" lon="8.77363668">
+        <name>IC2 869 waypoint 470</name>
+        <time>2026-09-30T10:27:47Z</time>
+    </wpt>
+    <wpt lat="46.48734623" lon="8.77411108">
+        <name>IC2 869 waypoint 471</name>
+        <time>2026-09-30T10:27:48Z</time>
+    </wpt>
+    <wpt lat="46.48651159" lon="8.77457820">
+        <name>IC2 869 waypoint 472</name>
+        <time>2026-09-30T10:27:50Z</time>
+    </wpt>
+    <wpt lat="46.48561649" lon="8.77462168">
+        <name>IC2 869 waypoint 473</name>
+        <time>2026-09-30T10:27:52Z</time>
+    </wpt>
+    <wpt lat="46.48476050" lon="8.77424133">
+        <name>IC2 869 waypoint 474</name>
+        <time>2026-09-30T10:27:53Z</time>
+    </wpt>
+    <wpt lat="46.48403758" lon="8.77347646">
+        <name>IC2 869 waypoint 475</name>
+        <time>2026-09-30T10:27:55Z</time>
+    </wpt>
+    <wpt lat="46.48352731" lon="8.77241128">
+        <name>IC2 869 waypoint 476</name>
+        <time>2026-09-30T10:27:57Z</time>
+    </wpt>
+    <wpt lat="46.48329690" lon="8.77129228">
+        <name>IC2 869 waypoint 477</name>
+        <time>2026-09-30T10:27:59Z</time>
+    </wpt>
+    <wpt lat="46.48332103" lon="8.76999651">
+        <name>IC2 869 waypoint 478</name>
+        <time>2026-09-30T10:28:00Z</time>
+    </wpt>
+    <wpt lat="46.48363669" lon="8.76878347">
+        <name>IC2 869 waypoint 479</name>
+        <time>2026-09-30T10:28:02Z</time>
+    </wpt>
+    <wpt lat="46.48401369" lon="8.76805590">
+        <name>IC2 869 waypoint 480</name>
+        <time>2026-09-30T10:28:03Z</time>
+    </wpt>
+    <wpt lat="46.48449669" lon="8.76747422">
+        <name>IC2 869 waypoint 481</name>
+        <time>2026-09-30T10:28:05Z</time>
+    </wpt>
+    <wpt lat="46.48514467" lon="8.76702813">
+        <name>IC2 869 waypoint 482</name>
+        <time>2026-09-30T10:28:06Z</time>
+    </wpt>
+    <wpt lat="46.48576117" lon="8.76685288">
+        <name>IC2 869 waypoint 483</name>
+        <time>2026-09-30T10:28:07Z</time>
+    </wpt>
+    <wpt lat="46.48647842" lon="8.76690161">
+        <name>IC2 869 waypoint 484</name>
+        <time>2026-09-30T10:28:09Z</time>
+    </wpt>
+    <wpt lat="46.48717399" lon="8.76716217">
+        <name>IC2 869 waypoint 485</name>
+        <time>2026-09-30T10:28:10Z</time>
+    </wpt>
+    <wpt lat="46.48781676" lon="8.76762524">
+        <name>IC2 869 waypoint 486</name>
+        <time>2026-09-30T10:28:11Z</time>
+    </wpt>
+    <wpt lat="46.48829542" lon="8.76821440">
+        <name>IC2 869 waypoint 487</name>
+        <time>2026-09-30T10:28:13Z</time>
+    </wpt>
+    <wpt lat="46.48882327" lon="8.76941670">
+        <name>IC2 869 waypoint 488</name>
+        <time>2026-09-30T10:28:15Z</time>
+    </wpt>
+    <wpt lat="46.48901534" lon="8.77068290">
+        <name>IC2 869 waypoint 489</name>
+        <time>2026-09-30T10:28:16Z</time>
+    </wpt>
+    <wpt lat="46.48897239" lon="8.77159035">
+        <name>IC2 869 waypoint 490</name>
+        <time>2026-09-30T10:28:18Z</time>
+    </wpt>
+    <wpt lat="46.48859421" lon="8.77386691">
+        <name>IC2 869 waypoint 491</name>
+        <time>2026-09-30T10:28:21Z</time>
+    </wpt>
+    <wpt lat="46.48865481" lon="8.77594650">
+        <name>IC2 869 waypoint 492</name>
+        <time>2026-09-30T10:28:24Z</time>
+    </wpt>
+    <wpt lat="46.48860055" lon="8.77672253">
+        <name>IC2 869 waypoint 493</name>
+        <time>2026-09-30T10:28:25Z</time>
+    </wpt>
+    <wpt lat="46.48829123" lon="8.77821895">
+        <name>IC2 869 waypoint 494</name>
+        <time>2026-09-30T10:28:27Z</time>
+    </wpt>
+    <wpt lat="46.48795554" lon="8.77913679">
+        <name>IC2 869 waypoint 495</name>
+        <time>2026-09-30T10:28:28Z</time>
+    </wpt>
+    <wpt lat="46.48689077" lon="8.78090152">
+        <name>IC2 869 waypoint 496</name>
+        <time>2026-09-30T10:28:31Z</time>
+    </wpt>
+    <wpt lat="46.48602339" lon="8.78272289">
+        <name>IC2 869 waypoint 497</name>
+        <time>2026-09-30T10:28:34Z</time>
+    </wpt>
+    <wpt lat="46.48469801" lon="8.78448142">
+        <name>IC2 869 waypoint 498</name>
+        <time>2026-09-30T10:28:38Z</time>
+    </wpt>
+    <wpt lat="46.48402621" lon="8.78570117">
+        <name>IC2 869 waypoint 499</name>
+        <time>2026-09-30T10:28:40Z</time>
+    </wpt>
+    <wpt lat="46.48367969" lon="8.78675696">
+        <name>IC2 869 waypoint 500</name>
+        <time>2026-09-30T10:28:41Z</time>
+    </wpt>
+    <wpt lat="46.48336412" lon="8.78905371">
+        <name>IC2 869 waypoint 501</name>
+        <time>2026-09-30T10:28:45Z</time>
+    </wpt>
+    <wpt lat="46.48299492" lon="8.79037873">
+        <name>IC2 869 waypoint 502</name>
+        <time>2026-09-30T10:28:47Z</time>
+    </wpt>
+    <wpt lat="46.48254952" lon="8.79130969">
+        <name>IC2 869 waypoint 503</name>
+        <time>2026-09-30T10:28:48Z</time>
+    </wpt>
+    <wpt lat="46.48127098" lon="8.79314052">
+        <name>IC2 869 waypoint 504</name>
+        <time>2026-09-30T10:28:52Z</time>
+    </wpt>
+    <wpt lat="46.48085020" lon="8.79398161">
+        <name>IC2 869 waypoint 505</name>
+        <time>2026-09-30T10:28:53Z</time>
+    </wpt>
+    <wpt lat="46.48059131" lon="8.79508681">
+        <name>IC2 869 waypoint 506</name>
+        <time>2026-09-30T10:28:55Z</time>
+    </wpt>
+    <wpt lat="46.48051337" lon="8.79755615">
+        <name>IC2 869 waypoint 507</name>
+        <time>2026-09-30T10:28:58Z</time>
+    </wpt>
+    <wpt lat="46.48027207" lon="8.79934407">
+        <name>IC2 869 waypoint 508</name>
+        <time>2026-09-30T10:29:00Z</time>
+    </wpt>
+    <wpt lat="46.48006582" lon="8.80006481">
+        <name>IC2 869 waypoint 509</name>
+        <time>2026-09-30T10:29:01Z</time>
+    </wpt>
+    <wpt lat="46.47910767" lon="8.80257087">
+        <name>IC2 869 waypoint 510</name>
+        <time>2026-09-30T10:29:05Z</time>
+    </wpt>
+    <wpt lat="46.47856825" lon="8.80343884">
+        <name>IC2 869 waypoint 511</name>
+        <time>2026-09-30T10:29:07Z</time>
+    </wpt>
+    <wpt lat="46.47795757" lon="8.80398400">
+        <name>IC2 869 waypoint 512</name>
+        <time>2026-09-30T10:29:08Z</time>
+    </wpt>
+    <wpt lat="46.47726901" lon="8.80427645">
+        <name>IC2 869 waypoint 513</name>
+        <time>2026-09-30T10:29:10Z</time>
+    </wpt>
+    <wpt lat="46.47592432" lon="8.80443015">
+        <name>IC2 869 waypoint 514</name>
+        <time>2026-09-30T10:29:12Z</time>
+    </wpt>
+    <wpt lat="46.47539916" lon="8.80460449">
+        <name>IC2 869 waypoint 515</name>
+        <time>2026-09-30T10:29:13Z</time>
+    </wpt>
+    <wpt lat="46.47475751" lon="8.80506923">
+        <name>IC2 869 waypoint 516</name>
+        <time>2026-09-30T10:29:15Z</time>
+    </wpt>
+    <wpt lat="46.47422359" lon="8.80576301">
+        <name>IC2 869 waypoint 517</name>
+        <time>2026-09-30T10:29:16Z</time>
+    </wpt>
+    <wpt lat="46.47314548" lon="8.80831496">
+        <name>IC2 869 waypoint 518</name>
+        <time>2026-09-30T10:29:20Z</time>
+    </wpt>
+    <wpt lat="46.47256226" lon="8.80947106">
+        <name>IC2 869 waypoint 519</name>
+        <time>2026-09-30T10:29:22Z</time>
+    </wpt>
+    <wpt lat="46.47189450" lon="8.81052699">
+        <name>IC2 869 waypoint 520</name>
+        <time>2026-09-30T10:29:24Z</time>
+    </wpt>
+    <wpt lat="46.47024318" lon="8.81273636">
+        <name>IC2 869 waypoint 521</name>
+        <time>2026-09-30T10:29:29Z</time>
+    </wpt>
+    <wpt lat="46.46973937" lon="8.81365035">
+        <name>IC2 869 waypoint 522</name>
+        <time>2026-09-30T10:29:30Z</time>
+    </wpt>
+    <wpt lat="46.46933844" lon="8.81495456">
+        <name>IC2 869 waypoint 523</name>
+        <time>2026-09-30T10:29:32Z</time>
+    </wpt>
+    <wpt lat="46.46842269" lon="8.82012522">
+        <name>IC2 869 waypoint 524</name>
+        <time>2026-09-30T10:29:39Z</time>
+    </wpt>
+    <wpt lat="46.46818402" lon="8.82110659">
+        <name>IC2 869 waypoint 525</name>
+        <time>2026-09-30T10:29:41Z</time>
+    </wpt>
+    <wpt lat="46.46788610" lon="8.82190856">
+        <name>IC2 869 waypoint 526</name>
+        <time>2026-09-30T10:29:42Z</time>
+    </wpt>
+    <wpt lat="46.46745365" lon="8.82273983">
+        <name>IC2 869 waypoint 527</name>
+        <time>2026-09-30T10:29:43Z</time>
+    </wpt>
+    <wpt lat="46.46701739" lon="8.82339622">
+        <name>IC2 869 waypoint 528</name>
+        <time>2026-09-30T10:29:45Z</time>
+    </wpt>
+    <wpt lat="46.46647353" lon="8.82400624">
+        <name>IC2 869 waypoint 529</name>
+        <time>2026-09-30T10:29:46Z</time>
+    </wpt>
+    <wpt lat="46.46592360" lon="8.82444850">
+        <name>IC2 869 waypoint 530</name>
+        <time>2026-09-30T10:29:47Z</time>
+    </wpt>
+    <wpt lat="46.46468211" lon="8.82521063">
+        <name>IC2 869 waypoint 531</name>
+        <time>2026-09-30T10:29:50Z</time>
+    </wpt>
+    <wpt lat="46.46354905" lon="8.82626943">
+        <name>IC2 869 waypoint 532</name>
+        <time>2026-09-30T10:29:53Z</time>
+    </wpt>
+    <wpt lat="46.46290101" lon="8.82671978">
+        <name>IC2 869 waypoint 533</name>
+        <time>2026-09-30T10:29:54Z</time>
+    </wpt>
+    <wpt lat="46.45966683" lon="8.82784489">
+        <name>IC2 869 waypoint 534</name>
+        <time>2026-09-30T10:30:00Z</time>
+    </wpt>
+    <wpt lat="46.45830108" lon="8.82849713">
+        <name>IC2 869 waypoint 535</name>
+        <time>2026-09-30T10:30:03Z</time>
+    </wpt>
+    <wpt lat="46.45643812" lon="8.82891825">
+        <name>IC2 869 waypoint 536</name>
+        <time>2026-09-30T10:30:07Z</time>
+    </wpt>
+    <wpt lat="46.45586984" lon="8.82930582">
+        <name>IC2 869 waypoint 537</name>
+        <time>2026-09-30T10:30:08Z</time>
+    </wpt>
+    <wpt lat="46.45476370" lon="8.83042159">
+        <name>IC2 869 waypoint 538</name>
+        <time>2026-09-30T10:30:11Z</time>
+    </wpt>
+    <wpt lat="46.45410125" lon="8.83082262">
+        <name>IC2 869 waypoint 539</name>
+        <time>2026-09-30T10:30:12Z</time>
+    </wpt>
+    <wpt lat="46.45357257" lon="8.83097516">
+        <name>IC2 869 waypoint 540</name>
+        <time>2026-09-30T10:30:13Z</time>
+    </wpt>
+    <wpt lat="46.45303368" lon="8.83099535">
+        <name>IC2 869 waypoint 541</name>
+        <time>2026-09-30T10:30:14Z</time>
+    </wpt>
+    <wpt lat="46.45153553" lon="8.83056534">
+        <name>IC2 869 waypoint 542</name>
+        <time>2026-09-30T10:30:17Z</time>
+    </wpt>
+    <wpt lat="46.45099822" lon="8.83050673">
+        <name>IC2 869 waypoint 543</name>
+        <time>2026-09-30T10:30:18Z</time>
+    </wpt>
+    <wpt lat="46.45046387" lon="8.83060669">
+        <name>IC2 869 waypoint 544</name>
+        <time>2026-09-30T10:30:19Z</time>
+    </wpt>
+    <wpt lat="46.44987381" lon="8.83091855">
+        <name>IC2 869 waypoint 545</name>
+        <time>2026-09-30T10:30:21Z</time>
+    </wpt>
+    <wpt lat="46.44697513" lon="8.83399512">
+        <name>IC2 869 waypoint 546</name>
+        <time>2026-09-30T10:30:28Z</time>
+    </wpt>
+    <wpt lat="46.44342298" lon="8.83651835">
+        <name>IC2 869 waypoint 547</name>
+        <time>2026-09-30T10:30:36Z</time>
+    </wpt>
+    <wpt lat="46.44238780" lon="8.83754874">
+        <name>IC2 869 waypoint 548</name>
+        <time>2026-09-30T10:30:38Z</time>
+    </wpt>
+    <wpt lat="46.44087537" lon="8.83959091">
+        <name>IC2 869 waypoint 549</name>
+        <time>2026-09-30T10:30:42Z</time>
+    </wpt>
+    <wpt lat="46.44041765" lon="8.84033202">
+        <name>IC2 869 waypoint 550</name>
+        <time>2026-09-30T10:30:43Z</time>
+    </wpt>
+    <wpt lat="46.43835671" lon="8.84490588">
+        <name>IC2 869 waypoint 551</name>
+        <time>2026-09-30T10:30:51Z</time>
+    </wpt>
+    <wpt lat="46.43795447" lon="8.84542453">
+        <name>IC2 869 waypoint 552</name>
+        <time>2026-09-30T10:30:52Z</time>
+    </wpt>
+    <wpt lat="46.43668307" lon="8.84664635">
+        <name>IC2 869 waypoint 553</name>
+        <time>2026-09-30T10:30:55Z</time>
+    </wpt>
+    <wpt lat="46.43570025" lon="8.84850191">
+        <name>IC2 869 waypoint 554</name>
+        <time>2026-09-30T10:30:58Z</time>
+    </wpt>
+    <wpt lat="46.43516354" lon="8.84919064">
+        <name>IC2 869 waypoint 555</name>
+        <time>2026-09-30T10:30:59Z</time>
+    </wpt>
+    <wpt lat="46.43468827" lon="8.84955782">
+        <name>IC2 869 waypoint 556</name>
+        <time>2026-09-30T10:31:00Z</time>
+    </wpt>
+    <wpt lat="46.43326364" lon="8.85034927">
+        <name>IC2 869 waypoint 557</name>
+        <time>2026-09-30T10:31:03Z</time>
+    </wpt>
+    <wpt lat="46.43153484" lon="8.85242459">
+        <name>IC2 869 waypoint 558</name>
+        <time>2026-09-30T10:31:08Z</time>
+    </wpt>
+    <wpt lat="46.43090837" lon="8.85293078">
+        <name>IC2 869 waypoint 559</name>
+        <time>2026-09-30T10:31:09Z</time>
+    </wpt>
+    <wpt lat="46.42704663" lon="8.85507997">
+        <name>IC2 869 waypoint 560</name>
+        <time>2026-09-30T10:31:17Z</time>
+    </wpt>
+    <wpt lat="46.42642902" lon="8.85524605">
+        <name>IC2 869 waypoint 561</name>
+        <time>2026-09-30T10:31:19Z</time>
+    </wpt>
+    <wpt lat="46.42490375" lon="8.85533233">
+        <name>IC2 869 waypoint 562</name>
+        <time>2026-09-30T10:31:22Z</time>
+    </wpt>
+    <wpt lat="46.42430863" lon="8.85562307">
+        <name>IC2 869 waypoint 563</name>
+        <time>2026-09-30T10:31:23Z</time>
+    </wpt>
+    <wpt lat="46.42377766" lon="8.85610876">
+        <name>IC2 869 waypoint 564</name>
+        <time>2026-09-30T10:31:24Z</time>
+    </wpt>
+    <wpt lat="46.42313817" lon="8.85719022">
+        <name>IC2 869 waypoint 565</name>
+        <time>2026-09-30T10:31:26Z</time>
+    </wpt>
+    <wpt lat="46.42291618" lon="8.85790022">
+        <name>IC2 869 waypoint 566</name>
+        <time>2026-09-30T10:31:27Z</time>
+    </wpt>
+    <wpt lat="46.42279556" lon="8.85865969">
+        <name>IC2 869 waypoint 567</name>
+        <time>2026-09-30T10:31:28Z</time>
+    </wpt>
+    <wpt lat="46.42277975" lon="8.85943859">
+        <name>IC2 869 waypoint 568</name>
+        <time>2026-09-30T10:31:29Z</time>
+    </wpt>
+    <wpt lat="46.42286924" lon="8.86020698">
+        <name>IC2 869 waypoint 569</name>
+        <time>2026-09-30T10:31:30Z</time>
+    </wpt>
+    <wpt lat="46.42302368" lon="8.86081702">
+        <name>IC2 869 waypoint 570</name>
+        <time>2026-09-30T10:31:31Z</time>
+    </wpt>
+    <wpt lat="46.42329867" lon="8.86148712">
+        <name>IC2 869 waypoint 571</name>
+        <time>2026-09-30T10:31:32Z</time>
+    </wpt>
+    <wpt lat="46.42365909" lon="8.86206640">
+        <name>IC2 869 waypoint 572</name>
+        <time>2026-09-30T10:31:33Z</time>
+    </wpt>
+    <wpt lat="46.42409144" lon="8.86253147">
+        <name>IC2 869 waypoint 573</name>
+        <time>2026-09-30T10:31:34Z</time>
+    </wpt>
+    <wpt lat="46.42501321" lon="8.86302967">
+        <name>IC2 869 waypoint 574</name>
+        <time>2026-09-30T10:31:36Z</time>
+    </wpt>
+    <wpt lat="46.42555048" lon="8.86308976">
+        <name>IC2 869 waypoint 575</name>
+        <time>2026-09-30T10:31:37Z</time>
+    </wpt>
+    <wpt lat="46.42608541" lon="8.86299595">
+        <name>IC2 869 waypoint 576</name>
+        <time>2026-09-30T10:31:38Z</time>
+    </wpt>
+    <wpt lat="46.42699073" lon="8.86243821">
+        <name>IC2 869 waypoint 577</name>
+        <time>2026-09-30T10:31:40Z</time>
+    </wpt>
+    <wpt lat="46.42740827" lon="8.86194563">
+        <name>IC2 869 waypoint 578</name>
+        <time>2026-09-30T10:31:41Z</time>
+    </wpt>
+    <wpt lat="46.42775037" lon="8.86134354">
+        <name>IC2 869 waypoint 579</name>
+        <time>2026-09-30T10:31:42Z</time>
+    </wpt>
+    <wpt lat="46.42800356" lon="8.86065565">
+        <name>IC2 869 waypoint 580</name>
+        <time>2026-09-30T10:31:43Z</time>
+    </wpt>
+    <wpt lat="46.42817351" lon="8.85978090">
+        <name>IC2 869 waypoint 581</name>
+        <time>2026-09-30T10:31:45Z</time>
+    </wpt>
+    <wpt lat="46.42820546" lon="8.85900295">
+        <name>IC2 869 waypoint 582</name>
+        <time>2026-09-30T10:31:46Z</time>
+    </wpt>
+    <wpt lat="46.42813151" lon="8.85823107">
+        <name>IC2 869 waypoint 583</name>
+        <time>2026-09-30T10:31:47Z</time>
+    </wpt>
+    <wpt lat="46.42795216" lon="8.85749622">
+        <name>IC2 869 waypoint 584</name>
+        <time>2026-09-30T10:31:48Z</time>
+    </wpt>
+    <wpt lat="46.42762164" lon="8.85672347">
+        <name>IC2 869 waypoint 585</name>
+        <time>2026-09-30T10:31:49Z</time>
+    </wpt>
+    <wpt lat="46.42724711" lon="8.85616319">
+        <name>IC2 869 waypoint 586</name>
+        <time>2026-09-30T10:31:50Z</time>
+    </wpt>
+    <wpt lat="46.42666095" lon="8.85556133">
+        <name>IC2 869 waypoint 587</name>
+        <time>2026-09-30T10:31:52Z</time>
+    </wpt>
+    <wpt lat="46.42601529" lon="8.85510460">
+        <name>IC2 869 waypoint 588</name>
+        <time>2026-09-30T10:31:53Z</time>
+    </wpt>
+    <wpt lat="46.42549414" lon="8.85490654">
+        <name>IC2 869 waypoint 589</name>
+        <time>2026-09-30T10:31:54Z</time>
+    </wpt>
+    <wpt lat="46.42495619" lon="8.85486159">
+        <name>IC2 869 waypoint 590</name>
+        <time>2026-09-30T10:31:55Z</time>
+    </wpt>
+    <wpt lat="46.42433574" lon="8.85500452">
+        <name>IC2 869 waypoint 591</name>
+        <time>2026-09-30T10:31:56Z</time>
+    </wpt>
+    <wpt lat="46.42383504" lon="8.85529222">
+        <name>IC2 869 waypoint 592</name>
+        <time>2026-09-30T10:31:57Z</time>
+    </wpt>
+    <wpt lat="46.42338572" lon="8.85572218">
+        <name>IC2 869 waypoint 593</name>
+        <time>2026-09-30T10:31:58Z</time>
+    </wpt>
+    <wpt lat="46.42274359" lon="8.85680126">
+        <name>IC2 869 waypoint 594</name>
+        <time>2026-09-30T10:32:00Z</time>
+    </wpt>
+    <wpt lat="46.42218900" lon="8.85885780">
+        <name>IC2 869 waypoint 595</name>
+        <time>2026-09-30T10:32:03Z</time>
+    </wpt>
+    <wpt lat="46.42180933" lon="8.85973768">
+        <name>IC2 869 waypoint 596</name>
+        <time>2026-09-30T10:32:05Z</time>
+    </wpt>
+    <wpt lat="46.42134927" lon="8.86035641">
+        <name>IC2 869 waypoint 597</name>
+        <time>2026-09-30T10:32:06Z</time>
+    </wpt>
+    <wpt lat="46.41998681" lon="8.86175971">
+        <name>IC2 869 waypoint 598</name>
+        <time>2026-09-30T10:32:09Z</time>
+    </wpt>
+    <wpt lat="46.41950891" lon="8.86253375">
+        <name>IC2 869 waypoint 599</name>
+        <time>2026-09-30T10:32:11Z</time>
+    </wpt>
+    <wpt lat="46.41914591" lon="8.86357630">
+        <name>IC2 869 waypoint 600</name>
+        <time>2026-09-30T10:32:12Z</time>
+    </wpt>
+    <wpt lat="46.41899329" lon="8.86472139">
+        <name>IC2 869 waypoint 601</name>
+        <time>2026-09-30T10:32:14Z</time>
+    </wpt>
+    <wpt lat="46.41906931" lon="8.86575286">
+        <name>IC2 869 waypoint 602</name>
+        <time>2026-09-30T10:32:15Z</time>
+    </wpt>
+    <wpt lat="46.41933109" lon="8.86671889">
+        <name>IC2 869 waypoint 603</name>
+        <time>2026-09-30T10:32:17Z</time>
+    </wpt>
+    <wpt lat="46.41975863" lon="8.86755216">
+        <name>IC2 869 waypoint 604</name>
+        <time>2026-09-30T10:32:18Z</time>
+    </wpt>
+    <wpt lat="46.42032211" lon="8.86819457">
+        <name>IC2 869 waypoint 605</name>
+        <time>2026-09-30T10:32:19Z</time>
+    </wpt>
+    <wpt lat="46.42098222" lon="8.86860131">
+        <name>IC2 869 waypoint 606</name>
+        <time>2026-09-30T10:32:21Z</time>
+    </wpt>
+    <wpt lat="46.42178290" lon="8.86874257">
+        <name>IC2 869 waypoint 607</name>
+        <time>2026-09-30T10:32:22Z</time>
+    </wpt>
+    <wpt lat="46.42249129" lon="8.86857728">
+        <name>IC2 869 waypoint 608</name>
+        <time>2026-09-30T10:32:24Z</time>
+    </wpt>
+    <wpt lat="46.42314505" lon="8.86814961">
+        <name>IC2 869 waypoint 609</name>
+        <time>2026-09-30T10:32:25Z</time>
+    </wpt>
+    <wpt lat="46.42357196" lon="8.86767413">
+        <name>IC2 869 waypoint 610</name>
+        <time>2026-09-30T10:32:26Z</time>
+    </wpt>
+    <wpt lat="46.42392585" lon="8.86708650">
+        <name>IC2 869 waypoint 611</name>
+        <time>2026-09-30T10:32:27Z</time>
+    </wpt>
+    <wpt lat="46.42419273" lon="8.86640957">
+        <name>IC2 869 waypoint 612</name>
+        <time>2026-09-30T10:32:28Z</time>
+    </wpt>
+    <wpt lat="46.42436185" lon="8.86566972">
+        <name>IC2 869 waypoint 613</name>
+        <time>2026-09-30T10:32:29Z</time>
+    </wpt>
+    <wpt lat="46.42442652" lon="8.86489613">
+        <name>IC2 869 waypoint 614</name>
+        <time>2026-09-30T10:32:30Z</time>
+    </wpt>
+    <wpt lat="46.42438424" lon="8.86411929">
+        <name>IC2 869 waypoint 615</name>
+        <time>2026-09-30T10:32:32Z</time>
+    </wpt>
+    <wpt lat="46.42423702" lon="8.86336971">
+        <name>IC2 869 waypoint 616</name>
+        <time>2026-09-30T10:32:33Z</time>
+    </wpt>
+    <wpt lat="46.42399060" lon="8.86267673">
+        <name>IC2 869 waypoint 617</name>
+        <time>2026-09-30T10:32:34Z</time>
+    </wpt>
+    <wpt lat="46.42345612" lon="8.86180319">
+        <name>IC2 869 waypoint 618</name>
+        <time>2026-09-30T10:32:35Z</time>
+    </wpt>
+    <wpt lat="46.42268542" lon="8.86114265">
+        <name>IC2 869 waypoint 619</name>
+        <time>2026-09-30T10:32:37Z</time>
+    </wpt>
+    <wpt lat="46.42050781" lon="8.85991255">
+        <name>IC2 869 waypoint 620</name>
+        <time>2026-09-30T10:32:42Z</time>
+    </wpt>
+    <wpt lat="46.41997481" lon="8.85979829">
+        <name>IC2 869 waypoint 621</name>
+        <time>2026-09-30T10:32:43Z</time>
+    </wpt>
+    <wpt lat="46.41934805" lon="8.85986175">
+        <name>IC2 869 waypoint 622</name>
+        <time>2026-09-30T10:32:44Z</time>
+    </wpt>
+    <wpt lat="46.41549326" lon="8.86115968">
+        <name>IC2 869 waypoint 623</name>
+        <time>2026-09-30T10:32:52Z</time>
+    </wpt>
+    <wpt lat="46.41406520" lon="8.86194438">
+        <name>IC2 869 waypoint 624</name>
+        <time>2026-09-30T10:32:55Z</time>
+    </wpt>
+    <wpt lat="46.41354001" lon="8.86244286">
+        <name>IC2 869 waypoint 625</name>
+        <time>2026-09-30T10:32:56Z</time>
+    </wpt>
+    <wpt lat="46.41298431" lon="8.86329192">
+        <name>IC2 869 waypoint 626</name>
+        <time>2026-09-30T10:32:57Z</time>
+    </wpt>
+    <wpt lat="46.41250809" lon="8.86423684">
+        <name>IC2 869 waypoint 627</name>
+        <time>2026-09-30T10:32:59Z</time>
+    </wpt>
+    <wpt lat="46.41181200" lon="8.86620316">
+        <name>IC2 869 waypoint 628</name>
+        <time>2026-09-30T10:33:02Z</time>
+    </wpt>
+    <wpt lat="46.41145814" lon="8.86679069">
+        <name>IC2 869 waypoint 629</name>
+        <time>2026-09-30T10:33:03Z</time>
+    </wpt>
+    <wpt lat="46.41095413" lon="8.86733304">
+        <name>IC2 869 waypoint 630</name>
+        <time>2026-09-30T10:33:04Z</time>
+    </wpt>
+    <wpt lat="46.41046254" lon="8.86765143">
+        <name>IC2 869 waypoint 631</name>
+        <time>2026-09-30T10:33:05Z</time>
+    </wpt>
+    <wpt lat="46.40837307" lon="8.86843078">
+        <name>IC2 869 waypoint 632</name>
+        <time>2026-09-30T10:33:10Z</time>
+    </wpt>
+    <wpt lat="46.40478415" lon="8.87035268">
+        <name>IC2 869 waypoint 633</name>
+        <time>2026-09-30T10:33:17Z</time>
+    </wpt>
+    <wpt lat="46.40013961" lon="8.87390922">
+        <name>IC2 869 waypoint 634</name>
+        <time>2026-09-30T10:33:27Z</time>
+    </wpt>
+    <wpt lat="46.39948032" lon="8.87458249">
+        <name>IC2 869 waypoint 635</name>
+        <time>2026-09-30T10:33:29Z</time>
+    </wpt>
+    <wpt lat="46.39902959" lon="8.87538940">
+        <name>IC2 869 waypoint 636</name>
+        <time>2026-09-30T10:33:30Z</time>
+    </wpt>
+    <wpt lat="46.39871989" lon="8.87646581">
+        <name>IC2 869 waypoint 637</name>
+        <time>2026-09-30T10:33:32Z</time>
+    </wpt>
+    <wpt lat="46.39837964" lon="8.88307461">
+        <name>IC2 869 waypoint 638</name>
+        <time>2026-09-30T10:33:41Z</time>
+    </wpt>
+    <wpt lat="46.39818011" lon="8.88407073">
+        <name>IC2 869 waypoint 639</name>
+        <time>2026-09-30T10:33:42Z</time>
+    </wpt>
+    <wpt lat="46.39780694" lon="8.88495662">
+        <name>IC2 869 waypoint 640</name>
+        <time>2026-09-30T10:33:44Z</time>
+    </wpt>
+    <wpt lat="46.39721598" lon="8.88575151">
+        <name>IC2 869 waypoint 641</name>
+        <time>2026-09-30T10:33:45Z</time>
+    </wpt>
+    <wpt lat="46.39221085" lon="8.89105470">
+        <name>IC2 869 waypoint 642</name>
+        <time>2026-09-30T10:33:58Z</time>
+    </wpt>
+    <wpt lat="46.39145049" lon="8.89216000">
+        <name>IC2 869 waypoint 643</name>
+        <time>2026-09-30T10:34:00Z</time>
+    </wpt>
+    <wpt lat="46.39021409" lon="8.89439261">
+        <name>IC2 869 waypoint 644</name>
+        <time>2026-09-30T10:34:04Z</time>
+    </wpt>
+    <wpt lat="46.38974783" lon="8.89500247">
+        <name>IC2 869 waypoint 645</name>
+        <time>2026-09-30T10:34:05Z</time>
+    </wpt>
+    <wpt lat="46.38819654" lon="8.89655879">
+        <name>IC2 869 waypoint 646</name>
+        <time>2026-09-30T10:34:08Z</time>
+    </wpt>
+    <wpt lat="46.38659497" lon="8.89740690">
+        <name>IC2 869 waypoint 647</name>
+        <time>2026-09-30T10:34:12Z</time>
+    </wpt>
+    <wpt lat="46.38584701" lon="8.89812229">
+        <name>IC2 869 waypoint 648</name>
+        <time>2026-09-30T10:34:14Z</time>
+    </wpt>
+    <wpt lat="46.38524763" lon="8.89908700">
+        <name>IC2 869 waypoint 649</name>
+        <time>2026-09-30T10:34:15Z</time>
+    </wpt>
+    <wpt lat="46.38460233" lon="8.90079749">
+        <name>IC2 869 waypoint 650</name>
+        <time>2026-09-30T10:34:18Z</time>
+    </wpt>
+    <wpt lat="46.38421994" lon="8.90151787">
+        <name>IC2 869 waypoint 651</name>
+        <time>2026-09-30T10:34:19Z</time>
+    </wpt>
+    <wpt lat="46.38207784" lon="8.90388473">
+        <name>IC2 869 waypoint 652</name>
+        <time>2026-09-30T10:34:24Z</time>
+    </wpt>
+    <wpt lat="46.37854449" lon="8.90868269">
+        <name>IC2 869 waypoint 653</name>
+        <time>2026-09-30T10:34:34Z</time>
+    </wpt>
+    <wpt lat="46.37720951" lon="8.91129581">
+        <name>IC2 869 waypoint 654</name>
+        <time>2026-09-30T10:34:38Z</time>
+    </wpt>
+    <wpt lat="46.37594029" lon="8.91331599">
+        <name>IC2 869 waypoint 655</name>
+        <time>2026-09-30T10:34:42Z</time>
+    </wpt>
+    <wpt lat="46.37551142" lon="8.91430568">
+        <name>IC2 869 waypoint 656</name>
+        <time>2026-09-30T10:34:44Z</time>
+    </wpt>
+    <wpt lat="46.37449751" lon="8.91874612">
+        <name>IC2 869 waypoint 657</name>
+        <time>2026-09-30T10:34:50Z</time>
+    </wpt>
+    <wpt lat="46.37375634" lon="8.92262831">
+        <name>IC2 869 waypoint 658</name>
+        <time>2026-09-30T10:34:55Z</time>
+    </wpt>
+    <wpt lat="46.37321880" lon="8.92455634">
+        <name>IC2 869 waypoint 659</name>
+        <time>2026-09-30T10:34:58Z</time>
+    </wpt>
+    <wpt lat="46.37273660" lon="8.92580246">
+        <name>IC2 869 waypoint 660</name>
+        <time>2026-09-30T10:35:00Z</time>
+    </wpt>
+    <wpt lat="46.37202297" lon="8.92696848">
+        <name>IC2 869 waypoint 661</name>
+        <time>2026-09-30T10:35:02Z</time>
+    </wpt>
+    <wpt lat="46.36864914" lon="8.93126483">
+        <name>IC2 869 waypoint 662</name>
+        <time>2026-09-30T10:35:11Z</time>
+    </wpt>
+    <wpt lat="46.36652067" lon="8.93444060">
+        <name>IC2 869 waypoint 663</name>
+        <time>2026-09-30T10:35:17Z</time>
+    </wpt>
+    <wpt lat="46.36526088" lon="8.93664391">
+        <name>IC2 869 waypoint 664</name>
+        <time>2026-09-30T10:35:21Z</time>
+    </wpt>
+    <wpt lat="46.36406829" lon="8.93908535">
+        <name>IC2 869 waypoint 665</name>
+        <time>2026-09-30T10:35:25Z</time>
+    </wpt>
+    <wpt lat="46.36322169" lon="8.94107875">
+        <name>IC2 869 waypoint 666</name>
+        <time>2026-09-30T10:35:28Z</time>
+    </wpt>
+    <wpt lat="46.36241364" lon="8.94325382">
+        <name>IC2 869 waypoint 667</name>
+        <time>2026-09-30T10:35:32Z</time>
+    </wpt>
+    <wpt lat="46.36161447" lon="8.94572590">
+        <name>IC2 869 waypoint 668</name>
+        <time>2026-09-30T10:35:35Z</time>
+    </wpt>
+    <wpt lat="46.36109056" lon="8.94766111">
+        <name>IC2 869 waypoint 669</name>
+        <time>2026-09-30T10:35:38Z</time>
+    </wpt>
+    <wpt lat="46.36089107" lon="8.94892690">
+        <name>IC2 869 waypoint 670</name>
+        <time>2026-09-30T10:35:40Z</time>
+    </wpt>
+    <wpt lat="46.36061376" lon="8.95214883">
+        <name>IC2 869 waypoint 671</name>
+        <time>2026-09-30T10:35:44Z</time>
+    </wpt>
+    <wpt lat="46.36001922" lon="8.95541413">
+        <name>IC2 869 waypoint 672</name>
+        <time>2026-09-30T10:35:49Z</time>
+    </wpt>
+    <wpt lat="46.35976512" lon="8.95863938">
+        <name>IC2 869 waypoint 673</name>
+        <time>2026-09-30T10:35:53Z</time>
+    </wpt>
+    <wpt lat="46.35923115" lon="8.96138933">
+        <name>IC2 869 waypoint 674</name>
+        <time>2026-09-30T10:35:57Z</time>
+    </wpt>
+    <wpt lat="46.35624850" lon="8.97155768">
+        <name>IC2 869 waypoint 675</name>
+        <time>2026-09-30T10:36:12Z</time>
+    </wpt>
+    <wpt lat="46.35571872" lon="8.97260005">
+        <name>IC2 869 waypoint 676</name>
+        <time>2026-09-30T10:36:14Z</time>
+    </wpt>
+    <wpt lat="46.35497907" lon="8.97332851">
+        <name>IC2 869 waypoint 677</name>
+        <time>2026-09-30T10:36:16Z</time>
+    </wpt>
+    <wpt lat="46.35429381" lon="8.97363847">
+        <name>IC2 869 waypoint 678</name>
+        <time>2026-09-30T10:36:17Z</time>
+    </wpt>
+    <wpt lat="46.33791964" lon="8.97859233">
+        <name>IC2 869 waypoint 679</name>
+        <time>2026-09-30T10:36:50Z</time>
+    </wpt>
+    <wpt lat="46.33350248" lon="8.98080777">
+        <name>IC2 869 waypoint 680</name>
+        <time>2026-09-30T10:36:59Z</time>
+    </wpt>
+    <wpt lat="46.33254646" lon="8.98117277">
+        <name>IC2 869 waypoint 681</name>
+        <time>2026-09-30T10:37:01Z</time>
+    </wpt>
+    <wpt lat="46.33084746" lon="8.98139742">
+        <name>IC2 869 waypoint 682</name>
+        <time>2026-09-30T10:37:04Z</time>
+    </wpt>
+    <wpt lat="46.32771694" lon="8.98093238">
+        <name>IC2 869 waypoint 683</name>
+        <time>2026-09-30T10:37:11Z</time>
+    </wpt>
+    <wpt lat="46.32619175" lon="8.98103526">
+        <name>IC2 869 waypoint 684</name>
+        <time>2026-09-30T10:37:14Z</time>
+    </wpt>
+    <wpt lat="46.32479225" lon="8.98150774">
+        <name>IC2 869 waypoint 685</name>
+        <time>2026-09-30T10:37:16Z</time>
+    </wpt>
+    <wpt lat="46.31844537" lon="8.98482700">
+        <name>IC2 869 waypoint 686</name>
+        <time>2026-09-30T10:37:30Z</time>
+    </wpt>
+    <wpt lat="46.31749752" lon="8.98523332">
+        <name>IC2 869 waypoint 687</name>
+        <time>2026-09-30T10:37:31Z</time>
+    </wpt>
+    <wpt lat="46.31606823" lon="8.98543295">
+        <name>IC2 869 waypoint 688</name>
+        <time>2026-09-30T10:37:34Z</time>
+    </wpt>
+    <wpt lat="46.31410162" lon="8.98512643">
+        <name>IC2 869 waypoint 689</name>
+        <time>2026-09-30T10:37:38Z</time>
+    </wpt>
+    <wpt lat="46.31329276" lon="8.98510197">
+        <name>IC2 869 waypoint 690</name>
+        <time>2026-09-30T10:37:40Z</time>
+    </wpt>
+    <wpt lat="46.31239997" lon="8.98525167">
+        <name>IC2 869 waypoint 691</name>
+        <time>2026-09-30T10:37:42Z</time>
+    </wpt>
+    <wpt lat="46.31153129" lon="8.98558458">
+        <name>IC2 869 waypoint 692</name>
+        <time>2026-09-30T10:37:43Z</time>
+    </wpt>
+    <wpt lat="46.31078453" lon="8.98603391">
+        <name>IC2 869 waypoint 693</name>
+        <time>2026-09-30T10:37:45Z</time>
+    </wpt>
+    <wpt lat="46.31000754" lon="8.98668602">
+        <name>IC2 869 waypoint 694</name>
+        <time>2026-09-30T10:37:47Z</time>
+    </wpt>
+    <wpt lat="46.30757493" lon="8.98956744">
+        <name>IC2 869 waypoint 695</name>
+        <time>2026-09-30T10:37:53Z</time>
+    </wpt>
+    <wpt lat="46.30633167" lon="8.99060433">
+        <name>IC2 869 waypoint 696</name>
+        <time>2026-09-30T10:37:56Z</time>
+    </wpt>
+    <wpt lat="46.30121346" lon="8.99307247">
+        <name>IC2 869 waypoint 697</name>
+        <time>2026-09-30T10:38:06Z</time>
+    </wpt>
+    <wpt lat="46.29490610" lon="8.99692929">
+        <name>IC2 869 waypoint 698</name>
+        <time>2026-09-30T10:38:20Z</time>
+    </wpt>
+    <wpt lat="46.28846051" lon="8.99980178">
+        <name>IC2 869 waypoint 699</name>
+        <time>2026-09-30T10:38:33Z</time>
+    </wpt>
+    <wpt lat="46.27867097" lon="9.00604780">
+        <name>IC2 869 waypoint 700</name>
+        <time>2026-09-30T10:38:54Z</time>
+    </wpt>
+    <wpt lat="46.27406687" lon="9.01010543">
+        <name>IC2 869 waypoint 701</name>
+        <time>2026-09-30T10:39:04Z</time>
+    </wpt>
+    <wpt lat="46.27068711" lon="9.01376604">
+        <name>IC2 869 waypoint 702</name>
+        <time>2026-09-30T10:39:13Z</time>
+    </wpt>
+    <wpt lat="46.26998280" lon="9.01434053">
+        <name>IC2 869 waypoint 703</name>
+        <time>2026-09-30T10:39:14Z</time>
+    </wpt>
+    <wpt lat="46.26923808" lon="9.01479691">
+        <name>IC2 869 waypoint 704</name>
+        <time>2026-09-30T10:39:16Z</time>
+    </wpt>
+    <wpt lat="46.26837478" lon="9.01515844">
+        <name>IC2 869 waypoint 705</name>
+        <time>2026-09-30T10:39:18Z</time>
+    </wpt>
+    <wpt lat="46.26748668" lon="9.01535917">
+        <name>IC2 869 waypoint 706</name>
+        <time>2026-09-30T10:39:19Z</time>
+    </wpt>
+    <wpt lat="46.25245729" lon="9.01706329">
+        <name>IC2 869 waypoint 707</name>
+        <time>2026-09-30T10:39:49Z</time>
+    </wpt>
+    <wpt lat="46.25104930" lon="9.01748268">
+        <name>IC2 869 waypoint 708</name>
+        <time>2026-09-30T10:39:52Z</time>
+    </wpt>
+    <wpt lat="46.24970599" lon="9.01822145">
+        <name>IC2 869 waypoint 709</name>
+        <time>2026-09-30T10:39:55Z</time>
+    </wpt>
+    <wpt lat="46.24891469" lon="9.01883701">
+        <name>IC2 869 waypoint 710</name>
+        <time>2026-09-30T10:39:56Z</time>
+    </wpt>
+    <wpt lat="46.24817010" lon="9.01956364">
+        <name>IC2 869 waypoint 711</name>
+        <time>2026-09-30T10:39:58Z</time>
+    </wpt>
+    <wpt lat="46.24747974" lon="9.02039409">
+        <name>IC2 869 waypoint 712</name>
+        <time>2026-09-30T10:40:00Z</time>
+    </wpt>
+    <wpt lat="46.24685067" lon="9.02132017">
+        <name>IC2 869 waypoint 713</name>
+        <time>2026-09-30T10:40:02Z</time>
+    </wpt>
+    <wpt lat="46.24608521" lon="9.02275974">
+        <name>IC2 869 waypoint 714</name>
+        <time>2026-09-30T10:40:04Z</time>
+    </wpt>
+    <wpt lat="46.24373232" lon="9.02813119">
+        <name>IC2 869 waypoint 715</name>
+        <time>2026-09-30T10:40:13Z</time>
+    </wpt>
+    <wpt lat="46.24304725" lon="9.02933235">
+        <name>IC2 869 waypoint 716</name>
+        <time>2026-09-30T10:40:15Z</time>
+    </wpt>
+    <wpt lat="46.24233590" lon="9.03032270">
+        <name>IC2 869 waypoint 717</name>
+        <time>2026-09-30T10:40:17Z</time>
+    </wpt>
+    <wpt lat="46.24140709" lon="9.03134527">
+        <name>IC2 869 waypoint 718</name>
+        <time>2026-09-30T10:40:19Z</time>
+    </wpt>
+    <wpt lat="46.23397157" lon="9.03864731">
+        <name>IC2 869 waypoint 719</name>
+        <time>2026-09-30T10:40:37Z</time>
+    </wpt>
+    <wpt lat="46.23312765" lon="9.03939075">
+        <name>IC2 869 waypoint 720</name>
+        <time>2026-09-30T10:40:39Z</time>
+    </wpt>
+    <wpt lat="46.23231638" lon="9.03994950">
+        <name>IC2 869 waypoint 721</name>
+        <time>2026-09-30T10:40:40Z</time>
+    </wpt>
+    <wpt lat="46.23103673" lon="9.04056048">
+        <name>IC2 869 waypoint 722</name>
+        <time>2026-09-30T10:40:43Z</time>
+    </wpt>
+    <wpt lat="46.22970785" lon="9.04088701">
+        <name>IC2 869 waypoint 723</name>
+        <time>2026-09-30T10:40:46Z</time>
+    </wpt>
+    <wpt lat="46.21834132" lon="9.04181107">
+        <name>IC2 869 waypoint 724</name>
+        <time>2026-09-30T10:41:08Z</time>
+    </wpt>
+    <wpt lat="46.21737339" lon="9.04153632">
+        <name>IC2 869 waypoint 725</name>
+        <time>2026-09-30T10:41:10Z</time>
+    </wpt>
+    <wpt lat="46.21497811" lon="9.04004978">
+        <name>IC2 869 waypoint 726</name>
+        <time>2026-09-30T10:41:15Z</time>
+    </wpt>
+    <wpt lat="46.21401606" lon="9.03973783">
+        <name>IC2 869 waypoint 727</name>
+        <time>2026-09-30T10:41:17Z</time>
+    </wpt>
+    <wpt lat="46.21312106" lon="9.03982166">
+        <name>IC2 869 waypoint 728</name>
+        <time>2026-09-30T10:41:19Z</time>
+    </wpt>
+    <wpt lat="46.20951894" lon="9.04095870">
+        <name>IC2 869 waypoint 729</name>
+        <time>2026-09-30T10:41:26Z</time>
+    </wpt>
+    <wpt lat="46.20880090" lon="9.04100572">
+        <name>IC2 869 waypoint 730</name>
+        <time>2026-09-30T10:41:27Z</time>
+    </wpt>
+    <wpt lat="46.20808741" lon="9.04087936">
+        <name>IC2 869 waypoint 731</name>
+        <time>2026-09-30T10:41:29Z</time>
+    </wpt>
+    <wpt lat="46.20642508" lon="9.04030762">
+        <name>IC2 869 waypoint 732</name>
+        <time>2026-09-30T10:41:32Z</time>
+    </wpt>
+    <wpt lat="46.20574340" lon="9.03997787">
+        <name>IC2 869 waypoint 733</name>
+        <time>2026-09-30T10:41:34Z</time>
+    </wpt>
+    <wpt lat="46.20151395" lon="9.03695469">
+        <name>IC2 869 waypoint 734</name>
+        <time>2026-09-30T10:41:43Z</time>
+    </wpt>
+    <wpt lat="46.19711284" lon="9.03181754">
+        <name>IC2 869 waypoint 735</name>
+        <time>2026-09-30T10:41:54Z</time>
+    </wpt>
+    <wpt lat="46.19467536" lon="9.02880354">
+        <name>IC2 869 waypoint 736</name>
+        <time>2026-09-30T10:44:01Z</time>
+    </wpt>
+    <wpt lat="46.19149693" lon="9.02519408">
+        <name>IC2 869 waypoint 737</name>
+        <time>2026-09-30T10:44:13Z</time>
+    </wpt>
+    <wpt lat="46.19064818" lon="9.02446572">
+        <name>IC2 869 waypoint 738</name>
+        <time>2026-09-30T10:44:17Z</time>
+    </wpt>
+    <wpt lat="46.18786881" lon="9.02269162">
+        <name>IC2 869 waypoint 739</name>
+        <time>2026-09-30T10:44:26Z</time>
+    </wpt>
+    <wpt lat="46.18718186" lon="9.02207768">
+        <name>IC2 869 waypoint 740</name>
+        <time>2026-09-30T10:44:29Z</time>
+    </wpt>
+    <wpt lat="46.18025223" lon="9.01361836">
+        <name>IC2 869 waypoint 741</name>
+        <time>2026-09-30T10:44:57Z</time>
+    </wpt>
+    <wpt lat="46.17922413" lon="9.01217072">
+        <name>IC2 869 waypoint 742</name>
+        <time>2026-09-30T10:45:02Z</time>
+    </wpt>
+    <wpt lat="46.17283351" lon="9.00173483">
+        <name>IC2 869 waypoint 743</name>
+        <time>2026-09-30T10:45:32Z</time>
+    </wpt>
+    <wpt lat="46.17131668" lon="8.99944820">
+        <name>IC2 869 waypoint 744</name>
+        <time>2026-09-30T10:45:39Z</time>
+    </wpt>
+    <wpt lat="46.17049917" lon="8.99865473">
+        <name>IC2 869 waypoint 745</name>
+        <time>2026-09-30T10:45:42Z</time>
+    </wpt>
+    <wpt lat="46.16981942" lon="8.99832337">
+        <name>IC2 869 waypoint 746</name>
+        <time>2026-09-30T10:45:45Z</time>
+    </wpt>
+    <wpt lat="46.16910330" lon="8.99825876">
+        <name>IC2 869 waypoint 747</name>
+        <time>2026-09-30T10:45:47Z</time>
+    </wpt>
+    <wpt lat="46.16840060" lon="8.99846758">
+        <name>IC2 869 waypoint 748</name>
+        <time>2026-09-30T10:45:49Z</time>
+    </wpt>
+    <wpt lat="46.16776172" lon="8.99893747">
+        <name>IC2 869 waypoint 749</name>
+        <time>2026-09-30T10:45:51Z</time>
+    </wpt>
+    <wpt lat="46.16735250" lon="8.99944196">
+        <name>IC2 869 waypoint 750</name>
+        <time>2026-09-30T10:45:53Z</time>
+    </wpt>
+    <wpt lat="46.16697554" lon="9.00016530">
+        <name>IC2 869 waypoint 751</name>
+        <time>2026-09-30T10:45:55Z</time>
+    </wpt>
+    <wpt lat="46.16640347" lon="9.00234068">
+        <name>IC2 869 waypoint 752</name>
+        <time>2026-09-30T10:46:00Z</time>
+    </wpt>
+    <wpt lat="46.16596901" lon="9.00331875">
+        <name>IC2 869 waypoint 753</name>
+        <time>2026-09-30T10:46:03Z</time>
+    </wpt>
+    <wpt lat="46.16527588" lon="9.00413458">
+        <name>IC2 869 waypoint 754</name>
+        <time>2026-09-30T10:46:06Z</time>
+    </wpt>
+    <wpt lat="46.16443577" lon="9.00458075">
+        <name>IC2 869 waypoint 755</name>
+        <time>2026-09-30T10:46:08Z</time>
+    </wpt>
+    <wpt lat="46.16345170" lon="9.00459086">
+        <name>IC2 869 waypoint 756</name>
+        <time>2026-09-30T10:46:12Z</time>
+    </wpt>
+    <wpt lat="46.16235117" lon="9.00403510">
+        <name>IC2 869 waypoint 757</name>
+        <time>2026-09-30T10:46:15Z</time>
+    </wpt>
+    <wpt lat="46.16093310" lon="9.00291667">
+        <name>IC2 869 waypoint 758</name>
+        <time>2026-09-30T10:46:20Z</time>
+    </wpt>
+    <wpt lat="46.15989560" lon="9.00168230">
+        <name>IC2 869 waypoint 759</name>
+        <time>2026-09-30T10:46:25Z</time>
+    </wpt>
+    <wpt lat="46.15945038" lon="9.00087002">
+        <name>IC2 869 waypoint 760</name>
+        <time>2026-09-30T10:46:27Z</time>
+    </wpt>
+    <wpt lat="46.15909899" lon="8.99996746">
+        <name>IC2 869 waypoint 761</name>
+        <time>2026-09-30T10:46:29Z</time>
+    </wpt>
+    <wpt lat="46.15834338" lon="8.99692473">
+        <name>IC2 869 waypoint 762</name>
+        <time>2026-09-30T10:46:36Z</time>
+    </wpt>
+    <wpt lat="46.15756388" lon="8.99518479">
+        <name>IC2 869 waypoint 763</name>
+        <time>2026-09-30T10:46:41Z</time>
+    </wpt>
+    <wpt lat="46.15685384" lon="8.99323612">
+        <name>IC2 869 waypoint 764</name>
+        <time>2026-09-30T10:46:46Z</time>
+    </wpt>
+    <wpt lat="46.15604616" lon="8.99136863">
+        <name>IC2 869 waypoint 765</name>
+        <time>2026-09-30T10:46:50Z</time>
+    </wpt>
+    <wpt lat="46.15585210" lon="8.99064522">
+        <name>IC2 869 waypoint 766</name>
+        <time>2026-09-30T10:46:52Z</time>
+    </wpt>
+    <wpt lat="46.15556365" lon="8.98888204">
+        <name>IC2 869 waypoint 767</name>
+        <time>2026-09-30T10:46:56Z</time>
+    </wpt>
+    <wpt lat="46.15529816" lon="8.98806273">
+        <name>IC2 869 waypoint 768</name>
+        <time>2026-09-30T10:46:58Z</time>
+    </wpt>
+    <wpt lat="46.15477606" lon="8.98717783">
+        <name>IC2 869 waypoint 769</name>
+        <time>2026-09-30T10:47:01Z</time>
+    </wpt>
+    <wpt lat="46.15199976" lon="8.98388437">
+        <name>IC2 869 waypoint 770</name>
+        <time>2026-09-30T10:47:12Z</time>
+    </wpt>
+    <wpt lat="46.15155191" lon="8.98324890">
+        <name>IC2 869 waypoint 771</name>
+        <time>2026-09-30T10:47:14Z</time>
+    </wpt>
+    <wpt lat="46.15106093" lon="8.98216852">
+        <name>IC2 869 waypoint 772</name>
+        <time>2026-09-30T10:47:17Z</time>
+    </wpt>
+    <wpt lat="46.15044576" lon="8.97993050">
+        <name>IC2 869 waypoint 773</name>
+        <time>2026-09-30T10:47:22Z</time>
+    </wpt>
+    <wpt lat="46.15003653" lon="8.97754515">
+        <name>IC2 869 waypoint 774</name>
+        <time>2026-09-30T10:47:27Z</time>
+    </wpt>
+    <wpt lat="46.14963454" lon="8.97569219">
+        <name>IC2 869 waypoint 775</name>
+        <time>2026-09-30T10:47:32Z</time>
+    </wpt>
+    <wpt lat="46.14954564" lon="8.97492750">
+        <name>IC2 869 waypoint 776</name>
+        <time>2026-09-30T10:47:33Z</time>
+    </wpt>
+    <wpt lat="46.14963893" lon="8.97364640">
+        <name>IC2 869 waypoint 777</name>
+        <time>2026-09-30T10:47:36Z</time>
+    </wpt>
+    <wpt lat="46.15018230" lon="8.97145672">
+        <name>IC2 869 waypoint 778</name>
+        <time>2026-09-30T10:47:41Z</time>
+    </wpt>
+    <wpt lat="46.15041462" lon="8.96758959">
+        <name>IC2 869 waypoint 779</name>
+        <time>2026-09-30T10:47:50Z</time>
+    </wpt>
+    <wpt lat="46.15028182" lon="8.96605042">
+        <name>IC2 869 waypoint 780</name>
+        <time>2026-09-30T10:47:53Z</time>
+    </wpt>
+    <wpt lat="46.14986590" lon="8.96393469">
+        <name>IC2 869 waypoint 781</name>
+        <time>2026-09-30T10:47:58Z</time>
+    </wpt>
+    <wpt lat="46.14973111" lon="8.96187494">
+        <name>IC2 869 waypoint 782</name>
+        <time>2026-09-30T10:48:03Z</time>
+    </wpt>
+    <wpt lat="46.14949956" lon="8.96089787">
+        <name>IC2 869 waypoint 783</name>
+        <time>2026-09-30T10:48:05Z</time>
+    </wpt>
+    <wpt lat="46.14897082" lon="8.95985831">
+        <name>IC2 869 waypoint 784</name>
+        <time>2026-09-30T10:48:08Z</time>
+    </wpt>
+    <wpt lat="46.14778427" lon="8.95847285">
+        <name>IC2 869 waypoint 785</name>
+        <time>2026-09-30T10:48:12Z</time>
+    </wpt>
+    <wpt lat="46.14722122" lon="8.95807189">
+        <name>IC2 869 waypoint 786</name>
+        <time>2026-09-30T10:48:14Z</time>
+    </wpt>
+    <wpt lat="46.14600451" lon="8.95759751">
+        <name>IC2 869 waypoint 787</name>
+        <time>2026-09-30T10:48:18Z</time>
+    </wpt>
+    <wpt lat="46.14529843" lon="8.95703423">
+        <name>IC2 869 waypoint 788</name>
+        <time>2026-09-30T10:48:21Z</time>
+    </wpt>
+    <wpt lat="46.14473229" lon="8.95620770">
+        <name>IC2 869 waypoint 789</name>
+        <time>2026-09-30T10:48:23Z</time>
+    </wpt>
+    <wpt lat="46.14436121" lon="8.95517741">
+        <name>IC2 869 waypoint 790</name>
+        <time>2026-09-30T10:48:26Z</time>
+    </wpt>
+    <wpt lat="46.14382912" lon="8.95137278">
+        <name>IC2 869 waypoint 791</name>
+        <time>2026-09-30T10:48:35Z</time>
+    </wpt>
+    <wpt lat="46.14380358" lon="8.95034115">
+        <name>IC2 869 waypoint 792</name>
+        <time>2026-09-30T10:48:37Z</time>
+    </wpt>
+    <wpt lat="46.14404800" lon="8.94904224">
+        <name>IC2 869 waypoint 793</name>
+        <time>2026-09-30T10:48:40Z</time>
+    </wpt>
+    <wpt lat="46.14496049" lon="8.94666835">
+        <name>IC2 869 waypoint 794</name>
+        <time>2026-09-30T10:48:46Z</time>
+    </wpt>
+    <wpt lat="46.14510813" lon="8.94592244">
+        <name>IC2 869 waypoint 795</name>
+        <time>2026-09-30T10:48:47Z</time>
+    </wpt>
+    <wpt lat="46.14516509" lon="8.94502176">
+        <name>IC2 869 waypoint 796</name>
+        <time>2026-09-30T10:48:49Z</time>
+    </wpt>
+    <wpt lat="46.14500642" lon="8.94252381">
+        <name>IC2 869 waypoint 797</name>
+        <time>2026-09-30T10:48:55Z</time>
+    </wpt>
+    <wpt lat="46.14491280" lon="8.93877385">
+        <name>IC2 869 waypoint 798</name>
+        <time>2026-09-30T10:49:03Z</time>
+    </wpt>
+    <wpt lat="46.14478825" lon="8.93801967">
+        <name>IC2 869 waypoint 799</name>
+        <time>2026-09-30T10:49:05Z</time>
+    </wpt>
+    <wpt lat="46.14434879" lon="8.93646119">
+        <name>IC2 869 waypoint 800</name>
+        <time>2026-09-30T10:49:08Z</time>
+    </wpt>
+    <wpt lat="46.14422521" lon="8.93557501">
+        <name>IC2 869 waypoint 801</name>
+        <time>2026-09-30T10:49:10Z</time>
+    </wpt>
+    <wpt lat="46.14439991" lon="8.93313471">
+        <name>IC2 869 waypoint 802</name>
+        <time>2026-09-30T10:49:16Z</time>
+    </wpt>
+    <wpt lat="46.14442962" lon="8.93054695">
+        <name>IC2 869 waypoint 803</name>
+        <time>2026-09-30T10:49:22Z</time>
+    </wpt>
+    <wpt lat="46.14417331" lon="8.92498741">
+        <name>IC2 869 waypoint 804</name>
+        <time>2026-09-30T10:49:34Z</time>
+    </wpt>
+    <wpt lat="46.14389042" lon="8.92349472">
+        <name>IC2 869 waypoint 805</name>
+        <time>2026-09-30T10:49:37Z</time>
+    </wpt>
+    <wpt lat="46.14337174" lon="8.92228767">
+        <name>IC2 869 waypoint 806</name>
+        <time>2026-09-30T10:49:40Z</time>
+    </wpt>
+    <wpt lat="46.14257001" lon="8.92125649">
+        <name>IC2 869 waypoint 807</name>
+        <time>2026-09-30T10:49:44Z</time>
+    </wpt>
+    <wpt lat="46.14167835" lon="8.92064969">
+        <name>IC2 869 waypoint 808</name>
+        <time>2026-09-30T10:49:47Z</time>
+    </wpt>
+    <wpt lat="46.14088526" lon="8.92042821">
+        <name>IC2 869 waypoint 809</name>
+        <time>2026-09-30T10:49:49Z</time>
+    </wpt>
+    <wpt lat="46.13998886" lon="8.92048649">
+        <name>IC2 869 waypoint 810</name>
+        <time>2026-09-30T10:49:52Z</time>
+    </wpt>
+    <wpt lat="46.12909868" lon="8.92330072">
+        <name>IC2 869 waypoint 811</name>
+        <time>2026-09-30T10:50:27Z</time>
+    </wpt>
+    <wpt lat="46.12551404" lon="8.92439398">
+        <name>IC2 869 waypoint 812</name>
+        <time>2026-09-30T10:50:39Z</time>
+    </wpt>
+    <wpt lat="46.12204902" lon="8.92668513">
+        <name>IC2 869 waypoint 813</name>
+        <time>2026-09-30T10:50:51Z</time>
+    </wpt>
+    <wpt lat="46.12016138" lon="8.92844018">
+        <name>IC2 869 waypoint 814</name>
+        <time>2026-09-30T10:50:58Z</time>
+    </wpt>
+    <wpt lat="46.11913366" lon="8.92924086">
+        <name>IC2 869 waypoint 815</name>
+        <time>2026-09-30T10:51:01Z</time>
+    </wpt>
+    <wpt lat="46.11695099" lon="8.93044785">
+        <name>IC2 869 waypoint 816</name>
+        <time>2026-09-30T10:51:09Z</time>
+    </wpt>
+    <wpt lat="46.11531993" lon="8.93116593">
+        <name>IC2 869 waypoint 817</name>
+        <time>2026-09-30T10:51:14Z</time>
+    </wpt>
+    <wpt lat="46.11466333" lon="8.93183927">
+        <name>IC2 869 waypoint 818</name>
+        <time>2026-09-30T10:51:17Z</time>
+    </wpt>
+    <wpt lat="46.11379281" lon="8.93332008">
+        <name>IC2 869 waypoint 819</name>
+        <time>2026-09-30T10:51:21Z</time>
+    </wpt>
+    <wpt lat="46.11331748" lon="8.93391087">
+        <name>IC2 869 waypoint 820</name>
+        <time>2026-09-30T10:51:23Z</time>
+    </wpt>
+    <wpt lat="46.11267547" lon="8.93437154">
+        <name>IC2 869 waypoint 821</name>
+        <time>2026-09-30T10:51:25Z</time>
+    </wpt>
+    <wpt lat="46.11188177" lon="8.93457767">
+        <name>IC2 869 waypoint 822</name>
+        <time>2026-09-30T10:51:28Z</time>
+    </wpt>
+    <wpt lat="46.11134434" lon="8.93452193">
+        <name>IC2 869 waypoint 823</name>
+        <time>2026-09-30T10:51:29Z</time>
+    </wpt>
+    <wpt lat="46.11082541" lon="8.93431334">
+        <name>IC2 869 waypoint 824</name>
+        <time>2026-09-30T10:51:31Z</time>
+    </wpt>
+    <wpt lat="46.10838383" lon="8.93238157">
+        <name>IC2 869 waypoint 825</name>
+        <time>2026-09-30T10:51:40Z</time>
+    </wpt>
+    <wpt lat="46.10787975" lon="8.93210626">
+        <name>IC2 869 waypoint 826</name>
+        <time>2026-09-30T10:51:42Z</time>
+    </wpt>
+    <wpt lat="46.10726323" lon="8.93192807">
+        <name>IC2 869 waypoint 827</name>
+        <time>2026-09-30T10:51:44Z</time>
+    </wpt>
+    <wpt lat="46.10663450" lon="8.93190901">
+        <name>IC2 869 waypoint 828</name>
+        <time>2026-09-30T10:51:46Z</time>
+    </wpt>
+    <wpt lat="46.10610083" lon="8.93201993">
+        <name>IC2 869 waypoint 829</name>
+        <time>2026-09-30T10:51:47Z</time>
+    </wpt>
+    <wpt lat="46.10326258" lon="8.93325663">
+        <name>IC2 869 waypoint 830</name>
+        <time>2026-09-30T10:51:57Z</time>
+    </wpt>
+    <wpt lat="46.10254493" lon="8.93330346">
+        <name>IC2 869 waypoint 831</name>
+        <time>2026-09-30T10:51:59Z</time>
+    </wpt>
+    <wpt lat="46.10174869" lon="8.93310658">
+        <name>IC2 869 waypoint 832</name>
+        <time>2026-09-30T10:52:01Z</time>
+    </wpt>
+    <wpt lat="46.09771879" lon="8.93126889">
+        <name>IC2 869 waypoint 833</name>
+        <time>2026-09-30T10:52:15Z</time>
+    </wpt>
+    <wpt lat="46.09607041" lon="8.93023485">
+        <name>IC2 869 waypoint 834</name>
+        <time>2026-09-30T10:52:20Z</time>
+    </wpt>
+    <wpt lat="46.09428278" lon="8.92874179">
+        <name>IC2 869 waypoint 835</name>
+        <time>2026-09-30T10:52:27Z</time>
+    </wpt>
+    <wpt lat="46.09146240" lon="8.92580664">
+        <name>IC2 869 waypoint 836</name>
+        <time>2026-09-30T10:52:38Z</time>
+    </wpt>
+    <wpt lat="46.09080249" lon="8.92540089">
+        <name>IC2 869 waypoint 837</name>
+        <time>2026-09-30T10:52:40Z</time>
+    </wpt>
+    <wpt lat="46.08948506" lon="8.92498354">
+        <name>IC2 869 waypoint 838</name>
+        <time>2026-09-30T10:52:44Z</time>
+    </wpt>
+    <wpt lat="46.08897634" lon="8.92472794">
+        <name>IC2 869 waypoint 839</name>
+        <time>2026-09-30T10:52:46Z</time>
+    </wpt>
+    <wpt lat="46.08851245" lon="8.92433388">
+        <name>IC2 869 waypoint 840</name>
+        <time>2026-09-30T10:52:48Z</time>
+    </wpt>
+    <wpt lat="46.08766745" lon="8.92336935">
+        <name>IC2 869 waypoint 841</name>
+        <time>2026-09-30T10:52:51Z</time>
+    </wpt>
+    <wpt lat="46.08711164" lon="8.92294850">
+        <name>IC2 869 waypoint 842</name>
+        <time>2026-09-30T10:52:53Z</time>
+    </wpt>
+    <wpt lat="46.08668023" lon="8.92276833">
+        <name>IC2 869 waypoint 843</name>
+        <time>2026-09-30T10:52:55Z</time>
+    </wpt>
+    <wpt lat="46.08614399" lon="8.92269195">
+        <name>IC2 869 waypoint 844</name>
+        <time>2026-09-30T10:52:56Z</time>
+    </wpt>
+    <wpt lat="46.08310585" lon="8.92294445">
+        <name>IC2 869 waypoint 845</name>
+        <time>2026-09-30T10:53:06Z</time>
+    </wpt>
+    <wpt lat="46.08258631" lon="8.92314970">
+        <name>IC2 869 waypoint 846</name>
+        <time>2026-09-30T10:53:08Z</time>
+    </wpt>
+    <wpt lat="46.08100671" lon="8.92408008">
+        <name>IC2 869 waypoint 847</name>
+        <time>2026-09-30T10:53:13Z</time>
+    </wpt>
+    <wpt lat="46.08047318" lon="8.92418864">
+        <name>IC2 869 waypoint 848</name>
+        <time>2026-09-30T10:53:15Z</time>
+    </wpt>
+    <wpt lat="46.07876799" lon="8.92417268">
+        <name>IC2 869 waypoint 849</name>
+        <time>2026-09-30T10:53:20Z</time>
+    </wpt>
+    <wpt lat="46.07808404" lon="8.92448436">
+        <name>IC2 869 waypoint 850</name>
+        <time>2026-09-30T10:53:22Z</time>
+    </wpt>
+    <wpt lat="46.07755054" lon="8.92496117">
+        <name>IC2 869 waypoint 851</name>
+        <time>2026-09-30T10:53:24Z</time>
+    </wpt>
+    <wpt lat="46.07705251" lon="8.92570368">
+        <name>IC2 869 waypoint 852</name>
+        <time>2026-09-30T10:53:27Z</time>
+    </wpt>
+    <wpt lat="46.07510244" lon="8.92965783">
+        <name>IC2 869 waypoint 853</name>
+        <time>2026-09-30T10:53:37Z</time>
+    </wpt>
+    <wpt lat="46.07468198" lon="8.93094238">
+        <name>IC2 869 waypoint 854</name>
+        <time>2026-09-30T10:53:40Z</time>
+    </wpt>
+    <wpt lat="46.07424930" lon="8.93304782">
+        <name>IC2 869 waypoint 855</name>
+        <time>2026-09-30T10:53:45Z</time>
+    </wpt>
+    <wpt lat="46.07382715" lon="8.93403557">
+        <name>IC2 869 waypoint 856</name>
+        <time>2026-09-30T10:53:48Z</time>
+    </wpt>
+    <wpt lat="46.07234961" lon="8.93629611">
+        <name>IC2 869 waypoint 857</name>
+        <time>2026-09-30T10:53:55Z</time>
+    </wpt>
+    <wpt lat="46.07103857" lon="8.93786936">
+        <name>IC2 869 waypoint 858</name>
+        <time>2026-09-30T10:54:00Z</time>
+    </wpt>
+    <wpt lat="46.07025656" lon="8.93849761">
+        <name>IC2 869 waypoint 859</name>
+        <time>2026-09-30T10:54:03Z</time>
+    </wpt>
+    <wpt lat="46.06946580" lon="8.93872593">
+        <name>IC2 869 waypoint 860</name>
+        <time>2026-09-30T10:54:05Z</time>
+    </wpt>
+    <wpt lat="46.06883873" lon="8.93866816">
+        <name>IC2 869 waypoint 861</name>
+        <time>2026-09-30T10:54:07Z</time>
+    </wpt>
+    <wpt lat="46.06815403" lon="8.93835920">
+        <name>IC2 869 waypoint 862</name>
+        <time>2026-09-30T10:54:10Z</time>
+    </wpt>
+    <wpt lat="46.06576494" lon="8.93629692">
+        <name>IC2 869 waypoint 863</name>
+        <time>2026-09-30T10:54:18Z</time>
+    </wpt>
+    <wpt lat="46.06543090" lon="8.93586537">
+        <name>IC2 869 waypoint 864</name>
+        <time>2026-09-30T10:54:20Z</time>
+    </wpt>
+    <wpt lat="46.06510312" lon="8.93525099">
+        <name>IC2 869 waypoint 865</name>
+        <time>2026-09-30T10:54:21Z</time>
+    </wpt>
+    <wpt lat="46.06453176" lon="8.93349671">
+        <name>IC2 869 waypoint 866</name>
+        <time>2026-09-30T10:54:26Z</time>
+    </wpt>
+    <wpt lat="46.06418369" lon="8.93274470">
+        <name>IC2 869 waypoint 867</name>
+        <time>2026-09-30T10:54:28Z</time>
+    </wpt>
+    <wpt lat="46.06359550" lon="8.93195022">
+        <name>IC2 869 waypoint 868</name>
+        <time>2026-09-30T10:54:30Z</time>
+    </wpt>
+    <wpt lat="46.06296906" lon="8.93144607">
+        <name>IC2 869 waypoint 869</name>
+        <time>2026-09-30T10:54:32Z</time>
+    </wpt>
+    <wpt lat="46.06200985" lon="8.93112451">
+        <name>IC2 869 waypoint 870</name>
+        <time>2026-09-30T10:54:36Z</time>
+    </wpt>
+    <wpt lat="46.05922405" lon="8.93101505">
+        <name>IC2 869 waypoint 871</name>
+        <time>2026-09-30T10:54:44Z</time>
+    </wpt>
+    <wpt lat="46.05556613" lon="8.92982579">
+        <name>IC2 869 waypoint 872</name>
+        <time>2026-09-30T10:54:56Z</time>
+    </wpt>
+    <wpt lat="46.05365117" lon="8.92910857">
+        <name>IC2 869 waypoint 873</name>
+        <time>2026-09-30T10:55:02Z</time>
+    </wpt>
+    <wpt lat="46.05288744" lon="8.92872477">
+        <name>IC2 869 waypoint 874</name>
+        <time>2026-09-30T10:55:05Z</time>
+    </wpt>
+    <wpt lat="46.05152047" lon="8.92790609">
+        <name>IC2 869 waypoint 875</name>
+        <time>2026-09-30T10:55:10Z</time>
+    </wpt>
+    <wpt lat="46.04871907" lon="8.92584573">
+        <name>IC2 869 waypoint 876</name>
+        <time>2026-09-30T10:55:20Z</time>
+    </wpt>
+    <wpt lat="46.04801873" lon="8.92562155">
+        <name>IC2 869 waypoint 877</name>
+        <time>2026-09-30T10:55:22Z</time>
+    </wpt>
+    <wpt lat="46.04730096" lon="8.92565162">
+        <name>IC2 869 waypoint 878</name>
+        <time>2026-09-30T10:55:24Z</time>
+    </wpt>
+    <wpt lat="46.04660642" lon="8.92591357">
+        <name>IC2 869 waypoint 879</name>
+        <time>2026-09-30T10:55:26Z</time>
+    </wpt>
+    <wpt lat="46.04597088" lon="8.92639364">
+        <name>IC2 869 waypoint 880</name>
+        <time>2026-09-30T10:55:29Z</time>
+    </wpt>
+    <wpt lat="46.04416660" lon="8.92872397">
+        <name>IC2 869 waypoint 881</name>
+        <time>2026-09-30T10:55:36Z</time>
+    </wpt>
+    <wpt lat="46.04290539" lon="8.92996131">
+        <name>IC2 869 waypoint 882</name>
+        <time>2026-09-30T10:55:41Z</time>
+    </wpt>
+    <wpt lat="46.03800331" lon="8.93355066">
+        <name>IC2 869 waypoint 883</name>
+        <time>2026-09-30T10:55:58Z</time>
+    </wpt>
+    <wpt lat="46.03689357" lon="8.93406192">
+        <name>IC2 869 waypoint 884</name>
+        <time>2026-09-30T10:56:02Z</time>
+    </wpt>
+    <wpt lat="46.03510223" lon="8.93428780">
+        <name>IC2 869 waypoint 885</name>
+        <time>2026-09-30T10:56:08Z</time>
+    </wpt>
+    <wpt lat="46.03322308" lon="8.93406038">
+        <name>IC2 869 waypoint 886</name>
+        <time>2026-09-30T10:56:14Z</time>
+    </wpt>
+    <wpt lat="46.03173115" lon="8.93452545">
+        <name>IC2 869 waypoint 887</name>
+        <time>2026-09-30T10:56:19Z</time>
+    </wpt>
+    <wpt lat="46.03119367" lon="8.93458126">
+        <name>IC2 869 waypoint 888</name>
+        <time>2026-09-30T10:56:20Z</time>
+    </wpt>
+    <wpt lat="46.03065889" lon="8.93448621">
+        <name>IC2 869 waypoint 889</name>
+        <time>2026-09-30T10:56:22Z</time>
+    </wpt>
+    <wpt lat="46.02935993" lon="8.93396521">
+        <name>IC2 869 waypoint 890</name>
+        <time>2026-09-30T10:56:26Z</time>
+    </wpt>
+    <wpt lat="46.02873327" lon="8.93390141">
+        <name>IC2 869 waypoint 891</name>
+        <time>2026-09-30T10:56:28Z</time>
+    </wpt>
+    <wpt lat="46.02820027" lon="8.93401476">
+        <name>IC2 869 waypoint 892</name>
+        <time>2026-09-30T10:56:30Z</time>
+    </wpt>
+    <wpt lat="46.02664458" lon="8.93464145">
+        <name>IC2 869 waypoint 893</name>
+        <time>2026-09-30T10:56:35Z</time>
+    </wpt>
+    <wpt lat="46.02443410" lon="8.93463615">
+        <name>IC2 869 waypoint 894</name>
+        <time>2026-09-30T10:56:42Z</time>
+    </wpt>
+    <wpt lat="46.02274015" lon="8.93433727">
+        <name>IC2 869 waypoint 895</name>
+        <time>2026-09-30T10:56:47Z</time>
+    </wpt>
+    <wpt lat="46.02055791" lon="8.93313734">
+        <name>IC2 869 waypoint 896</name>
+        <time>2026-09-30T10:56:55Z</time>
+    </wpt>
+    <wpt lat="46.01906445" lon="8.93267036">
+        <name>IC2 869 waypoint 897</name>
+        <time>2026-09-30T10:57:00Z</time>
+    </wpt>
+    <wpt lat="46.01826004" lon="8.93256969">
+        <name>IC2 869 waypoint 898</name>
+        <time>2026-09-30T10:57:02Z</time>
+    </wpt>
+    <wpt lat="46.01747642" lon="8.93279185">
+        <name>IC2 869 waypoint 899</name>
+        <time>2026-09-30T10:57:05Z</time>
+    </wpt>
+    <wpt lat="46.01684857" lon="8.93328800">
+        <name>IC2 869 waypoint 900</name>
+        <time>2026-09-30T10:57:07Z</time>
+    </wpt>
+    <wpt lat="46.01113538" lon="8.93998302">
+        <name>IC2 869 waypoint 901</name>
+        <time>2026-09-30T10:57:30Z</time>
+    </wpt>
+    <wpt lat="46.01062559" lon="8.94103939">
+        <name>IC2 869 waypoint 902</name>
+        <time>2026-09-30T10:57:33Z</time>
+    </wpt>
+    <wpt lat="46.00990458" lon="8.94385507">
+        <name>IC2 869 waypoint 903</name>
+        <time>2026-09-30T10:57:40Z</time>
+    </wpt>
+    <wpt lat="46.00959982" lon="8.94449276">
+        <name>IC2 869 waypoint 904</name>
+        <time>2026-09-30T10:57:41Z</time>
+    </wpt>
+    <wpt lat="46.00921228" lon="8.94503000">
+        <name>IC2 869 waypoint 905</name>
+        <time>2026-09-30T10:57:43Z</time>
+    </wpt>
+    <wpt lat="46.00875767" lon="8.94544508">
+        <name>IC2 869 waypoint 906</name>
+        <time>2026-09-30T10:57:45Z</time>
+    </wpt>
+    <wpt lat="46.00825464" lon="8.94572245">
+        <name>IC2 869 waypoint 907</name>
+        <time>2026-09-30T10:57:46Z</time>
+    </wpt>
+    <wpt lat="46.00561659" lon="8.94653700">
+        <name>IC2 869 waypoint 908</name>
+        <time>2026-09-30T10:57:55Z</time>
+    </wpt>
+</gpx>

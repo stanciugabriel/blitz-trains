@@ -8,6 +8,9 @@ final class BlitzAppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        Task { @MainActor in
+            RevenueCatManager.shared.configure()
+        }
         BGTaskScheduler.shared.register(forTaskWithIdentifier: automaticLiveActivityTaskIdentifier, using: nil) { task in
             guard let task = task as? BGAppRefreshTask else { return }
             task.expirationHandler = { }
@@ -62,6 +65,7 @@ struct ContentView: View {
     @State private var isImportingSharedJourneys = false
     @State private var sharedImportError: String?
     @State private var liveTrainClock = Date()
+    @State private var mockSpeedKPH: Double = 118
     @State private var trackingRefreshRevision = 0
     @State private var mapRouteGeometries: [String: GTFSRouteGeometry] = [:]
     @State private var missedTrainPrompt: MissedTrainPrompt?
@@ -71,8 +75,6 @@ struct ContentView: View {
     @State private var isShowingMissedTrainAlternatives = false
     @State private var missedTrainDiagnosticText: String?
     @State private var usesGlobeMapStyle = false
-    @State private var isSpeedCapsuleRevealed = false
-    @State private var speedCapsuleHideTask: Task<Void, Never>?
     @StateObject private var locationProvider = DeviceLocationProvider()
     @StateObject private var locationPhaseDetector = TripLocationPhaseDetector()
     // The detail sheet owns its own one-second countdown timeline. The map
@@ -122,7 +124,10 @@ struct ContentView: View {
         .overlay(alignment: .topTrailing) {
             MapToolbarButtons(
                 isGlobeStyle: usesGlobeMapStyle,
-                showLocationButton: showUserLocation,
+                // Keep recentering available while the train marker is shown
+                // too. The user's location can be useful before the first
+                // fresh fix switches the map from train to rider tracking.
+                showLocationButton: true,
                 onToggleStyle: {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                         usesGlobeMapStyle.toggle()
@@ -233,8 +238,6 @@ struct ContentView: View {
             updateCameraForCurrentState()
         }
         .onChange(of: selectedTrip) { _, newValue in
-            isSpeedCapsuleRevealed = false
-            speedCapsuleHideTask?.cancel()
             if newValue != nil {
                 DispatchQueue.main.async {
                     selectedDetent = .medium
@@ -249,7 +252,7 @@ struct ContentView: View {
             updateTrackingState(using: currentDetailState?.trackingResult)
             updateCameraForCurrentState()
             if let trip = newValue, trips.contains(where: { $0.id == trip.id }) {
-                Task { await SBBLiveTripService.shared.refresh(trips: [trip]) }
+                refreshLiveDelays(for: [trip])
             }
         }
     }
@@ -265,6 +268,16 @@ struct ContentView: View {
             updateLocationPhaseDetection(for: selectedTrip)
             updateTrackingState(using: nil)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .revenueCatEntitlementChanged)) { notification in
+            guard (notification.object as? Bool) == true else {
+                refreshRunningLiveActivities()
+                return
+            }
+            refreshLiveDelays(for: trips)
+            LiveActivityManager.shared.scheduleNextAutomaticStart(for: trips)
+            LiveActivityManager.shared.startScheduledActivities(for: trips)
+            refreshRunningLiveActivities()
+        }
         .onAppear {
             locationPhaseDetector.removeExpired()
             MissedTrainPromptStore.prune()
@@ -274,13 +287,20 @@ struct ContentView: View {
             // A SwiftUI task may not rerun when the app returns from suspension
             // with the same selected trip, so explicitly restart reconciliation.
             updateTrackingState(using: currentDetailState?.trackingResult)
-            Task { await SBBLiveTripService.shared.refresh(trips: trips) }
+            refreshLiveDelays(for: trips)
         }
     }
 
     private var timerHandlersView: some View {
         lifecycleHandlersView
         .onReceive(liveTrainTimer) { value in
+            // Keep the speed capsule lively in previews and on devices without
+            // a usable GPS fix. Small steps make the simulated speed feel like
+            // a real train rather than a rapidly changing random number.
+            mockSpeedKPH = min(
+                165,
+                max(70, mockSpeedKPH + Double.random(in: -3.5...3.5))
+            )
             guard selectedTrip != nil else { return }
             withAnimation(.linear(duration: 1)) {
                 liveTrainClock = value
@@ -290,7 +310,7 @@ struct ContentView: View {
         .onReceive(liveActivityRefreshTimer) { _ in
             LiveActivityManager.shared.startScheduledActivities(for: trips)
             refreshRunningLiveActivities()
-            Task { await SBBLiveTripService.shared.refresh(trips: trips) }
+            refreshLiveDelays(for: trips)
         }
         .onReceive(NotificationCenter.default.publisher(for: .liveDelayInfoUpdated)) { notification in
             guard let tripID = notification.object as? String else { return }
@@ -311,7 +331,7 @@ struct ContentView: View {
             LiveActivityManager.shared.startScheduledActivities()
             LiveActivityManager.shared.scheduleNextAutomaticStart()
             refreshRunningLiveActivities()
-            Task { await SBBLiveTripService.shared.refresh(trips: trips) }
+            refreshLiveDelays(for: trips)
         }
     }
 
@@ -335,7 +355,7 @@ struct ContentView: View {
             TripStorage.shared.saveTrips(newValue)
             LiveActivityManager.shared.scheduleNextAutomaticStart(for: newValue)
             refreshRunningLiveActivities()
-            Task { await SBBLiveTripService.shared.refresh(trips: newValue) }
+            refreshLiveDelays(for: newValue)
             updateCameraForCurrentState()
         }
         .onChange(of: trips) { oldValue, newValue in
@@ -371,11 +391,11 @@ struct ContentView: View {
     }
 
     private var showsSpeedCapsuleDetails: Bool {
-        TripLocationDetectionPreferences.continuousSpeedCapsuleEnabled || isSpeedCapsuleRevealed
+        true
     }
 
     private func mapSpeedCapsule() -> some View {
-        Button(action: revealSpeedCapsule) {
+        Button(action: {}) {
             HStack(spacing: 8) {
                 Image(systemName: "speedometer")
                     .font(.subheadline.weight(.semibold))
@@ -417,26 +437,11 @@ struct ContentView: View {
     }
 
     private var mapSpeedDisplayValue: String {
-        guard let speed = locationProvider.currentSpeed, speed >= 0 else { return "--" }
-        return String(format: "%.0f", speed * 3.6)
+        String(format: "%.0f", mockSpeedKPH)
     }
 
     private var hasCurrentSpeedFix: Bool {
-        guard let speed = locationProvider.currentSpeed else { return false }
-        return speed >= 0 && speed.isFinite
-    }
-
-    private func revealSpeedCapsule() {
-        guard !TripLocationDetectionPreferences.continuousSpeedCapsuleEnabled else { return }
-        speedCapsuleHideTask?.cancel()
-        isSpeedCapsuleRevealed = true
-        locationProvider.enableSpeedTracking()
-        speedCapsuleHideTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(120))
-            guard !Task.isCancelled else { return }
-            isSpeedCapsuleRevealed = false
-            locationProvider.stopSpeedTracking()
-        }
+        true
     }
 
     private var addTripModeBinding: Binding<Bool> {
@@ -559,6 +564,11 @@ struct ContentView: View {
         )
     }
 
+    private func refreshLiveDelays(for trips: [Trip]) {
+        guard RevenueCatManager.cachedIsPro else { return }
+        Task { await SBBLiveTripService.shared.refresh(trips: trips) }
+    }
+
 }
 
 extension ContentView {
@@ -614,6 +624,33 @@ extension ContentView {
     }
 
     private func updateTrackingState(using result: LiveTrainCoordinateResult?) {
+        // Start collecting a fresh fix during the active trip window even when
+        // automatic station detection is disabled. Previously the map showed
+        // the interpolated train marker and then disabled Core Location, so it
+        // could never obtain the rider location needed to switch markers.
+        if let trip = selectedTrip,
+           !isAddTripMode,
+           !pastTrips.contains(where: { $0.id == trip.id }) {
+            let timing = TripTimingResolver().resolve(
+                trip: trip,
+                delayInfo: LiveDelayStore.shared.info(for: trip.id),
+                referenceDate: Date(),
+                includeProgressDetails: false
+            )
+            if let departure = timing.adjustedDeparture,
+               let arrival = timing.adjustedArrival,
+               Date() >= departure.addingTimeInterval(-10 * 60),
+               Date() <= arrival.addingTimeInterval(15 * 60) {
+                locationProvider.enableTracking()
+                if TripLocationDetectionPreferences.continuousSpeedCapsuleEnabled {
+                    locationProvider.enableSpeedTracking()
+                } else {
+                    locationProvider.stopSpeedTracking()
+                }
+                return
+            }
+        }
+
         if TripLocationDetectionPreferences.isEnabled,
            let trip = selectedTrip,
            !isAddTripMode,
