@@ -515,14 +515,18 @@ struct TripFormationSection: View {
     let trip: Trip
     @AppStorage(FormationSettings.key) private var server = FormationSettings.defaultServer
     @State private var formation: PlatformFormation?
+    @ObservedObject private var subscriptions = RevenueCatManager.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let formation {
+            if subscriptions.isPro, let formation {
                 TrainFormationPreview(formation: formation, isSample: false)
+            } else if !subscriptions.isPro {
+                BlitzProUpsellCard(feature: "train formation")
             }
         }
-        .task(id: "\(trip.id)|\(trip.travelDate?.timeIntervalSince1970 ?? 0)|\(server)") {
+        .task(id: "\(trip.id)|\(trip.travelDate?.timeIntervalSince1970 ?? 0)|\(server)|\(subscriptions.isPro)") {
+            guard subscriptions.isPro else { return }
             formation = nil
             do {
                 // A full numeric final token, never digits stripped from IC12.

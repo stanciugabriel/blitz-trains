@@ -77,6 +77,9 @@ final class LiveActivityManager {
     /// window. Future trips are picked up by the registered BGAppRefreshTask.
     @discardableResult
     func startOrSchedule(for trip: Trip, delayInfo: DelayInfo? = nil, now: Date = Date()) -> StartResult? {
+        guard RevenueCatManager.cachedIsPro else {
+            return .unavailable("Live Activities are a Blitz Pro feature")
+        }
         guard !isAutomaticStartSuppressed(for: trip) else {
             return .unavailable("Live Activity is turned off for this trip")
         }
@@ -95,6 +98,10 @@ final class LiveActivityManager {
     }
 
     func scheduleNextAutomaticStart(for trips: [Trip] = TripStorage.shared.loadTrips(), now: Date = Date()) {
+        guard RevenueCatManager.cachedIsPro else {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: automaticLiveActivityTaskIdentifier)
+            return
+        }
         let candidates = trips.compactMap { trip -> Date? in
             guard !isAutomaticStartSuppressed(for: trip) else { return nil }
             guard case .waiting(let start) = activationWindow(
@@ -117,6 +124,7 @@ final class LiveActivityManager {
     }
 
     func startScheduledActivities(for trips: [Trip] = TripStorage.shared.loadTrips(), now: Date = Date()) {
+        guard RevenueCatManager.cachedIsPro else { return }
         for trip in trips {
             guard !isAutomaticStartSuppressed(for: trip) else { continue }
             let delayInfo = LiveDelayStore.shared.info(for: trip.id)
@@ -174,6 +182,9 @@ final class LiveActivityManager {
 
     @discardableResult
     func startActivity(for trip: Trip, delayInfo: DelayInfo? = nil, now: Date = Date()) -> StartResult {
+        guard RevenueCatManager.cachedIsPro else {
+            return .unavailable("Live Activities are a Blitz Pro feature")
+        }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return .activitiesDisabled }
         guard !isAutomaticStartSuppressed(for: trip) else {
             return .unavailable("Live Activity is turned off for this trip")
@@ -230,6 +241,10 @@ final class LiveActivityManager {
     }
 
     func updateActivity(for trip: Trip, delayInfo: DelayInfo? = nil) {
+        guard RevenueCatManager.cachedIsPro else {
+            endActivity(for: trip.id)
+            return
+        }
         guard let activity = activity(for: trip.id) else { return }
         var state = contentState(for: trip, delayInfo: delayInfo)
         state.attention = Self.attention(from: activity.content.state, to: state, now: Date())

@@ -115,33 +115,23 @@ struct TrainFormationPreview: View {
     }
 
     private func vehicleArtwork(_ vehicle: FormationVehicle) -> some View {
-        let silhouette = FormationSilhouette(isCab: vehicle.isCab,
-                                             isLocomotive: vehicle.isLocomotive,
-                                             facesRight: vehicle.facesRight)
-        let bodyColors = vehicle.isLocked
-            ? [Color(red: 0.72, green: 0.73, blue: 0.75), Color(red: 0.64, green: 0.65, blue: 0.68)]
-            : [Color(red: 0.86, green: 0.88, blue: 0.91), Color(red: 0.75, green: 0.79, blue: 0.83)]
-        return silhouette
-            .fill(LinearGradient(colors: bodyColors, startPoint: .top, endPoint: .bottom))
-            .frame(width: vehicle.displayWidth, height: vehicle.isLocomotive ? 62 : 68)
-            .overlay(alignment: .bottom) {
-                if !vehicle.isLocomotive && (vehicle.classes.contains("1") || (vehicle.firstClassSeats ?? 0) > 0) {
-                    Rectangle()
-                        .fill(Color(red: 1, green: 0.76, blue: 0.08))
-                        .frame(height: 8)
-                }
-            }
-            .clipShape(silhouette)
-            .overlay { silhouette.stroke(Color(red: 0.39, green: 0.45, blue: 0.51).opacity(0.65), lineWidth: 1) }
+        // Use the same FLIRT artwork for every formation so the preview stays
+        // visually consistent even when the provider reports a different
+        // vehicle model. The control-cab asset is selected for cab vehicles;
+        // the existing consist-facing calculation supplies the mirror.
+        let assetName = vehicle.isCab ? "flirt-cc-f" : "flirt-c-f"
+        return Image(assetName)
+            .resizable()
+            .scaledToFit()
+            .scaleEffect(x: vehicle.facesRight ? -1 : 1, y: 1)
+            .opacity(vehicle.isLocked ? 0.58 : 1)
+            .frame(width: vehicle.displayWidth, height: 68)
     }
 
-    private func gap(after index: Int) -> CGFloat {
-        guard index + 1 < displayedVehicles.count else { return 0 }
-        let vehicle = displayedVehicles[index]
-        let next = displayedVehicles[index + 1]
-        if vehicle.isLocomotive || next.isLocomotive { return 20 }
-        if vehicle.isCab && next.isCab && vehicle.facesRight && !next.facesRight { return 18 }
-        return 10
+    private func gap(after _: Int) -> CGFloat {
+        // The FLIRT artwork includes the complete vehicle edge, so adjacent
+        // cars should meet directly on the same track.
+        0
     }
 
     private func sectorSlices(for vehicle: FormationVehicle) -> [FormationSectorSlice] {
@@ -416,7 +406,13 @@ struct FormationVehicle: Identifiable {
     let bikeSeats: Int?
     let wheelchairSeats: Int?
     let operatorName: String
-    var displayWidth: CGFloat { isLocomotive ? 220 : 270 }
+    // Both FLIRT assets are 275 px tall. Use one shared display height and
+    // preserve each asset's intrinsic aspect ratio, so neither car is scaled
+    // independently just to fit an arbitrary column width.
+    var displayWidth: CGFloat {
+        let artworkHeight: CGFloat = 68
+        return isCab ? artworkHeight * 1200 / 275 : artworkHeight * 1102 / 275
+    }
 
     static let samples: [Self] = [
         .init(id: 1, position: "Car 1", classes: ["1"], type: "RABe 526",

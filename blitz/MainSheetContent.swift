@@ -1483,13 +1483,15 @@ struct TripRowView: View {
         .task(id: trip.id) {
             await loadTiming()
         }
-        .onReceive(secondTimer) { value in
+        .onReceive(secondTimer) { _ in
             guard shouldTickEverySecond else { return }
-            now = value
+            // Anchor the display to wall-clock time if the main thread delays
+            // delivery of a timer tick.
+            now = Date()
         }
-        .onReceive(minuteTimer) { value in
+        .onReceive(minuteTimer) { _ in
             guard shouldTickEveryMinute else { return }
-            now = value
+            now = Date()
         }
         .onReceive(NotificationCenter.default.publisher(for: .liveDelayInfoUpdated)) { notification in
             guard let updatedID = notification.object as? String, updatedID == trip.id else { return }
@@ -1626,6 +1628,9 @@ struct TripRowView: View {
         }
         .padding(.vertical, 4)
         .frame(width: 78)
+        .transaction { transaction in
+            transaction.animation = nil
+        }
     }
 
     private var scheduledColumn: some View {
@@ -2760,6 +2765,8 @@ private struct SettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                SubscriptionSettingsSection()
+
                 Section {
                     TextField("192.168.0.14:3001", text: $formationServer)
                         .keyboardType(.URL)
